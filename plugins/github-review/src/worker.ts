@@ -82,9 +82,10 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
     }
   }
 
-  async function follow(context: FocusContext | null): Promise<void> {
+  // Resolves one focus; panels hear the answer when it differs from the last one they heard.
+  async function settle(context: Promise<FocusContext | null>): Promise<void> {
     const mine = ++generation
-    current = resolve(context)
+    current = context.then(resolve, hostFailed)
     const answer = await current
     if (mine !== generation) return
     const key = JSON.stringify(answer)
@@ -93,25 +94,23 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
     orca.panels.post('repo.changed', answer)
   }
 
-  orca.events.on('workspace.changed', ({ context }) => follow(context))
-
-  orca.panels.handle('repo.get', async () => {
-    if (!current) {
-      const mine = ++generation
-      current = orca.host.call('workspace.readContext').then(resolve, hostFailed)
-      // The panel has this answer: the first workspace.changed need not post it again.
-      void current.then((answer) => {
-        if (mine === generation) posted = JSON.stringify(answer)
-      })
-    }
-    // Wait out focus changes that land while this one resolves.
+  /** The answer for the newest focus, waiting out focus changes that land meanwhile. */
+  async function latest(): Promise<RepoAnswer> {
     let answer: RepoAnswer
-    let seen: Promise<RepoAnswer>
+    let seen: Promise<RepoAnswer> | null
     do {
       seen = current
-      answer = await seen
+      answer = await seen!
     } while (seen !== current)
     return answer
+  }
+
+  orca.events.on('workspace.changed', ({ context }) => settle(Promise.resolve(context)))
+
+  orca.panels.handle('repo.get', async () => {
+    // An error may be gone (a login, a remote added, a new workspace): asking is a retry.
+    if (!current || !(await latest()).ok) void settle(orca.host.call('workspace.readContext'))
+    return latest()
   })
 }
 

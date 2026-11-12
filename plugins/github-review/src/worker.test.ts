@@ -78,20 +78,28 @@ test('repo.get with nothing focused', async () => {
 
 test('follows workspace.changed and tells panels only when the answer changes', async () => {
   const gh: string[] = []
+  let focused = { branch: 'feature/spike', displayName: 'Spike', terminals: [] as { id: string }[] }
+  const host = mockHost({
+    results: { 'workspace.readContext': () => focused, 'workspace.list': { workspaces, truncated: false } }
+  })
+  const focus = (context: typeof focused) => {
+    focused = context
+    return worker.emit('workspace.changed', { context })
+  }
   // Orca first sends the current context (spike) to a new subscriber.
-  const worker = await mountWorker(repoWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
-  await worker.emit('workspace.changed', { context: { branch: 'main', displayName: 'gl', terminals: [] } })
-  await worker.emit('workspace.changed', { context: { branch: 'main', displayName: 'gl', terminals: [{ id: 't1' }] } })
-  await worker.emit('workspace.changed', { context: { branch: 'feature/spike', displayName: 'Spike', terminals: [] } })
-  await worker.emit('workspace.changed', { context: { branch: 'main', displayName: 'gl', terminals: [] } })
+  const worker = await mountWorker(repoWorker(gh), { host })
+  await focus({ branch: 'main', displayName: 'gl', terminals: [] })
+  await focus({ branch: 'main', displayName: 'gl', terminals: [{ id: 't1' }] })
+  await focus({ branch: 'feature/spike', displayName: 'Spike', terminals: [] })
+  await focus({ branch: 'main', displayName: 'gl', terminals: [] })
 
   const codes = worker.posts.filter((p) => p.event === 'repo.changed').map((p) => {
     const answer = p.payload as { ok: boolean; nameWithOwner?: string; error?: { code: string } }
     return answer.ok ? answer.nameWithOwner : answer.error?.code
   })
-  assert.deepEqual(codes, ['not_a_repo', 'octo/app', 'not_a_repo'])
+  assert.deepEqual(codes, ['octo/app', 'not_a_repo', 'octo/app', 'not_a_repo'])
   // A found repo is kept; not_a_repo is asked again, as a remote may have been added since.
-  assert.deepEqual(gh, ['/work/spike', '/code/gl', '/code/gl', '/code/gl'])
+  assert.deepEqual([...gh].sort(), ['/code/gl', '/code/gl', '/code/gl', '/work/spike'])
   const answer = await worker.request('repo.get')
   assert.equal(!answer.ok && answer.error.code, 'not_a_repo')
   await worker.deactivate()
@@ -102,7 +110,8 @@ test('gh errors are not cached, so a later login is picked up', async () => {
   const worker = await mountWorker(repoWorker(gh), { host: hostFocused({ branch: 'main', displayName: 'out' }) })
   assert.equal(((await worker.request('repo.get')) as { error?: { code: string } }).error?.code, 'gh_logged_out')
   await worker.emit('workspace.changed', { context: { branch: 'main', displayName: 'out', terminals: [{ id: 't9' }] } })
-  assert.deepEqual(gh, ['/code/out', '/code/out'])
+  // The first subscriber event, the retry repo.get makes after that error, then the new event.
+  assert.deepEqual(gh, ['/code/out', '/code/out', '/code/out'])
   await worker.deactivate()
 })
 
@@ -192,5 +201,33 @@ test('one gh run per folder and one CLI run per terminal, posting each answer on
   // The first workspace.changed Orca sends a new subscriber posts the answer once; the same
   // focus again, or a new terminal in it, posts nothing.
   assert.deepEqual(worker.posts.filter((p) => p.event === 'repo.changed').map((p) => p.payload), [a])
+  await worker.deactivate()
+})
+
+test('repo.get asks again after an error, with no focus change', async () => {
+  const gh: string[] = []
+  let loggedIn = false
+  const module = {
+    default: (orca: OrcaWorkerApi) =>
+      main.activateWith(orca, {
+        ghRepo: async (path) => {
+          gh.push(path)
+          return loggedIn ? { ok: true, nameWithOwner: 'octo/out' } : repos[path]
+        },
+        terminalPath: async () => null,
+        exists: () => true
+      })
+  }
+  const worker = await mountWorker(module, { host: hostFocused({ branch: 'main', displayName: 'out' }) })
+  const first = await worker.request('repo.get')
+  assert.equal(!first.ok && first.error.code, 'gh_logged_out')
+  loggedIn = true
+  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/out', path: '/code/out', resolvedBy: 'context' })
+  // Other open panels hear the new answer too.
+  const last = worker.posts.filter((p) => p.event === 'repo.changed').at(-1)
+  assert.equal((last?.payload as { ok: boolean }).ok, true)
+  // A found repo is served from cache.
+  await worker.request('repo.get')
+  assert.equal(gh.length, 3)
   await worker.deactivate()
 })

@@ -7,12 +7,13 @@ export type RunResult = { code: number; stdout: string; stderr: string }
 /** Resolves with the exit code; rejects only when the command did not run (ENOENT, timeout). */
 export type Run = (cmd: string, args: string[], options: { cwd?: string; timeoutMs?: number }) => Promise<RunResult>
 
-// Orca 1.4.256 hands workers the login shell's PATH; Homebrew's folders are added in case a launch
-// from the Dock leaves only launchd's.
-const ENV = {
-  ...process.env,
-  PATH: ['/opt/homebrew/bin', '/usr/local/bin', process.env.PATH ?? '/usr/bin:/bin:/usr/sbin:/sbin'].join(delimiter)
+// Orca 1.4.256 hands workers the login shell's PATH. Homebrew's folders go after it, for a launch
+// from the Dock that leaves only launchd's, so a gh the user's PATH picks first still wins.
+export function fallbackPath(path: string | undefined): string {
+  return [path ?? '/usr/bin:/bin:/usr/sbin:/sbin', '/opt/homebrew/bin', '/usr/local/bin'].join(delimiter)
 }
+
+const ENV = { ...process.env, PATH: fallbackPath(process.env.PATH) }
 
 export const run: Run = (cmd, args, options) =>
   new Promise((resolve, reject) => {

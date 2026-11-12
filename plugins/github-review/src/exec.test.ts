@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { assert, test } from 'orca/testing'
-import { ghRepo, parseTerminalShow, run, terminalPath, type Run } from './exec'
+import { delimiter } from 'node:path'
+import { fallbackPath, ghRepo, parseTerminalShow, run, terminalPath, type Run } from './exec'
 
 function fake(answer: { code: number; stdout?: string; stderr?: string } | NodeJS.ErrnoException): Run & { calls: unknown[][] } {
   const calls: unknown[][] = []
@@ -114,4 +115,9 @@ test('live: gh resolves this repo, and a folder with no remote is not a repo', a
   execFileSync('git', ['init', '-q', bare])
   const empty = await ghRepo(bare, run)
   assert.equal(!empty.ok && empty.error.code, 'not_a_repo')
+})
+
+test("the fallback folders come after the user's PATH, so its gh wins", () => {
+  assert.equal(fallbackPath('/home/me/.local/bin:/usr/bin'), ['/home/me/.local/bin:/usr/bin', '/opt/homebrew/bin', '/usr/local/bin'].join(delimiter))
+  assert.equal(fallbackPath(undefined).split(delimiter)[0], '/usr/bin')
 })
