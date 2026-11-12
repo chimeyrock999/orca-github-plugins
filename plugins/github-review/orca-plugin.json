@@ -19,11 +19,19 @@
         "entry": "src/panel.tsx",
         "ui": "components"
       }
+    ],
+    "events": [
+      {
+        "on": "workspace.changed"
+      }
     ]
   },
   "capabilities": [
     {
       "kind": "storage:own"
+    },
+    {
+      "kind": "workspace:read"
     }
   ]
 }
