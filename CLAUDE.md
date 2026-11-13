@@ -114,7 +114,7 @@ Where it lives, in the app and in the Orca source:
 | :--- | :--- | :--- |
 | Issue and PR lists, filters, GitHub Projects; issue dialog with Activity, edit, comment, close/reopen, reactions | **Tasks** (left sidebar) → GitHub | `src/renderer/src/components/task-page/github/`, `github-item-dialog/`; `src/main/github/issues/`, `work-items/`, `project-view/` |
 | Linked PR and issue of a workspace, failing-checks chip, PR menu (copy link, close, reopen) | Workspace row in the left sidebar | `src/renderer/src/components/sidebar/`; `src/main/github/workspace-links/` |
-| Checks of the worktree's PR, job logs, rerun, review threads | **Checks** tab (right sidebar) | `src/renderer/src/components/right-sidebar/checks-panel/`; `src/main/github/client/check/` |
+| Checks of the worktree's PR, job logs, rerun, review threads (a comment's `file:Lx` opens the file at the line) | **Checks** tab (right sidebar) | `src/renderer/src/components/right-sidebar/checks-panel/`; `src/main/github/client/check/` |
 | PR conversation, files, checks, reviewers, review, merge, auto-merge, merge queue, stacks, "Fix broken checks" | PR page (a tab) | `src/renderer/src/components/pull-request-page/`; `src/main/github/pull-requests/` |
 | Create a PR | **Source Control** tab (right sidebar) | `src/renderer/src/components/right-sidebar/source-control/` |
 
@@ -133,6 +133,8 @@ What the panel is for:
   `workspace:write`), and `workspace.create` to check out a pull request as a worktree. No host
   method opens a given issue or PR in Orca's own views, so the detail opens in the panel or on
   GitHub.
+- Review threads stay in Orca's Checks tab, which answers them and opens a comment's file at its
+  line; the panel shows a review's comment count and hands off there (#17).
 - Orca has no list of a repo's workflow runs, only checks per PR, so Actions (#7) is the panel's
   own ground.
 

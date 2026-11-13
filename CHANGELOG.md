@@ -10,6 +10,11 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+### Changed
+
+- **Issues and pull requests**: Open in Checks, beside a review's comments on the diff, says that
+  Orca's Checks tab opens each comment's file at its line.
+
 ## 0.1.0 - 2026-11-13
 
 The first release: a right-sidebar panel with the issue, pull request and Actions runs of the
