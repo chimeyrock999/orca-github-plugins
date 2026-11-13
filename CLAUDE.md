@@ -10,6 +10,8 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
   since the catalog pins the folder as `source.path`.
   - `src/worker.ts`: Node worker, wires the panel requests (`orca.panels.handle`) to the modules below.
   - `src/gh.ts`: `runGh` and `GhError` codes; every GitHub call goes through it.
+  - `src/host-error.ts`: what a rejected Orca call means to the panel (`hostFailure`), shared by the
+    panel's `requestFailed` and the worker's host calls.
   - `src/repo.ts` (+ `src/focus.ts`, `src/exec.ts`): the focused workspace's repo, `repo.get`, `repo.changed`.
   - `src/lists.ts`: one page of issues, pull requests (GraphQL search) or runs (REST).
   - `src/timeline.ts`: the timeline both share (GraphQL pages, cut to fit the message limit).

@@ -508,6 +508,51 @@ test('a new issue with no answer says it may exist, and Back loads the list agai
   await view.unmount()
 })
 
+test('a cancelled write may have landed too: the worker can finish it', async () => {
+  const view = await openIssue120(
+    host({
+      'issue.comment': () => {
+        throw hostError('cancelled', 'plugin.request cancelled')
+      }
+    })
+  )
+  await view.type({ label: 'Comment' }, 'x')
+  await view.press({ type: 'Button', text: 'Comment' })
+  assert.ok(view.summary().some((l) => /It may have gone through/.test(l)))
+  await view.unmount()
+})
+
+test('a write whose answer broke or was too big on the way back may have landed', async () => {
+  for (const code of ['action_failed', 'too_large']) {
+    const view = await openIssue120(
+      host({
+        'issue.comment': () => {
+          throw hostError(code, 'x')
+        }
+      })
+    )
+    await view.type({ label: 'Comment' }, 'x')
+    await view.press({ type: 'Button', text: 'Comment' })
+    assert.ok(view.summary().some((l) => /It may have gone through/.test(l)), code)
+    await view.unmount()
+  }
+})
+
+test("a write Orca held back for its rate limit did not run: it says to wait, not unsure", async () => {
+  const view = await openIssue120(
+    host({
+      'issue.comment': () => {
+        throw hostError('rate_limited', 'slow down', 5_000)
+      }
+    })
+  )
+  await view.type({ label: 'Comment' }, 'x')
+  await view.press({ type: 'Button', text: 'Comment' })
+  assert.ok(view.summary().some((l) => /Too many requests/.test(l)))
+  assert.ok(!view.summary().some((l) => /It may have gone through/.test(l)))
+  await view.unmount()
+})
+
 test('a write that GitHub refused is not called unsure', async () => {
   const view = await openIssue120(host({ 'issue.comment': () => failed('gh_failed', 'HTTP 422') }))
   await view.type({ label: 'Comment' }, 'x')

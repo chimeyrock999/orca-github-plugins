@@ -105,11 +105,13 @@ test('Tasks hands off to the Orca Tasks page; when Orca will not, it says why', 
   assert.ok(!says(view, /Orca did not answer/))
   await view.unmount()
 
-  const refused = await openPull(host({ 'orca.show': () => Promise.reject(hostError('unavailable', 'Not the desktop app')) }))
+  // The worker answers a refused commands.run with Orca's code.
+  const refused = await openPull(host({ 'orca.show': () => failed('unavailable', 'Not the desktop app') }))
   await refused.press({ type: 'Button', text: 'Tasks' })
-  assert.ok(says(refused, /Orca did not answer/))
-  await refused.press({ type: 'Button', text: 'Dismiss' })
+  assert.ok(says(refused, /Not available in Orca/))
   assert.ok(!says(refused, /Orca did not answer/))
+  await refused.press({ type: 'Button', text: 'Dismiss' })
+  assert.ok(!says(refused, /Not available in Orca/))
   await refused.unmount()
 })
 

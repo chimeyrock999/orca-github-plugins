@@ -2,7 +2,8 @@
 // search, the page (a stack of cursors, so Previous goes back without asking GitHub for one), the
 // answer, and the row open in detail.
 import { atom, plugin, read, set, update, type Atom } from 'orca'
-import type { Answer, IssueRow, ItemPage, ItemSort, Page, PanelError, PullRow, RepoAnswer, RunRow } from './protocol'
+import { hostFailure } from './host-error'
+import type { Answer, ErrorCode, IssueRow, ItemPage, ItemSort, Page, PanelError, PullRow, RepoAnswer, RunRow } from './protocol'
 
 export type Kind = 'issues' | 'pulls' | 'runs'
 export const KINDS: Kind[] = ['issues', 'pulls', 'runs']
@@ -82,15 +83,18 @@ let repoChanges = 0
 /** How many times the repo answer has changed in this panel run. */
 export const repoEpoch = () => repoChanges
 
-/** A rejected plugin.request as a failed answer: a timeout says so, anything else is Orca's. */
+/** A rejected plugin.request as a failed answer, keeping what Orca's code means. */
 export function requestFailed(error: unknown): { ok: false; error: PanelError } {
-  const e = error as { code?: unknown; message?: unknown }
-  return { ok: false, error: { code: e?.code === 'timeout' ? 'timeout' : 'host_failed', message: String(e?.message ?? error) } }
+  return { ok: false, error: hostFailure(error) }
 }
 
-/** A write with no answer may still have landed on GitHub. */
+// Failures that say nothing of whether gh ran: no answer in time, the panel stopped waiting while
+// the worker went on, or the answer broke or was too big on its way back.
+const UNSURE = new Set<ErrorCode>(['timeout', 'host_failed', 'cancelled', 'action_failed', 'too_large', 'unavailable'])
+
+/** A write that failed this way may still have landed on GitHub. */
 export function unsure(error: PanelError): PanelError {
-  if (error.code !== 'timeout' && error.code !== 'host_failed') return error
+  if (!UNSURE.has(error.code)) return error
   return { code: 'unsure', message: error.message }
 }
 

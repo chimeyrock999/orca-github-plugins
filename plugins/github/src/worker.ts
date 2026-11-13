@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { currentBranch, terminalPath, workspaceLinks, type WorkspaceLinks } from './exec'
 import { runGh, toFailure, type Gh } from './gh'
+import { hostFailure } from './host-error'
 import {
   closeIssue,
   commentOn,
@@ -62,7 +63,7 @@ async function showView(orca: OrcaWorkerApi, view: OrcaView): Promise<Answer<Rec
     await orca.host.call('commands.run', { action })
     return { ok: true }
   } catch (error) {
-    return { ok: false, error: { code: 'host_failed', message: String((error as { message?: unknown })?.message ?? error) } }
+    return { ok: false, error: hostFailure(error) }
   }
 }
 

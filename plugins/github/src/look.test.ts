@@ -58,8 +58,31 @@ test('duration reads like GitHub', () => {
 })
 
 test('every error code has words, and an unknown one falls back to gh_failed', () => {
-  assert.equal(problemOf('gh_logged_out').title, 'gh is not logged in')
-  assert.equal(problemOf('nope' as never).title, 'gh failed')
+  assert.equal(problemOf({ code: 'gh_logged_out' }).title, 'gh is not logged in')
+  assert.equal(problemOf({ code: 'nope' as never }).title, 'gh failed')
+})
+
+test("Orca's own failures say what happened", () => {
+  assert.deepEqual(
+    (['action_failed', 'not_allowed', 'too_large', 'unavailable', 'cancelled', 'host_failed'] as const).map((code) => problemOf({ code }).title),
+    ['Panel error', 'Not allowed by Orca', 'Answer too big for the panel', 'Not available in Orca', 'Request cancelled', 'Orca did not answer']
+  )
+  assert.ok(!/report/i.test(problemOf({ code: 'not_allowed' }).hint))
+  // Orca shows the plugin by its name when it asks for approval.
+  assert.match(problemOf({ code: 'not_allowed' }).hint, /gh Focus/)
+  assert.match(problemOf({ code: 'action_failed' }).hint, /gh Focus/)
+})
+
+test("Orca's rate limit says how long to wait, or a moment; GitHub's keeps its words", () => {
+  const orca = problemOf({ code: 'host_rate_limited', retryAfterMs: 12_000 })
+  assert.equal(orca.title, 'Too many requests')
+  assert.match(orca.hint, /Wait 12s, then press Retry/)
+  assert.match(problemOf({ code: 'host_rate_limited', retryAfterMs: 90_000 }).hint, /Wait 1m 30s/)
+  // Never "Wait 0s".
+  assert.match(problemOf({ code: 'host_rate_limited', retryAfterMs: 400 }).hint, /Wait 1s,/)
+  assert.match(problemOf({ code: 'host_rate_limited' }).hint, /Wait a moment, then press Retry/)
+  assert.equal(problemOf({ code: 'rate_limited' }).title, 'GitHub rate limit reached')
+  assert.equal(problemOf({ code: 'rate_limited', retryAfterMs: 5_000 }).title, 'GitHub rate limit reached')
 })
 
 test('pageLine counts pages GitHub lets anyone reach', () => {

@@ -473,8 +473,21 @@ test('orca.show runs the Tasks page or the Checks tab of Orca, and a refusal is 
   })
   const web = await mountWorker(listWorker(noGh), { host: refusing })
   const answer = await web.request('orca.show', { view: 'tasks' })
-  assert.deepEqual(answer, { ok: false, error: { code: 'host_failed', message: 'Not the desktop app' } })
+  assert.deepEqual(answer, { ok: false, error: { code: 'unavailable', message: 'Not the desktop app' } })
   await web.deactivate()
+
+  // workspace:write not approved yet: Orca's permission answer, not Orca failing to answer.
+  const unapproved = mockHost({
+    results: {
+      'workspace.readContext': { branch: 'feature/spike', displayName: 'Spike', terminals: [] },
+      'workspace.list': { workspaces, truncated: false },
+      'commands.run': () => Promise.reject(hostError('consent_required', 'Approve workspace:write first'))
+    }
+  })
+  const asking = await mountWorker(listWorker(noGh), { host: unapproved })
+  const refused = await asking.request('orca.show', { view: 'checks' })
+  assert.deepEqual(refused, { ok: false, error: { code: 'not_allowed', message: 'Approve workspace:write first' } })
+  await asking.deactivate()
 })
 
 function runWorker(gh: Gh, branch: string | null = 'feature/spike') {

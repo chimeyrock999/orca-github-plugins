@@ -6,6 +6,7 @@ import type {
   ErrorCode,
   IssueRow,
   MergeState,
+  PanelError,
   PullRow,
   Reaction,
   ReactionGroup,
@@ -192,6 +193,17 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
   },
   remote_workspace: { title: 'Workspace is on another machine', hint: 'The panel runs gh on this machine only.', tone: 'warning' },
   host_failed: { title: 'Orca did not answer', hint: 'Press Retry.', tone: 'warning' },
+  action_failed: {
+    title: 'Panel error',
+    hint: 'Something in gh Focus broke; the message below says what. Report it if Retry does not help.',
+    tone: 'danger'
+  },
+  not_allowed: { title: 'Not allowed by Orca', hint: 'Orca has not allowed this for gh Focus; the message below says what.', tone: 'warning' },
+  host_rate_limited: { title: 'Too many requests', hint: "Orca paces the panel's requests. Wait a moment, then press Retry.", tone: 'warning' },
+  too_large: { title: 'Answer too big for the panel', hint: 'Narrow the search or filters, or open it on GitHub.', tone: 'warning' },
+  // A panel request Orca could not take to the worker, or a host method this Orca does not offer
+  // (commands.run outside the desktop app).
+  unavailable: { title: 'Not available in Orca', hint: 'The message below says why. If it keeps failing, reload gh Focus.', tone: 'warning' },
   not_a_repo: { title: 'Not a GitHub repository', hint: 'This folder has no remote on a GitHub host that gh knows.', tone: 'warning' },
   gh_missing: { title: 'GitHub CLI not found', hint: 'Install gh from cli.github.com, run gh auth login, then press Retry.', tone: 'warning' },
   gh_logged_out: { title: 'gh is not logged in', hint: 'Run gh auth login in a terminal, then press Retry.', tone: 'warning' },
@@ -208,4 +220,12 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
   }
 }
 
-export const problemOf = (code: ErrorCode): Problem => PROBLEMS[code] ?? PROBLEMS.gh_failed
+/** Orca's rate limit says how long to wait when Orca does. */
+export function problemOf(error: Pick<PanelError, 'code' | 'retryAfterMs'>): Problem {
+  if (error.code === 'host_rate_limited' && typeof error.retryAfterMs === 'number') {
+    // Whole seconds, rounded up, so it never says "Wait 0s".
+    const wait = duration(Math.max(1, Math.ceil(error.retryAfterMs / 1000)) * 1000)
+    return { ...PROBLEMS.host_rate_limited, hint: `Orca paces the panel's requests. Wait ${wait}, then press Retry.` }
+  }
+  return PROBLEMS[error.code] ?? PROBLEMS.gh_failed
+}

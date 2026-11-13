@@ -227,6 +227,23 @@ test('a re-run with no answer may have landed: it says so and reads the run agai
   await view.unmount()
 })
 
+test('a re-run whose answer broke on the way back may have landed; one Orca held back did not', async () => {
+  for (const [code, title] of [
+    ['action_failed', 'It may have gone through'],
+    ['rate_limited', 'Too many requests']
+  ]) {
+    const h = host({
+      'run.rerun': () => {
+        throw hostError(code, 'x', 3_000)
+      }
+    })
+    const view = await openRun(h)
+    await view.press({ type: 'Button', text: 'Rerun all jobs' })
+    assert.ok(view.findAll({ type: 'Callout' }).some((c) => c.props.title === title), code)
+    await view.unmount()
+  }
+})
+
 test('a running run is watched; posts keep it current; Cancel asks first', async () => {
   const h = host({ 'run.watch': leasedWatch(0) }, runningRun)
   const view = await openRun(h)
