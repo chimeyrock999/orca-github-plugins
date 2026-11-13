@@ -1,0 +1,45 @@
+# Step 6 of RELEASING.md: once a release tag is pushed, check it and create its GitHub Release
+# with the version's CHANGELOG section as notes. Tagging stays by hand (step 5). The catalog reads
+# the tag, not the Release, so a failed check here cannot stop a listing: it only leaves no Release
+# and a red run to look at. Run it again by hand (Actions → Release → Run workflow) after a fix.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (vX.Y.Z)
+        required: true
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test the check
+        run: node --test .github/release-check.test.mjs
+
+      - name: Check the tag
+        run: node .github/release-check.mjs "$TAG" origin/main > "$RUNNER_TEMP/notes.md"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "$TAG already has a release; nothing to do."
+            exit 0
+          fi
+          gh release create "$TAG" --verify-tag --title "gh Focus ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md"
