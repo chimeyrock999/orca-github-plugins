@@ -178,14 +178,15 @@ export type TimelineState = {
 }
 export type TimelineItem = TimelineComment | TimelineMention | TimelineState
 
-/** One issue with the start and the end of its timeline, as GitHub shows a long one: `head` from the
- *  start, `next` the cursor after it (null once it meets `tail`), `tail` the latest items. */
-export type IssueDetail = {
+/** What an issue and a pull request share: the body, labels, assignees and milestone, and the start
+ *  and the end of the timeline, as GitHub shows a long one: `head` from the start, `next` the cursor
+ *  after it (null once it meets `tail`), `tail` the latest items. */
+export type ThreadDetail = {
+  /** GraphQL node id, for reactions. */
   id: string
   number: number
   title: string
   url: string
-  state: IssueState
   author: string | null
   body: string
   truncated: boolean
@@ -205,6 +206,8 @@ export type IssueDetail = {
   /** The gh login, so the viewer's own reactions read as You. */
   viewer: string | null
 }
+
+export type IssueDetail = ThreadDetail & { state: IssueState }
 
 export type IssueEdit = {
   number: number
