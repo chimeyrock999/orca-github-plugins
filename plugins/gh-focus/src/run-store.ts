@@ -17,8 +17,13 @@ export type OpenRun = {
   logs: LogView | null
   /** Log steps opened or closed by hand, by `job›step`; the rest show open when they failed. */
   openSteps: Record<string, boolean>
-  busy: 'rerun' | 'rerun-failed' | 'cancel' | null
+  busy: 'rerun' | 'rerun-failed' | 'cancel' | 'approve' | 'reject' | null
   confirmCancel: boolean
+  /** The deployment review asked about, before it is sent. */
+  confirmReview: 'approve' | 'reject' | null
+  /** Environments reviewed from here while the run still waits: GitHub may list them as pending a
+   *  moment longer, and a second review would fail. */
+  reviewed: number[]
   /** Why the last write failed. */
   error: PanelError | null
   /** When the run was last asked for or posted; shows as "updated 3s ago" while it is live. */
@@ -50,6 +55,8 @@ const freshRun = (id: number): OpenRun => ({
   openSteps: {},
   busy: null,
   confirmCancel: false,
+  confirmReview: null,
+  reviewed: [],
   error: null,
   updatedAt: null,
   liveError: null,
@@ -95,9 +102,21 @@ export function settled(s: OpenRun): boolean {
   return !!s.answer?.ok && s.answer.run.done && s.answer.run.attempt >= s.awaitAttempt
 }
 
-/** The run as it is now, from an answer or a post: the row in the list follows it too. */
+/** The environments the run waits for that this login may review and has not reviewed from here. */
+export function reviewable(s: OpenRun): number[] {
+  if (!s.answer?.ok) return []
+  return s.answer.run.waitingFor.filter((d) => d.canApprove && !s.reviewed.includes(d.id)).map((d) => d.id)
+}
+
+/** The run as it is now, from an answer or a post: the row in the list follows it too. A run no
+ *  longer waiting drops the review asked about and the environments reviewed. */
 function showRun(run: RunDetail): void {
-  update(runView, (s): OpenRun => ({ ...s, answer: { ok: true, run }, updatedAt: Date.now() }))
+  update(runView, (s): OpenRun => ({
+    ...s,
+    answer: { ok: true, run },
+    updatedAt: Date.now(),
+    ...(run.state === 'waiting' ? {} : { confirmReview: null, reviewed: [] })
+  }))
   update(lists.runs, (l) => {
     if (!l.answer?.ok) return l
     const rows = l.answer.rows.map((r) => ((r as RunRow).id === run.id ? rowOf(r as RunRow, run) : r))
@@ -208,12 +227,15 @@ export async function loadLogs(job: number | null): Promise<void> {
   update(runView, (s) => ({ ...s, logs: { job, answer } }))
 }
 
-export const askCancel = (on: boolean) => update(runView, (s) => ({ ...s, confirmCancel: on, error: null }))
+// One question at a time: asking one drops the other.
+export const askCancel = (on: boolean) => update(runView, (s) => ({ ...s, confirmCancel: on, confirmReview: on ? null : s.confirmReview, error: null }))
+export const askReview = (which: OpenRun['confirmReview']) =>
+  update(runView, (s) => ({ ...s, confirmReview: which, confirmCancel: which ? false : s.confirmCancel, error: null }))
 export const dismissError = () => update(runView, (s) => ({ ...s, error: null }))
 
 /** A write on the open run, then the run again; a write with no answer reads it again too, since it
  *  may have landed. */
-async function write(busy: NonNullable<OpenRun['busy']>, send: () => Promise<Answer<object>>): Promise<void> {
+async function write(busy: NonNullable<OpenRun['busy']>, send: () => Promise<Answer<object>>, sent: number[] = []): Promise<void> {
   if (read(runView).busy) return
   const view = views
   update(runView, (s) => ({ ...s, busy, error: null }))
@@ -226,15 +248,18 @@ async function write(busy: NonNullable<OpenRun['busy']>, send: () => Promise<Ans
       ...s,
       busy: null,
       confirmCancel: false,
+      confirmReview: null,
+      reviewed: [...s.reviewed, ...sent],
       logs: null,
       openSteps: {},
       liveError: null,
-      awaitAttempt: busy === 'cancel' || !s.answer?.ok ? s.awaitAttempt : s.answer.run.attempt + 1
+      awaitAttempt: !busy.startsWith('rerun') || !s.answer?.ok ? s.awaitAttempt : s.answer.run.attempt + 1
     }))
     return loadRun()
   }
   const error = unsure(answer.error)
-  update(runView, (s) => ({ ...s, busy: null, error }))
+  // A review that may have landed is not offered again; one that failed is.
+  update(runView, (s) => ({ ...s, busy: null, confirmReview: null, reviewed: error.code === 'unsure' ? [...s.reviewed, ...sent] : s.reviewed, error }))
   if (error.code === 'unsure') return loadRun()
 }
 
@@ -246,6 +271,13 @@ export function rerun(failed: boolean): Promise<void> {
 export function cancelRun(): Promise<void> {
   const id = read(runView).id
   return write('cancel', () => plugin.request('run.cancel', { id }, WRITE))
+}
+
+/** Approves or rejects the deployments the run waits for that this login may review, as shown. */
+export function reviewDeployments(approve: boolean): Promise<void> {
+  const s = read(runView)
+  const environments = reviewable(s)
+  return write(approve ? 'approve' : 'reject', () => plugin.request('run.review', { id: s.id, approve, environments }, WRITE), environments)
 }
 
 /** Starts watching again after live updates stopped on an error. */

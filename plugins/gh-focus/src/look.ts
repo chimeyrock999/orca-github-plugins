@@ -189,6 +189,32 @@ export function duration(ms: number): string {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
 }
 
+/** "900 B", "812 KB", "4.2 MB", as GitHub writes artifact sizes. */
+export function bytes(n: number): string {
+  const units = ['B', 'KB', 'MB', 'GB']
+  const shown = (value: number, unit: number) => (unit === 0 || value >= 9.95 ? String(Math.round(value)) : value.toFixed(1))
+  let value = Math.max(0, n)
+  let unit = 0
+  // Rounded first, so 1,048,575 bytes reads 1.0 MB, not 1024 KB.
+  while (Number(shown(value, unit)) >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  return `${shown(value, unit)} ${units[unit]}`
+}
+
+/** "Expired", "Expires in 89 days", "Expires in 5 hours", "Expires soon"; null when GitHub gave no
+ *  date. */
+export function expiry(expired: boolean, at: number | null, now = Date.now()): string | null {
+  if (at === null) return expired ? 'Expired' : null
+  // Past its date it is gone, though the run was read before.
+  if (expired || at <= now) return 'Expired'
+  const hours = Math.floor((at - now) / 3_600_000)
+  if (hours >= 24) return `Expires in ${Math.floor(hours / 24)} day${hours >= 48 ? 's' : ''}`
+  if (hours >= 1) return `Expires in ${hours} hour${hours >= 2 ? 's' : ''}`
+  return 'Expires soon'
+}
+
 export type Problem = { title: string; hint: string; tone: Tone }
 
 const PROBLEMS: Record<ErrorCode, Problem> = {

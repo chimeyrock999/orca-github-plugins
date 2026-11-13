@@ -556,3 +556,15 @@ test('workflow.form reads the workflow at the workspace branch, and run writes r
   ])
   await worker.deactivate()
 })
+
+test('run.review writes the review in the repo', async () => {
+  const calls: string[][] = []
+  const gh: Gh = async (args) => {
+    calls.push(args)
+    return []
+  }
+  const worker = await mountWorker(runWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
+  assert.deepEqual(await worker.request('run.review', { id: 9, approve: false, environments: [7] }), { ok: true })
+  assert.deepEqual(calls, [['api', '-X', 'POST', 'repos/octo/app/actions/runs/9/pending_deployments', '-F', 'environment_ids[]=7', '-f', 'state=rejected', '-f', 'comment=']])
+  await worker.deactivate()
+})

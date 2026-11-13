@@ -153,9 +153,27 @@ export type RunJob = {
   stepsCut?: boolean
 }
 
+/** An environment a waiting run needs a deployment approval for; `canApprove` when this login may
+ *  approve or reject it (one of its required reviewers). */
+export type PendingDeployment = { id: number; name: string; canApprove: boolean }
+
+/** A file a run uploaded. `expired` ones are gone from GitHub; `expiresAt` null when GitHub gives no
+ *  date. */
+export type RunArtifact = { id: number; name: string; bytes: number; expired: boolean; expiresAt: number | null }
+
 /** One run with the jobs of its latest attempt. `done` once it is completed: nothing changes after.
- *  `waitingFor`: the environments a waiting run needs a deployment approval for. */
-export type RunDetail = RunRow & { attempt: number; workflowId: number; done: boolean; jobs: RunJob[]; waitingFor: string[] }
+ *  `waitingFor`: the environments a waiting run needs a deployment approval for. `artifacts`: read
+ *  once the run is done (none while it goes on, or when they could not be read), at most 100;
+ *  `moreArtifacts` counts the rest. */
+export type RunDetail = RunRow & {
+  attempt: number
+  workflowId: number
+  done: boolean
+  jobs: RunJob[]
+  waitingFor: PendingDeployment[]
+  artifacts: RunArtifact[]
+  moreArtifacts: number
+}
 
 /** One step's log: its last lines, `dropped` the lines cut before them. */
 export type LogStep = {
@@ -402,6 +420,9 @@ declare module 'orca' {
     /** Reruns every job, or only the failed ones (and those that depend on them). */
     'run.rerun': { input: { id: number; failed: boolean }; output: Done }
     'run.cancel': { input: { id: number }; output: Done }
+    /** Approves (`approve`) or rejects the deployments a waiting run needs in these environments
+     *  (ids from `waitingFor`), with GitHub's empty comment. */
+    'run.review': { input: { id: number; approve: boolean; environments: number[] }; output: Done }
     /** Holds while the run goes on, posting `run.progress` to the asking panel: every 10 s while it
      *  changes, backing off to 60 s while it does not. Answers once the run is done (`done`; with
      *  `attempt`, once that attempt is), or after a while so the panel asks again (a request cannot

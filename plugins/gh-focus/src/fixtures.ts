@@ -183,6 +183,8 @@ export function runDetail(change: Partial<RunDetail> = {}): RunDetail {
     done: true,
     jobs: [job(501, 'lint', false), job(502, 'test (ubuntu-latest)', true)],
     waitingFor: [],
+    artifacts: [],
+    moreArtifacts: 0,
     ...change
   }
 }
