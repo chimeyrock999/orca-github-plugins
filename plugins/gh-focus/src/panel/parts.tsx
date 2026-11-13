@@ -67,11 +67,12 @@ export function Problem({
 /** The width of a glyph's slot; a line that starts under a glyph's text skips as much. */
 export const GLYPH_WIDTH = 16
 
-/** A state glyph in a fixed slot: glyphs differ in width (✓ is narrow, ◉ wide), so the slot keeps
- *  the gap after each one the same and lines up the text beside a column of them. */
+/** A state glyph centered in a fixed slot: glyphs differ in width (✓ is narrow, ◉ wide), so the
+ *  text beside a column of them lines up and a narrow one keeps clear of it. */
 export function Glyph({ look }: { look: Look }) {
   return (
-    <Box width={GLYPH_WIDTH} justify="center" shrink={false}>
+    // A Box is a column: `align` centers the glyph across the slot.
+    <Box width={GLYPH_WIDTH} align="center" shrink={false}>
       <Text tone={look.tone} size="md" weight="semibold">
         {look.glyph}
       </Text>

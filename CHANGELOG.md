@@ -10,6 +10,14 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+### Fixed
+
+**Issues and pull requests**
+
+- A mention in the timeline keeps its title on the first line: another repo's name moves to the line
+  under it, and state glyphs (✓, ◉) line up with the same gap everywhere, Actions and linked lists
+  included.
+
 ## 0.1.2 - 2026-11-13
 
 ### Changed

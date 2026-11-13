@@ -88,7 +88,8 @@ test('every state glyph sits in the same fixed slot, so titles line up and a nar
   // The mentions' ◉ and ✓ (and the issue's own state) all sit in one fixed-width slot that never shrinks.
   assert.ok(slots.some((b) => b.text === '✓'))
   assert.ok(slots.some((b) => b.text === '◉'))
-  assert.ok(slots.every((b) => b.props.shrink === false && b.props.justify === 'center'))
+  // A Box is a column unless told otherwise, so `align` is what centers the glyph across the slot.
+  assert.ok(slots.every((b) => b.props.shrink === false && b.props.direction !== 'row' && b.props.align === 'center'))
   await view.unmount()
 })
 
