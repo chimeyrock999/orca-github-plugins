@@ -6,20 +6,20 @@ export type ErrorCode =
   | 'workspace_not_found'
   | 'ambiguous_workspace'
   | 'remote_workspace'
-  /** An Orca host call failed (workspace.readContext, workspace.list), or a panel request was
-   *  rejected without a code. */
+  /** An Orca call failed without a code: a host call (workspace.readContext, workspace.list) or a
+   *  panel request. One with a code reads as the codes below (src/host-error.ts). */
   | 'host_failed'
-  /** Panel only: the worker threw something that is not a gh failure, or Orca refused the request
-   *  as malformed. A bug in the plugin. */
+  /** The worker threw something that is not a gh failure, or Orca refused a call as malformed. A
+   *  bug in the plugin. */
   | 'action_failed'
-  /** Panel only: Orca has not allowed this for the plugin (capability_denied, consent_required,
+  /** Orca has not allowed this for the plugin (capability_denied, consent_required,
    *  not_permitted). */
   | 'not_allowed'
-  /** Panel only: Orca's own pace for panel requests, with `retryAfterMs` when Orca says how long. */
+  /** Orca's own pace for panel requests and host calls, with `retryAfterMs` when Orca says how long. */
   | 'host_rate_limited'
   /** Panel only: the answer is bigger than Orca passes to a panel. */
   | 'too_large'
-  /** Panel only: Orca could not reach the plugin's worker. */
+  /** Orca could not reach the plugin's worker, or does not offer a host method. */
   | 'unavailable'
   | 'not_a_repo'
   | 'gh_missing'
@@ -28,7 +28,7 @@ export type ErrorCode =
   | 'not_found'
   /** GitHub's rate limit. */
   | 'rate_limited'
-  /** gh did not answer within the worker's limit. */
+  /** gh did not answer within the worker's limit, or Orca timed out a host call or panel request. */
   | 'timeout'
   /** The panel stopped waiting (closed, or the request timed out). */
   | 'cancelled'

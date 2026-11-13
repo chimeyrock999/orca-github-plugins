@@ -3,6 +3,7 @@
 import type { OrcaWorkerApi } from 'orca/worker'
 import { toFailure, type Gh } from './gh'
 import { matchesOf, pickKey, resolveFocus, type FocusContext, type FocusDeps, type WorkspaceEntry } from './focus'
+import { hostFailure } from './host-error'
 import type { Answer, RepoAnswer } from './protocol'
 
 export type GhRepoAnswer = Answer<{ nameWithOwner: string; url: string }>
@@ -105,8 +106,9 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
     }
   }
 
+  // A rejected Orca call (workspace.readContext, workspace.list, storage) keeps Orca's code.
   function hostFailed(error: unknown): RepoAnswer {
-    return { ok: false, error: { code: 'host_failed', message: String((error as Error)?.message ?? error) } }
+    return { ok: false, error: hostFailure(error) }
   }
 
   /** `listed`: the workspace.list answer repick already read, so the pick it stored is read
@@ -162,18 +164,18 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
     let listed: WorkspaceList | undefined
     try {
       context = await orca.host.call('workspace.readContext')
-      if (context) listed = await orca.host.call('workspace.list')
+      if (context) {
+        listed = await orca.host.call('workspace.list')
+        const key = pickKey(context, matchesOf(context, listed.workspaces))
+        await withPicks(async () => {
+          const all = await picks()
+          if (path) all[key] = path
+          else delete all[key]
+          await orca.storage.set(PICKS, all)
+        })
+      }
     } catch (error) {
       return hostFailed(error)
-    }
-    if (context && listed) {
-      const key = pickKey(context, matchesOf(context, listed.workspaces))
-      await withPicks(async () => {
-        const all = await picks()
-        if (path) all[key] = path
-        else delete all[key]
-        await orca.storage.set(PICKS, all)
-      })
     }
     void settle(Promise.resolve(context), listed)
     return latest()
