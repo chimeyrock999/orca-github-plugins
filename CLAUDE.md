@@ -150,10 +150,6 @@ an hour. The newest tag is pinned to its commit and content hash; a listed versi
 4. Check `orca plugin release-entry plugins/gh-focus` on that commit and the listing at
    https://orca.dev/plugins/chimeyrock999/orca-github-plugins.
 
-The icon (`images/icon.png`) is a flat 256×256 PNG: a git branch in a focus frame, white on
-graphite, nothing of GitHub's or Orca's marks; the catalog wants it square, at least 128×128 and at
-most 256 KB (`tests/manifest.test.ts` checks it).
-
 Listing images (`images/issue.png`, also the cover, and `images/pull.png`) are screenshots of Orca
 itself, in the dark theme, with the left sidebar collapsed. Capture the window without its shadow
 (`screencapture -o -w <file>.png`), crop it to 16:10 from the left edge and scale it to 1600×1000,
