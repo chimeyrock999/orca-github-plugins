@@ -21,6 +21,7 @@ const RUN: Record<RunRow['state'], Look> = {
   success: { glyph: '✓', tone: 'success', label: 'Success' },
   failure: { glyph: '✕', tone: 'danger', label: 'Failed' },
   running: { glyph: '◐', tone: 'warning', label: 'In progress' },
+  queued: { glyph: '◷', tone: 'warning', label: 'Queued' },
   waiting: { glyph: '◷', tone: 'warning', label: 'Waiting' },
   cancelled: { glyph: '⊘', tone: 'neutral', label: 'Cancelled' },
   skipped: { glyph: '⊖', tone: 'neutral', label: 'Skipped' }
@@ -66,7 +67,7 @@ export function reactionTip(group: ReactionGroup, viewer: string | null = null):
         : (shown[0] ?? `${group.count} people`)
   return `${who} reacted with ${EMOJI[group.content]}`
 }
-export const runLook = (row: RunRow): Look => RUN[row.state]
+export const runLook = (row: Pick<RunRow, 'state'>): Look => RUN[row.state]
 
 /** What happened last to an issue or pull request, and when: "opened", "closed" or "merged". */
 export function itemEvent(row: IssueRow | PullRow): { verb: string; at: number } {
@@ -95,6 +96,9 @@ export function pageLine(page: number, total: number, limit: number | null, page
   const capped = limit !== null && total > limit ? ` · first ${count(limit)} shown` : ''
   return `Page ${page} of ${pages} · ${count(total)} total${capped}`
 }
+
+/** A moment as the viewer's locale writes a date and time; null stays null. */
+export const localTime = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toLocaleString())
 
 /** "57s", "7m 46s", "1h 2m". */
 export function duration(ms: number): string {

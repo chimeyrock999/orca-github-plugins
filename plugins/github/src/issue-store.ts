@@ -3,7 +3,7 @@
 // deletes and reactions change the timeline in place, so pages loaded with Load more stay.
 import { atom, plugin, read, set, update } from 'orca'
 import type { Answer, CloseReason, IssueDetail, PanelError, Reaction, ReactionGroup, TimelineComment, TimelineItem } from './protocol'
-import { back, lists, load, loadChoices, repo, requestFailed, tab } from './store'
+import { back, lists, load, loadChoices, repo, requestFailed, tab, unsure } from './store'
 
 export type Picking = { kind: 'labels' | 'assignees'; selected: string[]; query: string; login: string }
 
@@ -67,11 +67,6 @@ const remember = (number: number | null) => update(seen, (m) => ({ ...m, [worksp
 /** Writes wait longer than reads: gh issue create makes several API calls. The worker gives gh 60 s. */
 const WRITE = { timeoutMs: 90_000 }
 
-/** A write with no answer may still have landed on GitHub. */
-function unsure(error: PanelError): PanelError {
-  if (error.code !== 'timeout' && error.code !== 'host_failed') return error
-  return { code: 'unsure', message: error.message }
-}
 // A newer load of the same issue makes an older one stale.
 let loads = 0
 // A write changed an issue, so the list is asked for again on the way back.

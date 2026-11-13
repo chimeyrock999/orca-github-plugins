@@ -1,5 +1,21 @@
 // Sample answers the panel tests and check scenarios stand in for the worker with.
-import type { Answer, IssueDetail, IssueRow, ItemPage, Page, PullRow, RepoAnswer, RunRow, TimelineComment, TimelineItem } from './protocol'
+import type {
+  Answer,
+  DispatchForm,
+  IssueDetail,
+  IssueRow,
+  ItemPage,
+  PullRow,
+  RepoAnswer,
+  RunDetail,
+  RunJob,
+  RunLogs,
+  RunPage,
+  RunRow,
+  RunStep,
+  TimelineComment,
+  TimelineItem
+} from './protocol'
 
 const now = Date.UTC(2026, 10, 12, 9, 0)
 const hour = 3_600_000
@@ -52,8 +68,14 @@ export function itemPage<Row>(rows: Row[], total: number, next: string | null, c
   return { ok: true, rows, total, open: total, closed, next, limit: 1000 }
 }
 
-export function runPage(rows: RunRow[], total = rows.length, next: string | null = null, limit: number | null = null): Answer<Page<RunRow>> {
-  return { ok: true, rows, total, next, limit }
+export function runPage(
+  rows: RunRow[],
+  total = rows.length,
+  next: string | null = null,
+  limit: number | null = null,
+  branch: string | null = null
+): Answer<RunPage> {
+  return { ok: true, rows, total, next, limit, branch }
 }
 
 export function commentItem(n: number, change: Partial<TimelineComment> = {}): TimelineComment {
@@ -125,4 +147,80 @@ export function issueDetail(change: Partial<IssueDetail> = {}): IssueDetail {
     viewer: 'chimeyrock999',
     ...change
   }
+}
+
+const minute = 60_000
+
+/** Run 9001 of runRows in full: two jobs done, the test job failed in its Test step. */
+export function runDetail(change: Partial<RunDetail> = {}): RunDetail {
+  const steps = (failed: boolean): RunStep[] => [
+    { number: 1, name: 'Set up job', state: 'success', durationMs: 2_000 },
+    { number: 2, name: 'Install', state: 'success', durationMs: 38_000 },
+    { number: 3, name: 'Test', state: failed ? 'failure' : 'success', durationMs: 112_000 }
+  ]
+  const job = (id: number, name: string, failed: boolean): RunJob => ({
+    id,
+    name,
+    url: `https://github.com/octo/app/actions/runs/9001/job/${id}`,
+    state: failed ? 'failure' : 'success',
+    startedAt: now - 5 * minute,
+    durationMs: 167_000,
+    steps: steps(failed)
+  })
+  return {
+    ...runRows[0],
+    state: 'failure',
+    durationMs: 6 * minute,
+    attempt: 1,
+    workflowId: 77,
+    done: true,
+    jobs: [job(501, 'lint', false), job(502, 'test (ubuntu-latest)', true)],
+    ...change
+  }
+}
+
+/** The same run still going: lint done, the test job in its Test step. */
+export function runningRun(): RunDetail {
+  const run = runDetail({ state: 'running', durationMs: null, done: false })
+  const test = run.jobs[1]
+  return {
+    ...run,
+    jobs: [
+      run.jobs[0],
+      { ...test, state: 'running', durationMs: null, steps: test.steps.map((s) => (s.name === 'Test' ? { ...s, state: 'running', durationMs: null } : s)) }
+    ]
+  }
+}
+
+export function failedLogs(dropped = 0): RunLogs {
+  return {
+    url: 'https://github.com/octo/app/actions/runs/9001',
+    skippedJobs: 0,
+    unread: [],
+    steps: [
+      {
+        job: 'test (ubuntu-latest)',
+        jobId: 502,
+        step: 'Test',
+        failed: true,
+        dropped,
+        lines: [' ✓ src/export/header.test.ts (4 tests)', ' ✕ src/export/stream.test.ts > writes 25k rows', '   AssertionError: expected 24999 to be 25000', '##[error]Process completed with exit code 1.']
+      }
+    ]
+  }
+}
+
+export const workflows = [
+  { id: 77, name: 'CI' },
+  { id: 78, name: 'Release' }
+]
+
+export const releaseForm: DispatchForm = {
+  ref: 'fix/token-refresh',
+  dispatch: true,
+  inputs: [
+    { name: 'version', type: 'string', description: 'Version to tag, such as 1.9.1', required: true, default: null, options: [] },
+    { name: 'channel', type: 'choice', description: 'Where to publish', required: true, default: 'beta', options: ['stable', 'beta'] },
+    { name: 'dry_run', type: 'boolean', description: 'Build without publishing', required: false, default: true, options: [] }
+  ]
 }

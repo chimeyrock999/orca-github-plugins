@@ -21,11 +21,13 @@ import {
   Toolbar,
   type KeyValueItem
 } from 'orca'
-import { count, duration, issueLook, itemEvent, pageLine, pullLook, runCause, runLook, type Look } from './look'
+import { count, duration, issueLook, itemEvent, localTime, pageLine, pullLook, runCause, runLook, type Look } from './look'
 import { Glyph, Problem } from './parts'
 import { NewIssueView } from './issue-forms'
 import { openIssue, startNewIssue } from './issue-store'
 import { IssueView } from './issue-view'
+import { DISPATCH, openRun, startDispatch } from './run-store'
+import { DispatchView, RunView } from './run-view'
 import { PAGE_SIZE, type IssueRow, type ItemSort, type PullRow, type RunRow } from './protocol'
 import {
   back,
@@ -40,6 +42,7 @@ import {
   search,
   setDraft,
   setFilter,
+  setScope,
   setSort,
   showState,
   toggleTool,
@@ -88,9 +91,15 @@ function lookOf(kind: Kind, row: IssueRow | PullRow | RunRow): Look {
   return kind === 'pulls' ? pullLook(row as PullRow) : issueLook(row as IssueRow)
 }
 
+function press(kind: Kind, row: IssueRow | PullRow | RunRow): unknown {
+  if (kind === 'issues') return openIssue((row as IssueRow).number)
+  if (kind === 'runs') return openRun((row as RunRow).id)
+  return openRow(kind, rowKey(row))
+}
+
 function RowItem({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow }) {
   return (
-    <ListItem key={rowKey(row)} onPress={() => (kind === 'issues' ? openIssue((row as IssueRow).number) : openRow(kind, rowKey(row)))}>
+    <ListItem key={rowKey(row)} onPress={() => press(kind, row)}>
       <Box direction="row" gap="md" align="center" paddingY="sm">
         <Glyph look={lookOf(kind, row)} />
         <Stack gap="xs">
@@ -124,10 +133,25 @@ function Body({ kind, s }: { kind: Kind; s: ListState }) {
 function Counts({ kind, s }: { kind: Kind; s: ListState }) {
   const answer = s.answer?.ok ? s.answer : null
   if (kind === 'runs') {
+    // The tab starts on the workspace's branch; every branch is one press away.
+    const on = answer?.branch ?? null
     return (
-      <Text size="sm" weight="semibold">
-        {answer ? `${count(answer.total)} workflow runs` : 'Workflow runs'}
-      </Text>
+      <Row gap="xs" align="center" wrap>
+        <Text size="sm" weight="semibold">
+          {answer ? `${count(answer.total)} ${on ? (answer.total === 1 ? 'run on' : 'runs on') : 'workflow runs'}` : 'Workflow runs'}
+        </Text>
+        {on && <Code>{on}</Code>}
+        {s.scope === 'branch' && on && (
+          <Button size="sm" variant="ghost" onPress={() => setScope('all')}>
+            All branches
+          </Button>
+        )}
+        {s.scope === 'all' && s.branch && (
+          <Button size="sm" variant="ghost" onPress={() => setScope('branch')}>
+            {`Only ${s.branch}`}
+          </Button>
+        )}
+      </Row>
     )
   }
   const counts = s.counts
@@ -183,6 +207,7 @@ function Tools({ kind, s }: { kind: Kind; s: ListState }) {
         <IconButton icon="expand" label={`Sort: ${sort}`} variant={s.tool === 'sort' ? 'outline' : 'ghost'} onPress={() => toggleTool(kind, 'sort')} />
       )}
       {kind === 'issues' && <IconButton icon="add" label="New issue" variant="ghost" onPress={startNewIssue} />}
+      {kind === 'runs' && <IconButton icon="play" label="Run workflow" variant="ghost" onPress={startDispatch} />}
     </Toolbar>
   )
 }
@@ -296,35 +321,19 @@ function ListView({ kind, s }: { kind: Kind; s: ListState }) {
   )
 }
 
-function at(ms: number | null): string | null {
-  return ms === null ? null : new Date(ms).toLocaleString()
-}
-
-function details(kind: Kind, row: IssueRow | PullRow | RunRow): KeyValueItem[] {
-  if (kind === 'runs') {
-    const run = row as RunRow
-    return [
-      { label: 'Workflow', value: `${run.workflow} #${run.runNumber}` },
-      { label: 'Started by', value: runCause(run) },
-      { label: 'Branch', value: run.branch, code: true },
-      { label: 'Commit', value: run.sha.slice(0, 7), code: true },
-      { label: 'Started', value: at(run.startedAt) },
-      { label: 'Duration', value: run.durationMs === null ? 'Running' : duration(run.durationMs) }
-    ]
-  }
-  const item = row as IssueRow | PullRow
+function details(item: IssueRow | PullRow): KeyValueItem[] {
   const items: KeyValueItem[] = [
     { label: 'Author', value: item.author },
     { label: 'Labels', value: item.labels.join(', ') || 'None' }
   ]
   if ('branch' in item) items.push({ label: 'Branch', value: item.branch, code: true })
-  items.push({ label: 'Opened', value: at(item.createdAt) })
-  if ('mergedAt' in item && item.mergedAt) items.push({ label: 'Merged', value: at(item.mergedAt) })
-  else if (item.closedAt) items.push({ label: 'Closed', value: at(item.closedAt) })
+  items.push({ label: 'Opened', value: localTime(item.createdAt) })
+  if ('mergedAt' in item && item.mergedAt) items.push({ label: 'Merged', value: localTime(item.mergedAt) })
+  else if (item.closedAt) items.push({ label: 'Closed', value: localTime(item.closedAt) })
   return items
 }
 
-function Detail({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow }) {
+function Detail({ kind, row }: { kind: Kind; row: IssueRow | PullRow }) {
   const look = lookOf(kind, row)
   return (
     <Stack gap="sm">
@@ -343,10 +352,10 @@ function Detail({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow })
           {look.label}
         </Text>
         <Text size="sm" muted>
-          {kind === 'runs' ? (row as RunRow).workflow : `#${(row as IssueRow).number}`}
+          {`#${row.number}`}
         </Text>
       </Row>
-      <KeyValue items={details(kind, row)} />
+      <KeyValue items={details(row)} />
       <Row>
         <Button size="sm" icon="open-external" onPress={() => shell.openExternal(row.url)}>
           Open on GitHub
@@ -360,6 +369,8 @@ export function KindView({ kind }: { kind: Kind }) {
   const s = read(lists[kind])
   // An issue opens by number, so it shows whether or not it is on the page.
   if (kind === 'issues' && s.open) return s.open === 'new' ? <NewIssueView /> : <IssueView />
+  // A run opens by id, so it shows while the page is loading again too.
+  if (kind === 'runs' && s.open) return s.open === DISPATCH ? <DispatchView /> : <RunView />
   const row = s.open && s.answer?.ok ? s.answer.rows.find((r) => rowKey(r) === s.open) : undefined
-  return row ? <Detail kind={kind} row={row} /> : <ListView kind={kind} s={s} />
+  return row ? <Detail kind={kind} row={row as IssueRow | PullRow} /> : <ListView kind={kind} s={s} />
 }
