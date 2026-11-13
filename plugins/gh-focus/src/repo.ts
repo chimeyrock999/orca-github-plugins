@@ -137,14 +137,14 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
     let context: FocusContext | null
     try {
       context = await orca.host.call('workspace.readContext')
+      if (context) {
+        const all = await picks()
+        if (path) all[pickKey(context)] = path
+        else delete all[pickKey(context)]
+        await orca.storage.set(PICKS, all)
+      }
     } catch (error) {
       return hostFailed(error)
-    }
-    if (context) {
-      const all = await picks()
-      if (path) all[pickKey(context)] = path
-      else delete all[pickKey(context)]
-      await orca.storage.set(PICKS, all)
     }
     void settle(Promise.resolve(context))
     return latest()
