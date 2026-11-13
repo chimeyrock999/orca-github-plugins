@@ -23,6 +23,7 @@ function host(overrides: Record<string, unknown> = {}, run: () => RunDetail = ()
     'run.logs': () => ({ ok: true, logs: failedLogs() }),
     'run.rerun': () => ok,
     'run.cancel': () => ok,
+    'run.review': () => ok,
     'run.watch': () => ({ ok: true, done: true }),
     'workflows.list': { ok: true, workflows },
     'workflow.form': () => ({ ok: true, form: releaseForm }),
@@ -163,11 +164,144 @@ test('another tab ends the watch; coming back reads the run and watches it again
   await view.unmount()
 })
 
-test('a run waiting for a deployment approval names the environment and hands off to GitHub', async () => {
-  const waiting = () => ({ ...runningRun(), state: 'waiting' as const, waitingFor: ['production'] })
-  const view = await openRun(host({ 'run.watch': leasedWatch(0) }, waiting))
-  assert.ok(view.findAll({ type: 'Callout' }).some((c) => c.props.title === 'Waiting for approval to deploy to production'))
+const waitingFor = (canApprove = true) => [
+  { id: 7, name: 'production', canApprove },
+  { id: 8, name: 'staging-eu', canApprove: false }
+]
+const waiting = (canApprove = true) => () => ({ ...runningRun(), state: 'waiting' as const, waitingFor: waitingFor(canApprove) })
+const callout = (view: Awaited<ReturnType<typeof openRun>>, title: string) => view.findAll({ type: 'Callout' }).find((c) => c.props.title === title)
+
+test('a run waiting for a deployment approval names the environments and still hands off to GitHub', async () => {
+  const view = await openRun(host({ 'run.watch': leasedWatch(0) }, waiting()))
+  assert.ok(callout(view, 'Waiting for approval to deploy to production, staging-eu'))
+  assert.ok(view.find({ text: "You can't review staging-eu; a required reviewer must do it on GitHub." }))
+  assert.ok(view.find({ type: 'Button', text: 'Approve…' }))
+  assert.ok(view.find({ type: 'Button', text: 'Reject…' }))
   assert.ok(view.find({ type: 'Button', text: 'Review deployments on GitHub' }))
+  await view.unmount()
+})
+
+test('Approve asks first, then approves and reads the run again', async () => {
+  const h = host({ 'run.watch': leasedWatch(0), 'run.review': () => ok }, waiting())
+  const view = await openRun(h)
+  await view.press({ type: 'Button', text: 'Approve…' })
+  assert.ok(callout(view, 'Approve deployment to production?'))
+  assert.equal(h.count('run.review'), 0)
+  await view.press({ type: 'Button', text: 'Keep waiting' })
+  assert.equal(callout(view, 'Approve deployment to production?'), undefined)
+  await view.press({ type: 'Button', text: 'Approve…' })
+  await view.press({ type: 'Button', text: 'Approve' })
+  assert.deepEqual(h.last('run.review'), { id: 9001, approve: true, environments: [7] })
+  assert.equal(h.count('run.get'), 2)
+  // Not a re-run: no new attempt to wait for.
+  assert.equal(view.find({ text: /Starting attempt/ }), null)
+  await view.unmount()
+})
+
+test('a review sent while GitHub still lists the run as waiting is not offered again', async () => {
+  const h = host({ 'run.watch': leasedWatch(0), 'run.review': () => ok }, waiting())
+  const view = await openRun(h)
+  await view.press({ type: 'Button', text: 'Approve…' })
+  await view.press({ type: 'Button', text: 'Approve' })
+  assert.equal(view.find({ type: 'Button', text: 'Approve…' }), null)
+  assert.ok(view.find({ text: 'Review sent for production; GitHub has not moved the run on yet.' }))
+  // Once the run moves on and waits again (a rerun), it is offered again.
+  await view.post('run.progress', { run: runningRun() })
+  await view.post('run.progress', { run: waiting()() })
+  assert.ok(view.find({ type: 'Button', text: 'Approve…' }))
+  await view.unmount()
+})
+
+test('one question at a time: Cancel run drops the review asked about, and the other way round', async () => {
+  const view = await openRun(host({ 'run.watch': leasedWatch(0) }, waiting()))
+  await view.press({ type: 'Button', text: 'Reject…' })
+  await view.press({ type: 'Button', text: 'Cancel run…' })
+  assert.equal(callout(view, 'Reject deployment to production?'), undefined)
+  assert.ok(view.find({ type: 'Button', text: 'Keep running' }))
+  await view.press({ type: 'Button', text: 'Approve…' })
+  assert.equal(view.find({ type: 'Button', text: 'Keep running' }), null)
+  assert.ok(callout(view, 'Approve deployment to production?'))
+  await view.unmount()
+})
+
+test('Reject asks first, then rejects and reads the run again', async () => {
+  const h = host({ 'run.watch': leasedWatch(0), 'run.review': () => ok }, waiting())
+  const view = await openRun(h)
+  await view.press({ type: 'Button', text: 'Reject…' })
+  assert.ok(callout(view, 'Reject deployment to production?'))
+  const reject = view.find({ type: 'Button', text: 'Reject' })
+  assert.equal(reject?.props.tone, 'danger')
+  await view.press({ type: 'Button', text: 'Reject' })
+  assert.deepEqual(h.last('run.review'), { id: 9001, approve: false, environments: [7] })
+  assert.equal(h.count('run.get'), 2)
+  await view.unmount()
+})
+
+test('a deployment this login may not review only hands off to GitHub', async () => {
+  const view = await openRun(host({ 'run.watch': leasedWatch(0) }, waiting(false)))
+  assert.ok(view.find({ text: "You can't review production, staging-eu; a required reviewer must do it on GitHub." }))
+  assert.equal(view.find({ type: 'Button', text: 'Approve…' }), null)
+  assert.equal(view.find({ type: 'Button', text: 'Reject…' }), null)
+  assert.ok(view.find({ type: 'Button', text: 'Review deployments on GitHub' }))
+  await view.unmount()
+})
+
+test('an approval with no answer may have gone through: it says so and reads the run again', async () => {
+  const h = host(
+    {
+      'run.watch': leasedWatch(0),
+      'run.review': () => {
+        throw hostError('timeout', 'plugin.request timed out')
+      }
+    },
+    waiting()
+  )
+  const view = await openRun(h)
+  await view.press({ type: 'Button', text: 'Approve…' })
+  await view.press({ type: 'Button', text: 'Approve' })
+  assert.ok(callout(view, 'It may have gone through'))
+  assert.equal(h.count('run.get'), 2)
+  await view.unmount()
+})
+
+const day = 24 * 3_600_000
+const artifacts = () => [
+  { id: 1, name: 'coverage-report', bytes: 4_404_019, expired: false, expiresAt: Date.now() + 89 * day + 3_600_000 },
+  { id: 2, name: 'dist', bytes: 831_488, expired: true, expiresAt: Date.now() - day },
+  { id: 3, name: 'sbom.json', bytes: 900, expired: false, expiresAt: null }
+]
+
+test("a finished run lists its artifacts, expired ones greyed, each opening the run's artifacts on GitHub", async () => {
+  const h = host({}, () => runDetail({ artifacts: artifacts() }))
+  const view = await openRun(h)
+  assert.ok(view.findAll({ type: 'List' }).some((l) => l.props.label === 'Artifacts'))
+  assert.ok(view.find({ text: '4.2 MB · Expires in 89 days' }))
+  assert.ok(view.find({ text: '812 KB · Expired' }))
+  assert.ok(view.find({ text: '900 B' }))
+  assert.equal(view.find({ type: 'Text', text: 'dist' })?.props.muted, true)
+  assert.notEqual(view.find({ type: 'Text', text: 'coverage-report' })?.props.muted, true)
+  await view.press({ type: 'ListItem', text: /coverage-report/ })
+  assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/app/actions/runs/9001#artifacts' })
+  await view.unmount()
+})
+
+test('an expired artifact opens nothing, and those past the first page open on GitHub', async () => {
+  const h = host({}, () => runDetail({ artifacts: artifacts(), moreArtifacts: 120 }))
+  const view = await openRun(h)
+  const dist = view.find({ type: 'ListItem', text: /dist/ })
+  assert.ok(dist)
+  assert.equal(dist.props.onPress, undefined)
+  assert.notEqual(view.find({ type: 'ListItem', text: /coverage-report/ })?.props.onPress, undefined)
+  assert.ok(view.find({ text: '123' }))
+  await view.press({ type: 'Button', text: '120 more on GitHub' })
+  assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/app/actions/runs/9001#artifacts' })
+  await view.unmount()
+})
+
+test('a run with no artifacts shows no Artifacts section', async () => {
+  const view = await openRun(host())
+  assert.ok(view.findAll({ type: 'List' }).every((l) => l.props.label !== 'Artifacts'))
+  assert.equal(view.find({ text: 'Artifacts' }), null)
   await view.unmount()
 })
 

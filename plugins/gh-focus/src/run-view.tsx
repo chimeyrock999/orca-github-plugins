@@ -23,12 +23,13 @@ import {
   Text,
   type KeyValueItem
 } from 'orca'
-import { count, duration, localTime, runCause, runLook } from './look'
+import { bytes, count, duration, expiry, localTime, runCause, runLook } from './look'
 import { Glyph, Problem } from './parts'
-import type { DispatchInput, LogStep, RunDetail, RunJob, RunLogs } from './protocol'
+import type { DispatchInput, LogStep, RunArtifact, RunDetail, RunJob, RunLogs } from './protocol'
 import {
   addRow,
   askCancel,
+  askReview,
   backToRuns,
   cancelRun,
   dismissError,
@@ -44,6 +45,8 @@ import {
   requested,
   rerun,
   resumeLive,
+  reviewable,
+  reviewDeployments,
   runView,
   runWorkflow,
   setRef,
@@ -134,6 +137,111 @@ function Actions({ s, run }: { s: OpenRun; run: RunDetail }) {
       </Button>
       {s.busy && <Spinner label="Rerunning" labelHidden />}
     </Row>
+  )
+}
+
+/** The deployments a waiting run needs approved: Approve and Reject, asked first, for the
+ *  environments this login may review; GitHub for the rest. */
+function Deployments({ s, run }: { s: OpenRun; run: RunDetail }) {
+  const open = reviewable(s)
+  const mine = run.waitingFor.filter((d) => open.includes(d.id)).map((d) => d.name)
+  const others = run.waitingFor.filter((d) => !d.canApprove).map((d) => d.name)
+  const sent = run.waitingFor.filter((d) => s.reviewed.includes(d.id)).map((d) => d.name)
+  if (s.confirmReview && mine.length > 0) {
+    const approve = s.confirmReview === 'approve'
+    return (
+      <Callout tone="warning" title={`${approve ? 'Approve' : 'Reject'} deployment to ${mine.join(', ')}?`}>
+        <Stack gap="sm">
+          <Text size="sm">{approve ? 'The run goes on and deploys.' : 'The jobs waiting for it do not run, and the run fails.'}</Text>
+          <Row gap="xs" align="center">
+            <Button size="sm" variant="solid" tone={approve ? undefined : 'danger'} disabled={!!s.busy} onPress={() => reviewDeployments(approve)}>
+              {approve ? 'Approve' : 'Reject'}
+            </Button>
+            <Button size="sm" variant="ghost" onPress={() => askReview(null)}>
+              Keep waiting
+            </Button>
+            {(s.busy === 'approve' || s.busy === 'reject') && <Spinner label={approve ? 'Approving' : 'Rejecting'} labelHidden />}
+          </Row>
+        </Stack>
+      </Callout>
+    )
+  }
+  return (
+    <Callout tone="warning" title={`Waiting for approval to deploy to ${run.waitingFor.map((d) => d.name).join(', ')}`}>
+      <Stack gap="sm">
+        {sent.length > 0 && <Text size="sm">{`Review sent for ${sent.join(', ')}; GitHub has not moved the run on yet.`}</Text>}
+        {others.length > 0 && <Text size="sm">{`You can't review ${others.join(', ')}; a required reviewer must do it on GitHub.`}</Text>}
+        <Row gap="xs" wrap>
+          {mine.length > 0 && (
+            <>
+              <Button size="sm" variant="outline" onPress={() => askReview('approve')}>
+                Approve…
+              </Button>
+              <Button size="sm" variant="outline" onPress={() => askReview('reject')}>
+                Reject…
+              </Button>
+            </>
+          )}
+          <Button size="sm" variant={mine.length > 0 ? 'ghost' : 'outline'} icon="open-external" onPress={() => shell.openExternal(run.url)}>
+            Review deployments on GitHub
+          </Button>
+        </Row>
+      </Stack>
+    </Callout>
+  )
+}
+
+function ArtifactRow({ artifact, url }: { artifact: RunArtifact; url: string }) {
+  const gone = artifact.expired || (artifact.expiresAt !== null && artifact.expiresAt <= Date.now())
+  const when = expiry(gone, artifact.expiresAt)
+  return (
+    <ListItem onPress={gone ? undefined : () => shell.openExternal(url)}>
+      <Box direction="row" gap="sm" align="center">
+        <Box grow minWidth={0}>
+          <Text size="sm" weight="medium" muted={gone} truncate>
+            {artifact.name}
+          </Text>
+          <Text size="xs" muted>
+            {when ? `${bytes(artifact.bytes)} · ${when}` : bytes(artifact.bytes)}
+          </Text>
+        </Box>
+        {!gone && (
+          <Text size="xs" muted>
+            ↗
+          </Text>
+        )}
+      </Box>
+    </ListItem>
+  )
+}
+
+/** A finished run's artifacts; each opens the run's artifacts on GitHub, where they download (an
+ *  expired one no longer does). */
+function Artifacts({ run }: { run: RunDetail }) {
+  if (run.artifacts.length === 0) return null
+  return (
+    <Stack gap="xs">
+      <Row justify="between" align="center">
+        <Text size="sm" weight="semibold">
+          Artifacts
+        </Text>
+        <Text size="xs" muted>
+          {count(run.artifacts.length + run.moreArtifacts)}
+        </Text>
+      </Row>
+      <List label="Artifacts">
+        {run.artifacts.map((a) => (
+          <ArtifactRow key={a.id} artifact={a} url={`${run.url}#artifacts`} />
+        ))}
+      </List>
+      {run.moreArtifacts > 0 && (
+        <Row>
+          <Button size="sm" variant="ghost" icon="open-external" onPress={() => shell.openExternal(`${run.url}#artifacts`)}>
+            {`${count(run.moreArtifacts)} more on GitHub`}
+          </Button>
+        </Row>
+      )}
+    </Stack>
   )
 }
 
@@ -345,19 +453,12 @@ export function RunView() {
           </Text>
         </Row>
         <Live s={s} run={run} />
-        {run.state === 'waiting' && run.waitingFor.length > 0 && (
-          <Callout tone="warning" title={`Waiting for approval to deploy to ${run.waitingFor.join(', ')}`}>
-            <Row>
-              <Button size="sm" variant="outline" icon="open-external" onPress={() => shell.openExternal(run.url)}>
-                Review deployments on GitHub
-              </Button>
-            </Row>
-          </Callout>
-        )}
+        {run.state === 'waiting' && run.waitingFor.length > 0 && <Deployments s={s} run={run} />}
         <KeyValue items={details(run)} />
         <Actions s={s} run={run} />
         {s.error && <Problem error={s.error} onRetry={dismissError} retryLabel="Dismiss" />}
         <Jobs s={s} run={run} />
+        <Artifacts run={run} />
         <Logs s={s} run={run} />
       </Box>
     </Box>
