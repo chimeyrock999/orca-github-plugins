@@ -1,6 +1,6 @@
 # gh Focus
 
-For GitHub repos: the issue, pull request and Actions runs of the workspace you're in, beside your code. Read, comment, review and re-run without leaving the editor for the Tasks page. Not affiliated with GitHub.
+For GitHub repos: the issue, pull request and Actions runs of the workspace you're in, beside your code. Read, comment, review and rerun without leaving the editor for the Tasks page. Not affiliated with GitHub.
 
 Small and focused on the work at hand: the everyday reading, answering and reviewing happens beside the code. The detail work (merge, reviewers, the files diff, Projects) stays on Orca's Tasks page and pull request page, and the panel hands off to them. The Pull requests tab shows only the workspace's pull request and hands the repo's list to Orca's Tasks page; the Issues tab still lists the whole repo for now, and #22 shrinks it to a picker for the work at hand.
 

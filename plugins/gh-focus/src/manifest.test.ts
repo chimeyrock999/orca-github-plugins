@@ -2,7 +2,7 @@
 // page shows.
 import { assert, test } from 'orca/testing'
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 const root = join(import.meta.dirname, '..')
 
@@ -31,6 +31,16 @@ test('id and name do not suggest GitHub or Orca made the plugin', () => {
     assert.ok(!/github|orca/i.test(name), `${name} names another product`)
   }
   assert.match(manifest.description ?? '', /not affiliated with GitHub/)
+})
+
+// The catalog pins the folder as `source.path`, and Orca keys the panel by its id: neither may move
+// once a version is listed.
+test('the folder and the panel are named after the id', () => {
+  assert.equal(basename(root), manifest.id)
+  assert.deepEqual(
+    manifest.contributes.panels.map((p) => p.id),
+    [manifest.id],
+  )
 })
 
 test('engines.orca is the release the features were tested on', () => {
