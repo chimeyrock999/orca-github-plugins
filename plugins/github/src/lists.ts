@@ -30,21 +30,24 @@ function filterWords(filters: ItemFilters = {}): string[] {
   const words: string[] = []
   if (filters.author?.trim()) words.push(`author:${quoted(filters.author.trim())}`)
   if (filters.label?.trim()) words.push(`label:${quoted(filters.label.trim())}`)
+  if (filters.assignee?.trim()) words.push(`assignee:${quoted(filters.assignee.trim())}`)
   return words
 }
 
-/** The search for the repo's issues or pull requests in one state: qualifiers, the order when the
- *  rows are wanted (counts need none), then the words. Rows and counts share it, so they agree. */
+/** The search for the repo's issues or pull requests in one state (`all`: either): qualifiers, the
+ *  order when the rows are wanted (counts need none), then the words. Rows and counts share it, so
+ *  they agree. */
 export function itemSearch(
   repo: RepoRef,
   kind: 'issue' | 'pr',
-  state: 'open' | 'closed',
+  state: 'open' | 'closed' | 'all',
   words: string,
   filters?: ItemFilters,
   sort: ItemSort | null = 'created-desc'
 ): string {
   const order = sort ? [`sort:${sort}`] : []
-  return [`repo:${repo.nameWithOwner}`, `is:${kind}`, `is:${state}`, ...filterWords(filters), ...order, words.trim()]
+  const states = state === 'all' ? [] : [`is:${state}`]
+  return [`repo:${repo.nameWithOwner}`, `is:${kind}`, ...states, ...filterWords(filters), ...order, words.trim()]
     .filter(Boolean)
     .join(' ')
 }
@@ -137,12 +140,13 @@ function itemPage<Row>(data: SearchData, rows: Row[]): ItemPage<Row> {
   }
 }
 
-function issueState(node: ItemNode): IssueState {
+/** An issue's state from GitHub's state and state reason; the list and the timeline share it. */
+export function issueState(node: { state: string; stateReason?: string | null }): IssueState {
   if (node.state === 'OPEN') return 'open'
   return node.stateReason === 'NOT_PLANNED' || node.stateReason === 'DUPLICATE' ? 'not_planned' : 'done'
 }
 
-function pullState(node: ItemNode): PullState {
+export function pullState(node: { state: string; isDraft?: boolean; merged?: boolean }): PullState {
   if (node.merged) return 'merged'
   if (node.state === 'CLOSED') return 'closed'
   return node.isDraft ? 'draft' : 'open'

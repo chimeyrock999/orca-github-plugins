@@ -21,6 +21,8 @@ export type ErrorCode =
   /** A search the API cannot run, such as plain words in a runs search. */
   | 'bad_query'
   | 'gh_failed'
+  /** Panel only: a write got no answer in time, so it may or may not have landed. */
+  | 'unsure'
 
 export type PanelError = {
   code: ErrorCode
@@ -101,11 +103,11 @@ export type RunRow = {
 
 /** Search orders GitHub offers for issues and pull requests. */
 export type ItemSort = 'created-desc' | 'created-asc' | 'updated-desc' | 'comments-desc'
-export type ItemFilters = { author?: string; label?: string }
+export type ItemFilters = { author?: string; label?: string; assignee?: string }
 
-/** Issues and pull requests: `state` picks the list, `open` and `closed` count both. */
+/** Issues and pull requests: `state` picks the list (`all` is both), `open` and `closed` count both. */
 export type ItemListInput = {
-  state: 'open' | 'closed'
+  state: 'open' | 'closed' | 'all'
   query: string
   after: string | null
   filters?: ItemFilters
@@ -123,6 +125,100 @@ export type RunFilters = { workflow?: string; status?: string; event?: string; b
  *  `filters` win over the same qualifier. The runs API has no order: newest first. */
 export type RunListInput = { query: string; after: string | null; filters?: RunFilters }
 
+/** The reactions GitHub offers, by its enum name. */
+export const REACTIONS = ['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY', 'CONFUSED', 'HEART', 'ROCKET', 'EYES'] as const
+export type Reaction = (typeof REACTIONS)[number]
+/** One reaction on an issue or comment: how many, whether the viewer is one of them, and the
+ *  first few logins (for the tooltip). */
+export type ReactionGroup = { content: Reaction; count: number; viewerHasReacted: boolean; users: string[] }
+
+/** Why an issue was closed, as `gh issue close --reason` takes it. */
+export type CloseReason = 'completed' | 'not planned' | 'duplicate'
+
+export type TimelineComment = {
+  kind: 'comment'
+  /** GraphQL node id, for reactions. */
+  id: string
+  /** REST id, for edit and delete. */
+  databaseId: number
+  url: string
+  author: string | null
+  body: string
+  /** The body was cut to stay under the panel message limit. */
+  truncated: boolean
+  createdAt: number
+  edited: boolean
+  canEdit: boolean
+  canDelete: boolean
+  reactions: ReactionGroup[]
+}
+/** Another issue or pull request that mentions this one ("mentioned this"). */
+export type TimelineMention = {
+  kind: 'mention'
+  id: string
+  actor: string | null
+  createdAt: number
+  source: {
+    type: 'issue' | 'pull'
+    number: number
+    title: string
+    url: string
+    state: IssueState | PullState
+    /** `owner/name` of its repo. */
+    repo: string
+  }
+}
+export type TimelineState = {
+  kind: 'closed' | 'reopened'
+  id: string
+  actor: string | null
+  createdAt: number
+  /** Closed events only. */
+  reason: 'completed' | 'not_planned' | 'duplicate' | null
+}
+export type TimelineItem = TimelineComment | TimelineMention | TimelineState
+
+/** One issue with the start and the end of its timeline, as GitHub shows a long one: `head` from the
+ *  start, `next` the cursor after it (null once it meets `tail`), `tail` the latest items. */
+export type IssueDetail = {
+  id: string
+  number: number
+  title: string
+  url: string
+  state: IssueState
+  author: string | null
+  body: string
+  truncated: boolean
+  createdAt: number
+  closedAt: number | null
+  labels: string[]
+  assignees: string[]
+  milestone: string | null
+  canEdit: boolean
+  reactions: ReactionGroup[]
+  comments: number
+  /** Timeline items of the kinds shown, in all. */
+  total: number
+  head: TimelineItem[]
+  next: string | null
+  tail: TimelineItem[]
+  /** The gh login, so the viewer's own reactions read as You. */
+  viewer: string | null
+}
+
+export type IssueEdit = {
+  number: number
+  title?: string
+  body?: string
+  addLabels?: string[]
+  removeLabels?: string[]
+  addAssignees?: string[]
+  removeAssignees?: string[]
+}
+export type IssueCreate = { title: string; body: string; labels?: string[]; assignees?: string[] }
+/** A write's answer: nothing more than that it worked. */
+export type Done = Answer<Record<never, never>>
+
 declare module 'orca' {
   interface PluginRequests {
     /** The GitHub repo (`owner/name`) of the focused workspace. */
@@ -132,6 +228,9 @@ declare module 'orca' {
     'repo.pick': { input: { path: string }; output: RepoAnswer }
     /** Forgets the pick for the focused branch and name. */
     'repo.unpick': { output: RepoAnswer }
+    /** The issue and pull request Orca links to the focused workspace (one made from them), when
+     *  they are of its repo; null when there is none or Orca's CLI does not say. */
+    'repo.links': { output: Answer<{ issue: number | null; pull: number | null }> }
     /** One page of the focused repo's issues, newest first. */
     'issues.list': { input: ItemListInput; output: Answer<ItemPage<IssueRow>> }
     /** One page of the focused repo's pull requests, newest first. */
@@ -140,6 +239,23 @@ declare module 'orca' {
     'runs.list': { input: RunListInput; output: Answer<Page<RunRow>> }
     /** The focused repo's label names, for the label filter. */
     'labels.list': { output: Answer<{ names: string[] }> }
+    /** One issue with its body and the start and end of its timeline. */
+    'issue.get': { input: { number: number }; output: Answer<{ issue: IssueDetail }> }
+    /** The timeline after `after`, up to a page. */
+    'issue.timeline': { input: { number: number; after: string }; output: Answer<{ items: TimelineItem[]; next: string | null }> }
+    'issue.comment': { input: { number: number; body: string }; output: Done }
+    /** Edits or deletes a comment by its REST id. */
+    'comment.edit': { input: { id: number; body: string }; output: Done }
+    'comment.delete': { input: { id: number }; output: Done }
+    /** Closes with a reason; `comment` is posted first, as GitHub's Close with comment does. */
+    'issue.close': { input: { number: number; reason: CloseReason; duplicateOf?: number; comment?: string }; output: Done }
+    'issue.reopen': { input: { number: number; comment?: string }; output: Done }
+    'issue.edit': { input: IssueEdit; output: Done }
+    'issue.create': { input: IssueCreate; output: Answer<{ number: number; url: string }> }
+    /** Adds or removes the viewer's reaction on an issue or comment, by its node id. */
+    'reaction.set': { input: { subjectId: string; content: Reaction; on: boolean }; output: Done }
+    /** Logins that can be assigned in the focused repo. */
+    'assignees.list': { output: Answer<{ logins: string[] }> }
     /** The focused repo's workflows, for the workflow filter. */
     'workflows.list': { output: Answer<{ workflows: { id: number; name: string }[] }> }
   }

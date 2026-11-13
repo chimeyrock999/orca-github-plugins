@@ -1,7 +1,7 @@
 // How rows and errors read in the panel: a glyph and tone per state, the words around them. Pure,
 // so tests pin it without drawing. Tones only, never colours: Orca maps them to the theme.
 import type { Tone } from 'orca'
-import type { ErrorCode, IssueRow, PullRow, RunRow } from './protocol'
+import type { ErrorCode, IssueRow, PullRow, Reaction, ReactionGroup, RunRow, TimelineMention, TimelineState } from './protocol'
 
 export type Look = { glyph: string; tone: Tone; label: string }
 
@@ -26,8 +26,46 @@ const RUN: Record<RunRow['state'], Look> = {
   skipped: { glyph: '⊖', tone: 'neutral', label: 'Skipped' }
 }
 
-export const issueLook = (row: IssueRow): Look => ISSUE[row.state]
-export const pullLook = (row: PullRow): Look => PULL[row.state]
+export const issueLook = (row: Pick<IssueRow, 'state'>): Look => ISSUE[row.state]
+export const pullLook = (row: Pick<PullRow, 'state'>): Look => PULL[row.state]
+
+/** The state glyph of an issue or pull request another one mentions. */
+export function sourceLook(source: TimelineMention['source']): Look {
+  return source.type === 'pull' ? pullLook({ state: source.state as PullRow['state'] }) : issueLook({ state: source.state as IssueRow['state'] })
+}
+
+/** What a closed or reopened event says after its actor: "closed this as not planned". */
+export function stateWords(item: TimelineState): { words: string; look: Look } {
+  if (item.kind === 'reopened') return { words: 'reopened this', look: ISSUE.open }
+  if (item.reason === 'completed') return { words: 'closed this as completed', look: ISSUE.done }
+  return { words: `closed this as ${item.reason === 'duplicate' ? 'a duplicate' : 'not planned'}`, look: ISSUE.not_planned }
+}
+
+export const EMOJI: Record<Reaction, string> = {
+  THUMBS_UP: '👍',
+  THUMBS_DOWN: '👎',
+  LAUGH: '😄',
+  HOORAY: '🎉',
+  CONFUSED: '😕',
+  HEART: '❤️',
+  ROCKET: '🚀',
+  EYES: '👀'
+}
+
+/** Who reacted, as GitHub's tooltip says it: "You, ana and 3 others reacted with 👍". The viewer
+ *  (`viewer`, or `@me` before GitHub knew the login) reads as You, once. */
+export function reactionTip(group: ReactionGroup, viewer: string | null = null): string {
+  const names = group.users.filter((u) => u !== '@me' && u !== viewer)
+  const shown = [...(group.viewerHasReacted ? ['You'] : []), ...names].slice(0, 3)
+  const others = group.count - shown.length
+  const who =
+    others > 0
+      ? `${shown.join(', ')} and ${others} other${others === 1 ? '' : 's'}`
+      : shown.length > 1
+        ? `${shown.slice(0, -1).join(', ')} and ${shown.at(-1)}`
+        : (shown[0] ?? `${group.count} people`)
+  return `${who} reacted with ${EMOJI[group.content]}`
+}
 export const runLook = (row: RunRow): Look => RUN[row.state]
 
 /** What happened last to an issue or pull request, and when: "opened", "closed" or "merged". */
@@ -86,7 +124,12 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
   timeout: { title: 'GitHub took too long', hint: 'Press Retry.', tone: 'warning' },
   cancelled: { title: 'Request cancelled', hint: 'Press Retry.', tone: 'neutral' },
   bad_query: { title: 'Search runs with qualifiers', hint: 'For example branch:main status:failure. GitHub cannot search runs by words.', tone: 'warning' },
-  gh_failed: { title: 'gh failed', hint: 'Press Retry. The message below is what gh said.', tone: 'danger' }
+  gh_failed: { title: 'gh failed', hint: 'Press Retry. The message below is what gh said.', tone: 'danger' },
+  unsure: {
+    title: 'It may have gone through',
+    hint: 'GitHub did not answer in time. Check the issue (or the list) before you try again, so nothing is posted twice.',
+    tone: 'warning'
+  }
 }
 
 export const problemOf = (code: ErrorCode): Problem => PROBLEMS[code] ?? PROBLEMS.gh_failed

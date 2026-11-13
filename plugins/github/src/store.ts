@@ -12,15 +12,15 @@ export type AnyRow = IssueRow | PullRow | RunRow
 export type ListPage = Page<AnyRow> & Partial<Pick<ItemPage<AnyRow>, 'open' | 'closed'>>
 
 export type ListState = {
-  state: 'open' | 'closed'
+  state: 'open' | 'closed' | 'all'
   query: string
   /** The cursor each page was asked with; the last one is the page on screen. */
   cursors: (string | null)[]
   /** null while the page loads. */
   answer: Answer<ListPage> | null
-  /** Key of the row open in detail. */
+  /** Key of the row open in detail; on Issues, `new` is the new issue form. */
   open: string | null
-  /** Filter values by name (author, label; workflow, status, event, branch); empty means any. */
+  /** Filter values by name (author, assignee, label; workflow, status, event, branch); empty means any. */
   filters: Record<string, string>
   sort: ItemSort
   /** Which strip under the counts is open. */
@@ -39,11 +39,11 @@ function fresh(): ListState {
 export const repo = atom<RepoAnswer | null>(null)
 export const tab = atom<Kind>('tab', 'issues', { persist: 'plugin' })
 export const lists: Record<Kind, Atom<ListState>> = { issues: atom(fresh()), pulls: atom(fresh()), runs: atom(fresh()) }
-/** Choices for the label and workflow filters, asked for when a filter strip first opens. */
-export const choices = atom<{ labels: string[] | null; workflows: { id: number; name: string }[] | null }>({
-  labels: null,
-  workflows: null
-})
+export type Choices = { labels: string[] | null; workflows: { id: number; name: string }[] | null; assignees: string[] | null }
+const noChoices = (): Choices => ({ labels: null, workflows: null, assignees: null })
+/** Labels, workflows and assignable logins of the repo, asked for the first time a filter or picker
+ *  needs them. */
+export const choices = atom<Choices>(noChoices())
 // A new repo makes choices still on their way stale.
 let choicesFor = 0
 
@@ -114,22 +114,29 @@ export const clearFilters = (kind: Kind) => restart(kind, { filters: {}, drafts:
 /** How many filters hold a value. */
 export const filterCount = (s: ListState) => Object.values(s.filters).filter(Boolean).length
 
+/** Asks for one kind of choice unless it is already there; a failure leaves none to pick. */
+export function loadChoices(name: keyof Choices): Promise<void> | void {
+  if (read(choices)[name] !== null) return
+  const mine = choicesFor
+  const keep = (value: Choices[typeof name]): void => {
+    if (mine === choicesFor) update(choices, (c) => ({ ...c, [name]: value }))
+  }
+  const asked =
+    name === 'workflows'
+      ? plugin.request('workflows.list').then((a) => keep(a.ok ? a.workflows : []))
+      : name === 'labels'
+        ? plugin.request('labels.list').then((a) => keep(a.ok ? a.names : []))
+        : plugin.request('assignees.list').then((a) => keep(a.ok ? a.logins : []))
+  return asked.catch(() => keep([]))
+}
+
 /** Opens or closes a strip; the label or workflow choices load the first time a filter opens. */
 export function toggleTool(kind: Kind, tool: 'filter' | 'sort'): Promise<void> | void {
   update(lists[kind], (s) => ({ ...s, tool: s.tool === tool ? null : tool }))
   if (tool !== 'filter' || read(lists[kind]).tool !== 'filter') return
-  const mine = choicesFor
-  const keep = (value: unknown): void => {
-    if (mine === choicesFor) update(choices, (c) => ({ ...c, [kind === 'runs' ? 'workflows' : 'labels']: value }))
-  }
-  if (kind === 'runs') {
-    if (read(choices).workflows !== null) return
-    return plugin.request('workflows.list').then((a) => keep(a.ok ? a.workflows : []), () => keep([]))
-  }
-  if (read(choices).labels !== null) return
-  return plugin.request('labels.list').then((a) => keep(a.ok ? a.names : []), () => keep([]))
+  return loadChoices(kind === 'runs' ? 'workflows' : 'labels')
 }
-export const showState = (kind: Kind, state: 'open' | 'closed') => restart(kind, { state })
+export const showState = (kind: Kind, state: ListState['state']) => restart(kind, { state })
 
 export function next(kind: Kind): Promise<void> | void {
   const s = read(lists[kind])
@@ -167,7 +174,7 @@ export function setRepo(answer: RepoAnswer): Promise<void> | void {
   if (same) return
   started.clear()
   choicesFor++
-  set(choices, { labels: null, workflows: null })
+  set(choices, noChoices())
   for (const kind of KINDS) {
     loads[kind]++
     set(lists[kind], fresh())
@@ -193,7 +200,7 @@ export async function refresh(): Promise<void> {
   if (!same) return
   // Counted again too, and label or workflow choices asked for again when a filter next opens.
   choicesFor++
-  set(choices, { labels: null, workflows: null })
+  set(choices, noChoices())
   update(lists[read(tab)], (s) => ({ ...s, counts: null }))
   await load(read(tab))
 }
@@ -204,6 +211,8 @@ export function githubUrl(): string | null {
   if (!r?.ok) return null
   const kind = read(tab)
   const s = read(lists[kind])
+  // An issue opens by number, so it need not be on the page.
+  if (kind === 'issues' && s.open && /^\d+$/.test(s.open)) return `${r.url}/issues/${s.open}`
   if (s.open && s.answer?.ok) {
     const row = s.answer.rows.find((x) => rowKey(x) === s.open)
     if (row) return row.url

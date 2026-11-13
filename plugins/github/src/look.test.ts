@@ -1,6 +1,6 @@
 // The words and tones rows and errors show with.
 import { assert, test } from 'orca/testing'
-import { count, duration, pageLine, issueLook, itemEvent, problemOf, pullLook, runCause, runLook } from './look'
+import { count, duration, pageLine, issueLook, itemEvent, problemOf, pullLook, reactionTip, runCause, runLook, stateWords } from './look'
 import type { IssueRow, PullRow, RunRow } from './protocol'
 
 const issue: IssueRow = { number: 8, title: 't', url: 'u', state: 'open', author: 'mai-t', labels: [], createdAt: 1, closedAt: null }
@@ -68,4 +68,24 @@ test('pageLine counts pages GitHub lets anyone reach', () => {
   assert.equal(pageLine(2, 1234, 1000, 30), 'Page 2 of 34 · 1,234 total · first 1,000 shown')
   assert.equal(pageLine(1, 5000, null, 30), 'Page 1 of 167 · 5,000 total')
   assert.equal(pageLine(1, 0, null, 30), 'Page 1 of 1 · 0 total')
+})
+
+test('reaction tooltips name you first, then the others, then a count', () => {
+  const g = (count: number, users: string[], viewerHasReacted = false) => ({ content: 'THUMBS_UP' as const, count, viewerHasReacted, users })
+  assert.equal(reactionTip(g(1, ['ana'])), 'ana reacted with 👍')
+  assert.equal(reactionTip(g(2, ['ana', 'olu'])), 'ana and olu reacted with 👍')
+  assert.equal(reactionTip(g(5, ['chimey', 'ana', 'olu'], true)), 'You, chimey, ana and 2 others reacted with 👍')
+  assert.equal(reactionTip(g(1, ['@me'], true)), 'You reacted with 👍')
+  assert.equal(reactionTip(g(4, ['ana', 'olu', 'kenji'])), 'ana, olu, kenji and 1 other reacted with 👍')
+  // GitHub lists the viewer's own login among the reactors: it reads as You, once.
+  assert.equal(reactionTip(g(1, ['thoai'], true), 'thoai'), 'You reacted with 👍')
+  assert.equal(reactionTip(g(2, ['thoai', 'ana'], true), 'thoai'), 'You and ana reacted with 👍')
+})
+
+test('state events read like GitHub', () => {
+  const ev = (kind: 'closed' | 'reopened', reason: 'completed' | 'not_planned' | 'duplicate' | null) => ({ kind, reason, id: 'x', actor: null, createdAt: 0 })
+  assert.equal(stateWords(ev('closed', 'completed')).words, 'closed this as completed')
+  assert.equal(stateWords(ev('closed', 'not_planned')).words, 'closed this as not planned')
+  assert.equal(stateWords(ev('closed', 'duplicate')).words, 'closed this as a duplicate')
+  assert.equal(stateWords(ev('reopened', null)).look.tone, 'success')
 })

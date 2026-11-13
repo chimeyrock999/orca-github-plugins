@@ -1,7 +1,7 @@
 // terminalPath over a fake runner, and the PATH the worker runs commands with.
 import { assert, test } from 'orca/testing'
 import { delimiter } from 'node:path'
-import { fallbackPath, parseTerminalShow, terminalPath, type Run } from './exec'
+import { fallbackPath, parseTerminalShow, parseWorktreeShow, terminalPath, workspaceLinks, type Run } from './exec'
 
 function fake(answer: { code: number; stdout?: string; stderr?: string } | NodeJS.ErrnoException): Run & { calls: unknown[][] } {
   const calls: unknown[][] = []
@@ -49,4 +49,19 @@ test('terminalPath: a failed CLI gives null', async () => {
 test("the fallback folders come after the user's PATH, so its gh wins", () => {
   assert.equal(fallbackPath('/home/me/.local/bin:/usr/bin'), ['/home/me/.local/bin:/usr/bin', '/opt/homebrew/bin', '/usr/local/bin'].join(delimiter))
   assert.equal(fallbackPath(undefined).split(delimiter)[0], '/usr/bin')
+})
+
+test('parseWorktreeShow reads the linked issue, pull request and project', () => {
+  const show = (worktree: unknown) => JSON.stringify({ ok: true, result: { worktree } })
+  assert.deepEqual(parseWorktreeShow(show({ projectId: 'github:octo/app', linkedIssue: 4, linkedPR: null })), { project: 'github:octo/app', issue: 4, pull: null })
+  assert.deepEqual(parseWorktreeShow(show({ linkedIssue: '4', linkedPR: 131 })), { project: null, issue: null, pull: 131 })
+  assert.equal(parseWorktreeShow('{"ok":false,"error":{"code":"selector_not_found"}}'), null)
+  assert.equal(parseWorktreeShow('garbage'), null)
+})
+
+test('workspaceLinks asks the CLI by path, and a CLI that will not run is null', async () => {
+  const runner = fake({ code: 0, stdout: JSON.stringify({ ok: true, result: { worktree: { projectId: 'github:octo/app', linkedIssue: 4 } } }) })
+  assert.deepEqual(await workspaceLinks('/code/app wt', runner), { project: 'github:octo/app', issue: 4, pull: null })
+  assert.deepEqual(runner.calls[0][1], ['worktree', 'show', '--worktree=path:/code/app wt', '--json'])
+  assert.equal(await workspaceLinks('/code/app', fake(Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }))), null)
 })

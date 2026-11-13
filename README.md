@@ -20,7 +20,7 @@ so the plugin holds no tokens of its own.
 
 | Plugin | Type | Status |
 | :--- | :--- | :--- |
-| [`plugins/github`](plugins/github) | `trusted-worker` | Foundation: tabs, lists, paging, search |
+| [`plugins/github`](plugins/github) | `trusted-worker` | Tabs, lists, paging, search; issues: detail, comments, close/reopen, edit, create, reactions |
 
 ## Develop
 

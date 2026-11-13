@@ -1,5 +1,5 @@
 // Sample answers the panel tests and check scenarios stand in for the worker with.
-import type { Answer, IssueRow, ItemPage, Page, PullRow, RepoAnswer, RunRow } from './protocol'
+import type { Answer, IssueDetail, IssueRow, ItemPage, Page, PullRow, RepoAnswer, RunRow, TimelineComment, TimelineItem } from './protocol'
 
 const now = Date.UTC(2026, 10, 12, 9, 0)
 const hour = 3_600_000
@@ -54,4 +54,75 @@ export function itemPage<Row>(rows: Row[], total: number, next: string | null, c
 
 export function runPage(rows: RunRow[], total = rows.length, next: string | null = null, limit: number | null = null): Answer<Page<RunRow>> {
   return { ok: true, rows, total, next, limit }
+}
+
+export function commentItem(n: number, change: Partial<TimelineComment> = {}): TimelineComment {
+  return {
+    kind: 'comment',
+    id: `IC_${n}`,
+    databaseId: 1000 + n,
+    url: `https://github.com/octo/app/issues/120#issuecomment-${1000 + n}`,
+    author: 'kenji',
+    body: `Comment ${n}`,
+    truncated: false,
+    createdAt: now - (40 - n) * hour,
+    edited: false,
+    canEdit: false,
+    canDelete: false,
+    reactions: [],
+    ...change
+  }
+}
+
+export const timeline: TimelineItem[] = [
+  commentItem(1, { body: 'Reproduced on 1.8.0. Same as #97.', reactions: [{ content: 'HOORAY', count: 1, viewerHasReacted: false, users: ['mai-t'] }] }),
+  {
+    kind: 'mention',
+    id: 'CRE_1',
+    actor: 'chimeyrock999',
+    createdAt: now - 30 * hour,
+    source: { type: 'pull', number: 131, title: 'fix: stream CSV export past 10k rows', url: 'https://github.com/octo/app/pull/131', state: 'open', repo: 'octo/app' }
+  },
+  commentItem(2, { author: 'chimeyrock999', body: 'Working on it in #131.', edited: true, canEdit: true, canDelete: true }),
+  {
+    kind: 'mention',
+    id: 'CRE_2',
+    actor: 'lucia',
+    createdAt: now - 20 * hour,
+    source: { type: 'issue', number: 97, title: 'Excel export truncates long cells', url: 'https://github.com/octo/app/issues/97', state: 'done', repo: 'octo/app' }
+  },
+  {
+    kind: 'mention',
+    id: 'CRE_3',
+    actor: 'olu',
+    createdAt: now - 10 * hour,
+    source: { type: 'pull', number: 412, title: 'docs: note the 10k export limit', url: 'https://github.com/octo/docs/pull/412', state: 'merged', repo: 'octo/docs' }
+  }
+]
+
+export function issueDetail(change: Partial<IssueDetail> = {}): IssueDetail {
+  return {
+    id: 'I_120',
+    number: 120,
+    title: 'Export CSV drops rows past 10k',
+    url: 'https://github.com/octo/app/issues/120',
+    state: 'open',
+    author: 'mai-t',
+    body: 'Exporting a table with more than 10,000 rows writes only the first 10,000.\n\n![shot](https://user-images.githubusercontent.com/1.png)',
+    truncated: false,
+    createdAt: now - 76 * hour,
+    closedAt: null,
+    labels: ['bug', 'export'],
+    assignees: ['chimeyrock999'],
+    milestone: 'v1.9',
+    canEdit: true,
+    reactions: [{ content: 'THUMBS_UP', count: 2, viewerHasReacted: true, users: ['chimeyrock999', 'ana'] }],
+    comments: 2,
+    total: timeline.length,
+    head: timeline,
+    next: null,
+    tail: [],
+    viewer: 'chimeyrock999',
+    ...change
+  }
 }

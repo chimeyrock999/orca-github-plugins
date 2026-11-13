@@ -1,7 +1,7 @@
 // `orca plugin check` renders the panel once per scenario. `requests` stand in for the worker, so
 // no scenario reaches the real gh.
 import { defineCheck } from 'orca/testing'
-import { failed, issueRows, itemPage, pullRows, repoOk, runPage, runRows } from './fixtures'
+import { commentItem, failed, issueDetail, issueRows, itemPage, pullRows, repoOk, runPage, runRows } from './fixtures'
 
 const lists = {
   'repo.get': repoOk,
@@ -10,9 +10,36 @@ const lists = {
   'runs.list': runPage(runRows, 296, '2')
 }
 const empty = itemPage([], 0, null)
+// A workspace made from issue 120 opens on it, which is how these scenarios show an issue.
+const linked = { 'repo.links': { ok: true as const, issue: 120, pull: null } }
+const longTimeline = issueDetail({
+  head: Array.from({ length: 3 }, (_, i) => commentItem(i + 1)),
+  tail: [commentItem(40, { body: 'Shipped in 1.9.', reactions: [{ content: 'ROCKET', count: 3, viewerHasReacted: true, users: ['ana', 'olu'] }] })],
+  next: 'c3',
+  total: 41,
+  comments: 38
+})
 
 export default defineCheck({
   issues: { requests: lists },
+  'issue-detail': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: issueDetail() } } },
+  'issue-closed': {
+    requests: {
+      ...lists,
+      ...linked,
+      'issue.get': {
+        ok: true,
+        issue: issueDetail({
+          state: 'not_planned',
+          closedAt: Date.UTC(2026, 10, 12, 8, 0),
+          head: [...issueDetail().head, { kind: 'closed', id: 'CE_1', actor: 'mai-t', createdAt: Date.UTC(2026, 10, 12, 8, 0), reason: 'not_planned' }]
+        })
+      }
+    }
+  },
+  'issue-long-timeline': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: longTimeline } } },
+  'issue-read-only': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: issueDetail({ canEdit: false }) } } },
+  'issue-not-found': { requests: { ...lists, ...linked, 'issue.get': failed('not_found', 'Could not resolve to an Issue with the number of 120.') } },
   'pull-requests': { requests: lists, persisted: { plugin: { tab: 'pulls' } } },
   actions: { requests: lists, persisted: { plugin: { tab: 'runs' } } },
   'empty-repo': { requests: { 'repo.get': repoOk, 'issues.list': empty, 'pulls.list': empty, 'runs.list': empty } },
