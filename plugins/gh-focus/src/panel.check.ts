@@ -60,6 +60,35 @@ export default defineCheck({
       }
     }
   },
+  // Merged and done (✓) beside open (◉) mentions, one from a repo with a long name.
+  'issue-mentions': {
+    requests: {
+      ...lists,
+      ...linked,
+      'issue.get': {
+        ok: true,
+        issue: issueDetail({
+          head: [
+            ...issueDetail().head,
+            {
+              kind: 'mention',
+              id: 'CRE_4',
+              actor: 'olu',
+              createdAt: Date.UTC(2026, 10, 12, 9, 0),
+              source: {
+                type: 'pull',
+                number: 135,
+                title: 'feat: stream every export through one writer',
+                url: 'https://github.com/octo-platform-engineering/data-export-service/pull/135',
+                state: 'merged',
+                repo: 'octo-platform-engineering/data-export-service'
+              }
+            }
+          ]
+        })
+      }
+    }
+  },
   'issue-long-timeline': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: longTimeline } } },
   'issue-read-only': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: issueDetail({ canEdit: false }) } } },
   'issue-not-found': { requests: { ...lists, ...linked, 'issue.get': failed('not_found', 'Could not resolve to an Issue with the number of 120.') } },

@@ -4,6 +4,7 @@ import { assert, hostError, mockHost, mount, test } from 'orca/testing'
 import * as panel from '../../../src/panel'
 import { before, commentItem, failed, issueDetail, links, linkedRows, pullDetail, ref, repoOk, rowOf } from '../../fixtures/fixtures'
 import { loadIssue, mergeTimeline, react } from '../../../src/panel/issues/issue-store'
+import { GLYPH_WIDTH } from '../../../src/panel/parts'
 import { setRepo } from '../../../src/panel/store'
 import type { IssueDetail, LinkedRef } from '../../../src/shared/protocol'
 
@@ -55,7 +56,6 @@ test('a row opens the issue: state, labels, assignees, milestone, body and timel
   assert.ok(view.findAll({ type: 'Markdown' }).some((m) => /\[#97\]\(https:\/\/github\.com\/octo\/app\/issues\/97\)/.test(String(m.props.content))))
   assert.ok(view.find({ text: 'Images show on GitHub only.' }))
   assert.ok(view.find({ type: 'ListItem', text: /fix: stream CSV export past 10k rows/ }))
-  assert.ok(view.find({ type: 'Text', text: 'octo/docs#412' }))
   assert.ok(view.find({ type: 'ListItem', text: /lucia mentioned this/ }))
   assert.ok(view.find({ text: /commented .* · edited/ }))
   await view.press({ label: 'Open on GitHub', type: 'IconButton' })
@@ -63,6 +63,32 @@ test('a row opens the issue: state, labels, assignees, milestone, body and timel
   assert.deepEqual(view.errors, [])
   assert.deepEqual(view.warnings, [])
   assert.deepEqual(view.refusals, [])
+  await view.unmount()
+})
+
+test('a mention keeps its title first: the number beside it, another repo on the line under it', async () => {
+  const view = await openIssue120()
+  const title = view.find({ type: 'Text', text: 'docs: note the 10k export limit' })
+  const number = view.find({ type: 'Text', text: '#412' })
+  assert.ok(title && number)
+  // The repo leaves the title's line, so a long owner or repo name never cuts the title short.
+  assert.equal(view.find({ type: 'Text', text: 'octo/docs#412' }), null)
+  assert.equal(rowOf(rowOf(number.path)), rowOf(rowOf(title.path)))
+  assert.ok(view.find({ type: 'Text', text: /^octo\/docs · olu mentioned this · / }))
+  // A mention from this repo names no repo.
+  assert.ok(view.find({ type: 'Text', text: /^lucia mentioned this · / }))
+  assert.equal(view.find({ type: 'Text', text: /^octo\/app · / }), null)
+  await view.unmount()
+})
+
+test('every state glyph sits in the same fixed slot, so titles line up and a narrow ✓ keeps its gap', async () => {
+  const view = await openIssue120()
+  // The mention's second line starts past an empty slot of the same width, so it is left out here.
+  const slots = view.findAll({ type: 'Box' }).filter((b) => b.props.width === GLYPH_WIDTH && b.text)
+  // The mentions' ◉ and ✓ (and the issue's own state) all sit in one fixed-width slot that never shrinks.
+  assert.ok(slots.some((b) => b.text === '✓'))
+  assert.ok(slots.some((b) => b.text === '◉'))
+  assert.ok(slots.every((b) => b.props.shrink === false && b.props.justify === 'center'))
   await view.unmount()
 })
 

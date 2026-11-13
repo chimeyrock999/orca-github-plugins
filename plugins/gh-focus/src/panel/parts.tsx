@@ -1,5 +1,5 @@
 // Pieces every view draws: a problem with its hint, and a state glyph.
-import { Button, Callout, List, ListItem, Row, Stack, Text } from 'orca'
+import { Box, Button, Callout, List, ListItem, Row, Stack, Text } from 'orca'
 import { problemOf, type Look } from '../shared/look'
 import type { PanelError } from '../shared/protocol'
 
@@ -64,11 +64,18 @@ export function Problem({
   )
 }
 
+/** The width of a glyph's slot; a line that starts under a glyph's text skips as much. */
+export const GLYPH_WIDTH = 16
+
+/** A state glyph in a fixed slot: glyphs differ in width (✓ is narrow, ◉ wide), so the slot keeps
+ *  the gap after each one the same and lines up the text beside a column of them. */
 export function Glyph({ look }: { look: Look }) {
   return (
-    <Text tone={look.tone} size="md" weight="semibold">
-      {look.glyph}
-    </Text>
+    <Box width={GLYPH_WIDTH} justify="center" shrink={false}>
+      <Text tone={look.tone} size="md" weight="semibold">
+        {look.glyph}
+      </Text>
+    </Box>
   )
 }
 
