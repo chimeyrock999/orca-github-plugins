@@ -224,6 +224,12 @@ test('Edit sends only what changed', async () => {
   const h = host()
   const view = await openIssue120(h)
   await view.press({ label: 'Edit title and body' })
+  // Only the Title box sits beside Open on GitHub; Body and Save take the panel's whole width.
+  const bar = view.findAll({ type: 'Toolbar' }).find((b) => b.props.label === 'Issue')
+  const titleRow = rowOf(rowOf(bar!.path))
+  assert.ok(view.find({ label: 'Title' })?.path.startsWith(`${titleRow}/`))
+  assert.ok(!view.find({ label: 'Body' })?.path.startsWith(`${titleRow}/`))
+  assert.ok(!view.find({ type: 'Button', text: 'Save' })?.path.startsWith(`${titleRow}/`))
   await view.type({ label: 'Title' }, 'CSV export stops at 10k rows', { replace: true })
   await view.press({ text: 'Save' })
   assert.deepEqual(h.last('issue.edit'), { number: 120, title: 'CSV export stops at 10k rows' })

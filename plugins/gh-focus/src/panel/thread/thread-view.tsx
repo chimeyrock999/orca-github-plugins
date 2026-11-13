@@ -458,14 +458,15 @@ export function LabelsAndAssignees({ t, d, s }: { t: AnyThread; d: ThreadDetail;
   )
 }
 
-/** The title, or its editor, with Edit (where GitHub allows it, not while editing) and Open on GitHub
- *  beside it; the two are kept whole, so they do not stack under each other in a narrow sidebar. */
+/** The title, or its box while editing, with Edit (where GitHub allows it, not while editing) and
+ *  Open on GitHub beside it; the two are kept whole, so they do not stack under each other in a narrow
+ *  sidebar. The body and Save take the whole width below. */
 export function TitleRow({ t, d, s, label }: { t: AnyThread; d: ThreadDetail; s: ThreadState<ThreadDetail>; label: string }) {
-  return (
-    <Box direction="row" gap="xs" align="start">
+  const row = (
+    <Box direction="row" gap="xs" align={s.editing ? 'end' : 'start'}>
       <Box grow minWidth={0}>
         {s.editing ? (
-          <EditTitle t={t} d={d} s={s} />
+          <Input label="Title" value={s.editing.title} invalid={!s.editing.title.trim()} onChange={(title) => t.setEditing({ title })} />
         ) : (
           <Text size="md" weight="semibold">
             {d.title}
@@ -480,13 +481,20 @@ export function TitleRow({ t, d, s, label }: { t: AnyThread; d: ThreadDetail; s:
       </Box>
     </Box>
   )
-}
-
-function EditTitle({ t, d, s }: { t: AnyThread; d: ThreadDetail; s: ThreadState<ThreadDetail> }) {
-  const editing = s.editing!
+  if (!s.editing) return row
   return (
     <Stack gap="sm">
-      <Input label="Title" value={editing.title} invalid={!editing.title.trim()} onChange={(title) => t.setEditing({ title })} />
+      {row}
+      <EditBody t={t} d={d} s={s} />
+    </Stack>
+  )
+}
+
+/** The body editor under the title box, with Save and Cancel. */
+function EditBody({ t, d, s }: { t: AnyThread; d: ThreadDetail; s: ThreadState<ThreadDetail> }) {
+  const editing = s.editing!
+  return (
+    <>
       {/* A body cut to fit the panel would lose its end if saved, so it is edited on GitHub. */}
       <Textarea label="Body" rows={10} value={editing.body} disabled={d.truncated} onChange={(body) => t.setEditing({ body })} />
       {d.truncated && (
@@ -503,6 +511,6 @@ function EditTitle({ t, d, s }: { t: AnyThread; d: ThreadDetail; s: ThreadState<
         </Button>
         {s.busy === 'edit' && <Spinner label="Saving" labelHidden />}
       </Row>
-    </Stack>
+    </>
   )
 }
