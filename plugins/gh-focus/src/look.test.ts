@@ -1,10 +1,10 @@
 // The words and tones rows and errors show with.
 import { assert, test } from 'orca/testing'
-import { count, duration, pageLine, issueLook, itemEvent, problemOf, pullLook, reactionTip, runCause, runLook, stateWords } from './look'
-import type { IssueRow, PullRow, RunRow } from './protocol'
+import { count, duration, pageLine, issueLook, linkCommand, linkedLook, problemOf, pullLook, reactionTip, runCause, runLook, stateWords } from './look'
+import type { IssueState, LinkedRow, PullState, RunRow } from './protocol'
 
-const issue: IssueRow = { number: 8, title: 't', url: 'u', state: 'open', author: 'mai-t', labels: [], createdAt: 1, closedAt: null }
-const pull: PullRow = { ...issue, state: 'open', branch: 'fix/x', mergedAt: null }
+const issue: { state: IssueState } = { state: 'open' }
+const pull: { state: PullState } = { state: 'open' }
 const run: RunRow = {
   id: 1,
   runNumber: 296,
@@ -35,11 +35,19 @@ test('states read like GitHub: open green, done and merged in the text colour, f
   assert.notEqual(issueLook({ ...issue, state: 'done' }).glyph, issueLook({ ...issue, state: 'not_planned' }).glyph)
 })
 
-test('itemEvent: opened, closed or merged, with its time', () => {
-  assert.deepEqual(itemEvent(issue), { verb: 'opened', at: 1 })
-  assert.deepEqual(itemEvent({ ...issue, state: 'done', closedAt: 5 }), { verb: 'closed', at: 5 })
-  assert.deepEqual(itemEvent({ ...pull, state: 'merged', closedAt: 5, mergedAt: 6 }), { verb: 'merged', at: 6 })
-  assert.deepEqual(itemEvent({ ...pull, state: 'draft' }), { verb: 'opened', at: 1 })
+test('a linked item reads like its kind; one GitHub did not answer for is grey', () => {
+  const row: LinkedRow = { number: 8, repo: null, title: 't', url: 'u', state: 'merged', updatedAt: 1 }
+  assert.equal(linkedLook('pulls', row).label, 'Merged')
+  assert.equal(linkedLook('issues', { ...row, state: 'not_planned' }).label, 'Not planned')
+  assert.deepEqual(linkedLook('issues', { ...row, state: null }).tone, 'neutral')
+  // A pull request Orca keeps as an issue link reads as the pull request it is.
+  assert.equal(linkedLook('issues', row).label, 'Merged')
+  assert.equal(linkedLook('pulls', { ...row, state: 'not_planned' }).label, 'Not planned')
+})
+
+test('the link command names the repo and the kind, with the number left to fill in', () => {
+  assert.equal(linkCommand('https://github.com/octo/app', 'issues'), 'orca reference add https://github.com/octo/app/issues/<number> --worktree current')
+  assert.equal(linkCommand('https://github.com/octo/app', 'pulls'), 'orca reference add https://github.com/octo/app/pull/<number> --worktree current')
 })
 
 test('runCause says what started the run', () => {

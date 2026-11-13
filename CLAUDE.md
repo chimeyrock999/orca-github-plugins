@@ -13,7 +13,9 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
   - `src/host-error.ts`: what a rejected Orca call means to the panel (`hostFailure`), shared by the
     panel's `requestFailed` and the worker's host calls.
   - `src/repo.ts` (+ `src/focus.ts`, `src/exec.ts`): the focused workspace's repo, `repo.get`, `repo.changed`.
-  - `src/lists.ts`: one page of issues, pull requests (GraphQL search) or runs (REST).
+  - `src/lists.ts`: one page of runs (REST), the repo's labels and workflows.
+  - `src/linked.ts`: what Orca links to the workspace (`orca worktree show`'s `linkedItems`, read in
+    `src/exec.ts`), their state from GitHub in one GraphQL query, and the free agent Ask agent types into.
   - `src/timeline.ts`: the timeline both share (GraphQL pages, cut to fit the message limit).
   - `src/issues.ts`: one issue (GraphQL body and timeline) and its writes (gh issue commands).
   - `src/pulls.ts`: one pull request (refs, merge state, review decision, checks, timeline with
@@ -23,9 +25,11 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
     no DOM, only the `orca` catalog; state in atoms; glyphs, tones and words.
   - `src/thread-store.ts`, `src/thread-view.tsx`: an open issue or pull request (a thread), one per
     tab, and the pieces both draw (posts, reactions, timeline, pickers).
-  - `src/issue-view.tsx`, `src/issue-forms.tsx`, `src/issue-store.ts`: the issue detail, its forms
-    and state; `src/pull-view.tsx`, `src/pull-store.ts`: the workspace's pull request (no list),
-    its review, and the hand-offs to Orca's Tasks page and Checks tab.
+  - `src/linked-view.tsx`, `src/link-store.ts`: the Issues and Pull requests tabs with nothing open:
+    the linked list (nothing repo-wide), or how to link one (the command, Ask agent), and the
+    hand-offs to Orca's Tasks page and Checks tab.
+  - `src/issue-view.tsx`, `src/issue-store.ts`: the issue detail and state; `src/pull-view.tsx`,
+    `src/pull-store.ts`: a pull request and its review.
   - `src/refs.ts`, `src/parts.tsx`: `#N` links, shared pieces.
   - `src/runs.ts` (+ `src/logs.ts`, `src/workflow-inputs.ts`): one run, its logs, rerun, cancel, the
     `run.watch` lease, and the Run workflow form; `src/run-store.ts`, `src/run-view.tsx`: their panel side.

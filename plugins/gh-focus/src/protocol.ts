@@ -37,6 +37,8 @@ export type ErrorCode =
   | 'gh_failed'
   /** Panel only: a write got no answer in time, so it may or may not have landed. */
   | 'unsure'
+  /** No agent in the focused workspace is free to take a prompt (all working, or none). */
+  | 'no_agent'
 
 export type PanelError = {
   code: ErrorCode
@@ -60,13 +62,13 @@ export type ResolvedBy = 'context' | 'picked' | 'terminal'
 export type RepoAnswer = Answer<{ nameWithOwner: string; url: string; path: string; resolvedBy: ResolvedBy }>
 
 /** A page of a list. `next` is the cursor of the page after it, null on the last page. `limit` is
- *  how many rows GitHub lets anyone page through (its search stops at 1,000 however many match);
- *  null when every row can be reached. */
+ *  how many rows GitHub lets anyone page through (its filtered runs list stops at 1,000 however many
+ *  match); null when every row can be reached. */
 export type Page<Row> = { rows: Row[]; total: number; next: string | null; limit: number | null }
 
 /** Rows per page: GitHub's own page size. */
 export const PAGE_SIZE = 30
-/** The most results GitHub's search, and its filtered runs list, return. */
+/** The most results GitHub's filtered runs list returns. */
 export const SEARCH_LIMIT = 1000
 
 export type IssueState = 'open' | 'done' | 'not_planned'
@@ -75,29 +77,29 @@ export type PullState = 'open' | 'draft' | 'merged' | 'closed'
  *  neutral or stale. Runs, jobs and steps share it. */
 export type RunState = 'success' | 'failure' | 'running' | 'queued' | 'waiting' | 'cancelled' | 'skipped'
 
-export type IssueRow = {
-  number: number
-  title: string
-  url: string
-  state: IssueState
-  author: string | null
-  labels: string[]
-  /** Milliseconds since the epoch. */
-  createdAt: number
-  closedAt: number | null
-}
+/** The most linked items the panel asks GitHub about in one call; the list says when there are more. */
+export const LINKED_LIMIT = 50
 
-export type PullRow = {
+/** The two tabs that show what Orca links to the workspace. */
+export type LinkedKind = 'issues' | 'pulls'
+
+/** An issue or pull request Orca links to the focused workspace: `repo` is its `owner/name` when it
+ *  is of another repo, null when it is of the focused one; `title` and `url` as Orca keeps them. */
+export type LinkedRef = { number: number; repo: string | null; title: string | null; url: string | null }
+
+/** An agent of the focused workspace that can take a prompt, by the name the panel shows. */
+export type FreeAgent = { name: string; terminalId: string }
+
+/** A linked issue or pull request as GitHub has it now. `state` and `updatedAt` are null when
+ *  GitHub did not answer for it (gone, or this login cannot see it): then title and url are Orca's. */
+export type LinkedRow = {
   number: number
+  repo: string | null
   title: string
   url: string
-  state: PullState
-  author: string | null
-  labels: string[]
-  branch: string
-  createdAt: number
-  closedAt: number | null
-  mergedAt: number | null
+  state: IssueState | PullState | null
+  /** Milliseconds since the epoch. */
+  updatedAt: number | null
 }
 
 export type RunRow = {
@@ -117,23 +119,6 @@ export type RunRow = {
   /** Finished runs only. */
   durationMs: number | null
 }
-
-/** Search orders GitHub offers for issues and pull requests. */
-export type ItemSort = 'created-desc' | 'created-asc' | 'updated-desc' | 'comments-desc'
-export type ItemFilters = { author?: string; label?: string; assignee?: string }
-
-/** Issues and pull requests: `state` picks the list (`all` is both), `open` and `closed` count both. */
-export type ItemListInput = {
-  state: 'open' | 'closed' | 'all'
-  query: string
-  after: string | null
-  filters?: ItemFilters
-  sort?: ItemSort
-  /** Also count open and closed (default true). Paging leaves it off: the counts cannot change. */
-  withCounts?: boolean
-}
-/** `open` and `closed` are null when the counts were not asked for. */
-export type ItemPage<Row> = Page<Row> & { open: number | null; closed: number | null }
 
 /** Run filters the runs API takes; `workflow` is a workflow's id, file name or display name. */
 export type RunFilters = { workflow?: string; status?: string; event?: string; branch?: string }
@@ -350,7 +335,6 @@ export type IssueEdit = {
   addAssignees?: string[]
   removeAssignees?: string[]
 }
-export type IssueCreate = { title: string; body: string; labels?: string[]; assignees?: string[] }
 /** A write's answer: nothing more than that it worked. */
 export type Done = Answer<Record<never, never>>
 
@@ -363,16 +347,22 @@ declare module 'orca' {
     'repo.pick': { input: { path: string }; output: RepoAnswer }
     /** Forgets the pick for the focused branch and name. */
     'repo.unpick': { output: RepoAnswer }
-    /** The issue and pull request Orca links to the focused workspace (one made from them), when
-     *  they are of its repo; null when there is none or Orca's CLI does not say. With `branch` and
-     *  no linked pull request, `pull` is the one gh finds for the workspace's branch (a gh call, so
-     *  only the Pull requests tab asks for it). */
-    'repo.links': { input: { branch?: boolean }; output: Answer<{ issue: number | null; pull: number | null }> }
-    /** One page of the focused repo's issues, newest first. */
-    'issues.list': { input: ItemListInput; output: Answer<ItemPage<IssueRow>> }
+    /** The issues and pull requests Orca links to the focused workspace, in Orca's order; none when
+     *  Orca's CLI does not say. With `branch` and no linked pull request of the focused repo, the one
+     *  gh finds for the workspace's branch comes first (a gh call, so only the Pull requests tab
+     *  asks for it). */
+    'repo.links': { input: { branch?: boolean }; output: Answer<{ issues: LinkedRef[]; pulls: LinkedRef[] }> }
+    /** The linked issues or pull requests as GitHub has them now (one call), newest activity first. */
+    'items.get': { input: { kind: LinkedKind; items: LinkedRef[] }; output: Answer<{ rows: LinkedRow[] }> }
+    /** A free agent of the focused workspace (one not working or blocked): its name and terminal;
+     *  null when none. */
+    'agent.find': { output: Answer<{ agent: FreeAgent | null }> }
+    /** Types a prompt into that agent's terminal asking it to link the workspace's issue or pull
+     *  request with `orca reference add`, when it is still free; Enter is left to the person. */
+    'agent.ask': { input: { kind: LinkedKind; terminalId: string }; output: Answer<{ agent: string }> }
     /** One page of the focused repo's workflow runs, newest first. */
     'runs.list': { input: RunListInput; output: Answer<RunPage> }
-    /** The focused repo's label names, for the label filter. */
+    /** The focused repo's label names, for the label picker. */
     'labels.list': { output: Answer<{ names: string[] }> }
     /** One issue with its body and the start and end of its timeline. */
     'issue.get': { input: { number: number }; output: Answer<{ issue: IssueDetail }> }
@@ -386,7 +376,6 @@ declare module 'orca' {
     'issue.close': { input: { number: number; reason: CloseReason; duplicateOf?: number; comment?: string }; output: Done }
     'issue.reopen': { input: { number: number; comment?: string }; output: Done }
     'issue.edit': { input: IssueEdit; output: Done }
-    'issue.create': { input: IssueCreate; output: Answer<{ number: number; url: string }> }
     /** Adds or removes the viewer's reaction on an issue or comment, by its node id. */
     'reaction.set': { input: { subjectId: string; content: Reaction; on: boolean }; output: Done }
     /** One pull request with its checks, body and the start and end of its timeline. */

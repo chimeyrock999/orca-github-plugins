@@ -2,7 +2,6 @@
 // timeline of comments, mentions and state changes, and a box to comment, close or reopen.
 import { Box, Button, Callout, IconButton, Input, RadioGroup, read, RelativeTime, Row, Separator, shell, Skeleton, Spinner, Stack, Text, Textarea, Toolbar } from 'orca'
 import {
-  backToIssues,
   cancelClose,
   confirmClose,
   duplicateNumber,
@@ -15,6 +14,8 @@ import {
   type IssueState
 } from './issue-store'
 import { count, issueLook } from './look'
+import { backFrom } from './link-store'
+import { backLabel, HandOffProblem, TasksButton } from './linked-view'
 import { Glyph, Problem } from './parts'
 import type { CloseReason, IssueDetail } from './protocol'
 import { Byline, EditTitle, LabelsAndAssignees, MetaLine, Post, Timeline } from './thread-view'
@@ -125,17 +126,24 @@ function Detail({ d, s }: { d: IssueDetail; s: IssueState }) {
 export function IssueView() {
   const s = read(issue)
   const d = s.answer?.ok ? s.answer.detail : null
+  const back = backLabel(issues, s.number)
   return (
     <Box grow minHeight={0} gap="sm">
       <Row justify="between" align="center">
-        <Button size="sm" variant="outline" onPress={backToIssues}>
-          ← Back to issues
-        </Button>
+        <Row gap="xs">
+          {back && (
+            <Button size="sm" variant="outline" onPress={() => backFrom(issues)}>
+              {back}
+            </Button>
+          )}
+          <TasksButton kind="issues" />
+        </Row>
         <Toolbar label="Issue" gap="xs">
           {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={issues.startEdit} />}
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
         </Toolbar>
       </Row>
+      <HandOffProblem />
       {s.answer === null ? (
         <Skeleton lines={8} label={`Loading issue ${s.number}`} />
       ) : !s.answer.ok ? (

@@ -1,34 +1,27 @@
-// The panel's state in atoms, and the actions that change it. Each tab keeps its own list: the
-// search, the page (a stack of cursors, so Previous goes back without asking GitHub for one), the
-// answer, and the row open in detail.
+// The panel's state in atoms, and the actions that change it. Each tab keeps the row open in detail;
+// the Actions tab also keeps its list: the search, the page (a stack of cursors, so Previous goes back
+// without asking GitHub for one) and the answer. The Issues and Pull requests tabs list only what Orca
+// links to the workspace (src/thread-store.ts).
 import { atom, plugin, read, set, update, type Atom } from 'orca'
 import { hostFailure } from './host-error'
-import type { Answer, ErrorCode, IssueRow, ItemPage, ItemSort, Page, PanelError, PullRow, RepoAnswer, RunRow } from './protocol'
+import type { Answer, ErrorCode, PanelError, RepoAnswer, RunPage } from './protocol'
 
 export type Kind = 'issues' | 'pulls' | 'runs'
 export const KINDS: Kind[] = ['issues', 'pulls', 'runs']
 
-export type AnyRow = IssueRow | PullRow | RunRow
-/** A page of any tab; issues and pull requests also count open and closed. */
-export type ListPage = Page<AnyRow> & Partial<Pick<ItemPage<AnyRow>, 'open' | 'closed'>> & { branch?: string | null }
-
 export type ListState = {
-  state: 'open' | 'closed' | 'all'
   query: string
   /** The cursor each page was asked with; the last one is the page on screen. */
   cursors: (string | null)[]
   /** null while the page loads. */
-  answer: Answer<ListPage> | null
-  /** Key of the row open in detail; on Issues, `new` is the new issue form. */
+  answer: Answer<RunPage> | null
+  /** Key of the row open in detail: an issue or pull request number, a run id, or the Run workflow form. */
   open: string | null
-  /** Filter values by name (author, assignee, label; workflow, status, event, branch); empty means any. */
+  /** Run filter values by name (workflow, status, event, branch); empty means any. */
   filters: Record<string, string>
-  sort: ItemSort
-  /** Which strip under the counts is open. */
-  tool: 'filter' | 'sort' | null
-  /** Open and closed counts of the search; asked for again only when the list starts over. */
-  counts: { open: number; closed: number } | null
-  /** What the search and text filter boxes hold before Enter, by name (`query`, `author`, `branch`). */
+  /** Whether the filter strip is open. */
+  tool: 'filter' | null
+  /** What the search and text filter boxes hold before Enter, by name (`query`, `branch`). */
   drafts: Record<string, string>
   /** Runs: the focused workspace's branch only (where the tab starts), or every branch. */
   scope: 'branch' | 'all'
@@ -38,15 +31,12 @@ export type ListState = {
 
 function fresh(): ListState {
   return {
-    state: 'open',
     query: '',
     cursors: [null],
     answer: null,
     open: null,
     filters: {},
-    sort: 'created-desc',
     tool: null,
-    counts: null,
     drafts: {},
     scope: 'branch',
     branch: null
@@ -69,13 +59,8 @@ function sameRepo(a: RepoAnswer | null, b: RepoAnswer): boolean {
   return !!a?.ok && b.ok && a.nameWithOwner === b.nameWithOwner && a.path === b.path
 }
 
-/** The row's key in its list: its number, or a run's id. */
-export function rowKey(row: AnyRow): string {
-  return String('id' in row ? row.id : row.number)
-}
-
-// A newer load of a list makes the older answer stale.
-const loads: Record<Kind, number> = { issues: 0, pulls: 0, runs: 0 }
+// A newer load of the runs list makes the older answer stale.
+let loads = 0
 // Tabs whose first page was asked for since the repo was set.
 const started = new Set<Kind>()
 // Goes up each time the repo answer changes, so what started for a workspace starts again.
@@ -98,47 +83,31 @@ export function unsure(error: PanelError): PanelError {
   return { code: 'unsure', message: error.message }
 }
 
-function ask(kind: Kind, s: ListState): Promise<Answer<ListPage>> {
+function ask(s: ListState): Promise<Answer<RunPage>> {
   const after = s.cursors[s.cursors.length - 1]
-  const answer =
-    kind === 'runs'
-      ? plugin.request('runs.list', { query: s.query, after, filters: s.filters, scope: s.scope })
-      : plugin.request('issues.list', {
-          state: s.state,
-          query: s.query,
-          after,
-          filters: s.filters,
-          sort: s.sort,
-          withCounts: s.counts === null
-        })
-  return (answer as Promise<Answer<ListPage>>).catch(requestFailed)
+  return plugin.request('runs.list', { query: s.query, after, filters: s.filters, scope: s.scope }).catch(requestFailed)
 }
 
-/** Asks for the page the list's cursors point at, dropping it if a newer load started. The Pull
- *  requests tab has no list: it shows the workspace's pull request, and Orca's Tasks page the rest. */
+/** Asks for the runs page the list's cursors point at, dropping it if a newer load started. Only the
+ *  Actions tab has a list: the others show what Orca links to the workspace. */
 export async function load(kind: Kind): Promise<void> {
-  if (kind === 'pulls') return
-  const mine = ++loads[kind]
-  const list = lists[kind]
+  if (kind !== 'runs') return
+  const mine = ++loads
+  const list = lists.runs
   update(list, (s) => ({ ...s, answer: null }))
-  const answer = await ask(kind, read(list))
-  if (mine !== loads[kind]) return
-  update(list, (s) => {
-    const counted = answer.ok && typeof answer.open === 'number' && typeof answer.closed === 'number'
-    const branch = answer.ok && answer.branch ? answer.branch : s.branch
-    return { ...s, answer, branch, counts: counted ? { open: answer.open!, closed: answer.closed! } : s.counts }
-  })
+  const answer = await ask(read(list))
+  if (mine !== loads) return
+  update(list, (s) => ({ ...s, answer, branch: answer.ok && answer.branch ? answer.branch : s.branch }))
 }
 
 function restart(kind: Kind, change: Partial<ListState>): Promise<void> {
-  update(lists[kind], (s) => ({ ...s, ...change, cursors: [null], open: null, counts: null }))
+  update(lists[kind], (s) => ({ ...s, ...change, cursors: [null], open: null }))
   return load(kind)
 }
 
 export const search = (kind: Kind, query: string) => restart(kind, { query: query.trim(), drafts: { ...read(lists[kind]).drafts, query: query.trim() } })
 export const setDraft = (kind: Kind, name: string, value: string) =>
   update(lists[kind], (s) => ({ ...s, drafts: { ...s.drafts, [name]: value } }))
-export const setSort = (kind: Kind, sort: ItemSort) => restart(kind, { sort })
 /** Runs of the workspace's branch, or of every branch. */
 export const setScope = (scope: ListState['scope']) => restart('runs', { scope })
 export function setFilter(kind: Kind, name: string, value: string): Promise<void> {
@@ -166,13 +135,11 @@ export function loadChoices(name: keyof Choices): Promise<void> | void {
   return asked.catch(() => keep([]))
 }
 
-/** Opens or closes a strip; the label or workflow choices load the first time a filter opens. */
-export function toggleTool(kind: Kind, tool: 'filter' | 'sort'): Promise<void> | void {
-  update(lists[kind], (s) => ({ ...s, tool: s.tool === tool ? null : tool }))
-  if (tool !== 'filter' || read(lists[kind]).tool !== 'filter') return
-  return loadChoices(kind === 'runs' ? 'workflows' : 'labels')
+/** Opens or closes the filter strip; the workflow choices load the first time it opens. */
+export function toggleTool(kind: Kind): Promise<void> | void {
+  update(lists[kind], (s): ListState => ({ ...s, tool: s.tool ? null : 'filter' }))
+  if (read(lists[kind]).tool) return loadChoices('workflows')
 }
-export const showState = (kind: Kind, state: ListState['state']) => restart(kind, { state })
 
 export function next(kind: Kind): Promise<void> | void {
   const s = read(lists[kind])
@@ -212,10 +179,8 @@ export function setRepo(answer: RepoAnswer): Promise<void> | void {
   started.clear()
   choicesFor++
   set(choices, noChoices())
-  for (const kind of KINDS) {
-    loads[kind]++
-    set(lists[kind], fresh())
-  }
+  loads++
+  for (const kind of KINDS) set(lists[kind], fresh())
   if (answer.ok) return ensure(read(tab))
 }
 
@@ -235,10 +200,9 @@ export async function refresh(): Promise<void> {
   const same = sameRepo(read(repo), answer)
   await setRepo(answer)
   if (!same) return
-  // Counted again too, and label or workflow choices asked for again when a filter next opens.
+  // Label, assignee or workflow choices are asked for again when a picker or filter next opens.
   choicesFor++
   set(choices, noChoices())
-  update(lists[read(tab)], (s) => ({ ...s, counts: null }))
   await load(read(tab))
 }
 
@@ -251,7 +215,7 @@ export function githubUrl(): string | null {
   // Issues and pull requests open by number, so they need not be on the page.
   if (kind !== 'runs' && s.open && /^\d+$/.test(s.open)) return `${r.url}/${kind === 'issues' ? 'issues' : 'pull'}/${s.open}`
   if (s.open && s.answer?.ok) {
-    const row = s.answer.rows.find((x) => rowKey(x) === s.open)
+    const row = s.answer.rows.find((x) => String(x.id) === s.open)
     if (row) return row.url
   }
   return `${r.url}/${kind === 'runs' ? 'actions' : kind}`

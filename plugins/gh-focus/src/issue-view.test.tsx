@@ -2,10 +2,10 @@
 // whose `requests` stand in for src/worker.ts.
 import { assert, hostError, mockHost, mount, test } from 'orca/testing'
 import * as panel from './panel'
-import { commentItem, failed, issueDetail, issueRows, itemPage, pullDetail, repoOk } from './fixtures'
-import { backToIssues, loadIssue, mergeTimeline, react } from './issue-store'
+import { commentItem, failed, issueDetail, links, linkedRows, pullDetail, ref, repoOk } from './fixtures'
+import { loadIssue, mergeTimeline, react } from './issue-store'
 import { setRepo } from './store'
-import type { IssueDetail, ItemListInput } from './protocol'
+import type { IssueDetail, LinkedRef } from './protocol'
 
 const ok = { ok: true } as const
 
@@ -17,7 +17,10 @@ function host(overrides: Record<string, unknown> = {}, detail: () => IssueDetail
   }
   const requests: Record<string, unknown> = {
     'repo.get': () => repoOk,
-    'issues.list': (input: ItemListInput) => itemPage(issueRows(3), 3, null, input.state === 'all' ? 0 : 1),
+    // Three issues linked to the workspace: a short list, newest activity first.
+    'repo.links': links([120, 119, 118]),
+    'items.get': ({ items }: { items: LinkedRef[] }) => linkedRows(items),
+    'agent.find': { ok: true, agent: { name: 'Claude Code', terminalId: 't1' } },
     'issue.get': () => ({ ok: true, issue: detail() }),
     'issue.comment': () => ok,
     'issue.close': () => ok,
@@ -39,20 +42,6 @@ async function openIssue120(h = host()) {
   await view.press({ type: 'ListItem', text: /Login page loops/ })
   return view
 }
-
-test('the list: All shows both states, Assignee filters, New issue opens the form', async () => {
-  const h = host()
-  const view = await mount(panel, { host: h })
-  await view.press({ type: 'Button', text: 'All' })
-  assert.deepEqual((h.last('issues.list') as ItemListInput).state, 'all')
-  await view.press({ label: 'Filter' })
-  await view.type({ label: 'Assignee' }, '@me', { submit: true })
-  assert.deepEqual((h.last('issues.list') as ItemListInput).filters, { assignee: '@me' })
-  await view.press({ label: 'New issue' })
-  assert.ok(view.find({ text: 'New issue' }))
-  assert.deepEqual(view.errors, [])
-  await view.unmount()
-})
 
 test('a row opens the issue: state, labels, assignees, milestone, body and timeline', async () => {
   const h = host()
@@ -78,22 +67,22 @@ test('a row opens the issue: state, labels, assignees, milestone, body and timel
 })
 
 test('a mention of an issue or pull request here opens it in its tab; another repo opens on GitHub', async () => {
-  const h = host({ 'repo.links': { ok: true, issue: null, pull: null }, 'pull.get': () => ({ ok: true, pull: pullDetail() }) })
+  const h = host({ 'pull.get': () => ({ ok: true, pull: pullDetail() }) })
   const view = await openIssue120(h)
   await view.press({ type: 'ListItem', text: /docs: note the 10k export limit/ })
   assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/docs/pull/412' })
   await view.press({ type: 'ListItem', text: /Excel export truncates long cells/ })
   assert.deepEqual(h.last('issue.get'), { number: 97 })
-  await view.press({ text: '← Back to issues' })
+  await view.press({ text: '← Back to linked issues' })
   await view.press({ type: 'ListItem', text: /Login page loops/ })
   await view.press({ type: 'ListItem', text: /fix: stream CSV export past 10k rows/ })
   assert.deepEqual(h.last('pull.get'), { number: 131 })
   assert.equal(view.find({ type: 'Tabs' })?.props.value, 'pulls')
-  // The branch has no pull request of its own, so Back leaves this one for none.
+  // Nothing is linked and the branch has no pull request of its own, so Back leaves this one for none.
   assert.ok(view.find({ type: 'Button', text: '← Back' }))
   // The Issues tab still holds its issue.
   await view.select({ type: 'Tabs' }, 'issues')
-  assert.ok(view.find({ text: '← Back to issues' }))
+  assert.ok(view.find({ text: '← Back to linked issues' }))
   await view.unmount()
 })
 
@@ -285,33 +274,17 @@ test('mergeTimeline joins the head and tail where they meet, or at the end', () 
   assert.deepEqual(mergeTimeline([a], [c, d], [b], null), { head: [a, b, c, d], tail: [], next: null })
 })
 
-test('New issue: a title is needed; Create opens the new issue, and Back loads the list again', async () => {
-  const h = host({
-    'issue.create': () => ({ ok: true, number: 129, url: 'https://github.com/octo/app/issues/129' })
-  }, () => issueDetail({ number: 129, title: 'Search ignores accents', head: [], comments: 0, total: 0 }))
-  const view = await mount(panel, { host: h })
-  await view.press({ label: 'New issue' })
-  assert.equal(view.find({ text: 'Create issue' })?.disabled, true)
-  await view.type({ label: 'Title' }, 'Search ignores accents')
-  await view.type({ label: 'Body' }, 'Searching "cafe" misses "café".')
-  await view.press({ label: 'Edit labels' })
-  await view.toggle({ label: 'bug' })
-  await view.press({ text: 'Apply' })
-  await view.press({ text: 'Create issue' })
-  assert.deepEqual(h.last('issue.create'), { title: 'Search ignores accents', body: 'Searching "cafe" misses "café".', labels: ['bug'], assignees: [] })
-  assert.deepEqual(h.last('issue.get'), { number: 129 })
-  assert.ok(view.find({ type: 'Text', text: 'Search ignores accents' }))
-  const lists = h.asked.filter((a) => a.name === 'issues.list').length
-  await view.press({ text: '← Back to issues' })
-  assert.equal(h.asked.filter((a) => a.name === 'issues.list').length, lists + 1)
-  await view.unmount()
-})
-
-test('Back without a write keeps the list as it was', async () => {
+test('Back without a write keeps the list as it was; after a write it asks GitHub again', async () => {
   const h = host()
   const view = await openIssue120(h)
-  await view.press({ text: '← Back to issues' })
-  assert.equal(h.asked.filter((a) => a.name === 'issues.list').length, 1)
+  await view.press({ text: '← Back to linked issues' })
+  assert.equal(h.asked.filter((a) => a.name === 'items.get').length, 1)
+  assert.equal(view.findAll({ type: 'ListItem' }).length, 3)
+  await view.press({ type: 'ListItem', text: /Login page loops/ })
+  await view.type({ label: 'Comment' }, 'On it.')
+  await view.press({ text: 'Comment' })
+  await view.press({ text: '← Back to linked issues' })
+  assert.equal(h.asked.filter((a) => a.name === 'items.get').length, 2)
   await view.unmount()
 })
 
@@ -331,16 +304,6 @@ test('Refresh loads the open issue again', async () => {
   await view.press({ label: 'Refresh' })
   assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, 2)
   await view.unmount()
-})
-
-test('with no linked issue the tab starts on the list, and a viewed issue is not opened again', async () => {
-  const h = host({ 'repo.links': { ok: true, issue: null, pull: null } })
-  const view = await openIssue120(h)
-  await view.unmount()
-  const again = await mount(panel, { host: h })
-  assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, 1)
-  assert.equal(again.findAll({ type: 'ListItem' }).length, 3)
-  await again.unmount()
 })
 
 test('a reload while a write is on its way does not lose its answer or lock the box', async () => {
@@ -389,41 +352,76 @@ test('two presses before a redraw add and take back, and the count ends where it
   await view.unmount()
 })
 
-test('a new issue answered after Back leaves the person on the list', async () => {
-  const h = host({
-    'issue.create': () => {
-      backToIssues()
-      return { ok: true, number: 129, url: 'https://github.com/octo/app/issues/129' }
-    }
-  })
-  const view = await mount(panel, { host: h })
-  await view.press({ label: 'New issue' })
-  await view.type({ label: 'Title' }, 'Search ignores accents')
-  await view.press({ text: 'Create issue' })
-  assert.equal(h.last('issue.get'), undefined)
-  assert.ok(view.findAll({ type: 'ListItem' }).length > 0)
-  await view.unmount()
-})
-
-test('a workspace made from an issue opens on that issue, once; Back and tab switches stay on the list', async () => {
-  const h = host({ 'repo.links': { ok: true, issue: 4, pull: null } })
+test('a workspace with one linked issue opens on it, with no Back; tab switches keep it', async () => {
+  const h = host({ 'repo.links': links([4]) })
   const view = await mount(panel, { host: h })
   assert.deepEqual(h.last('issue.get'), { number: 4 })
-  // The Issues tab never asks for the branch's pull request (a gh call it has no use for).
+  // The Issues tab never asks for the branch's pull request (a gh call it has no use for), nor
+  // GitHub for a list it does not show.
   assert.deepEqual(h.last('repo.links'), {})
-  assert.ok(view.find({ text: '← Back to issues' }))
-  // The list loads behind it, so Back shows it at once.
-  assert.equal(h.asked.filter((a) => a.name === 'issues.list').length, 1)
-  await view.press({ text: '← Back to issues' })
+  assert.equal(h.last('items.get'), undefined)
+  assert.equal(view.find({ text: /← Back/ }), null)
+  assert.ok(view.find({ type: 'Button', text: 'Tasks' }))
   await view.select({ type: 'Tabs' }, 'pulls')
   await view.select({ type: 'Tabs' }, 'issues')
   assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, 1)
+  assert.ok(view.find({ type: 'Text', text: 'Export CSV drops rows past 10k' }))
+  await view.unmount()
+})
+
+test('several linked issues make a list, newest activity first, and none opens by itself', async () => {
+  const h = host({
+    'repo.links': links([118, 'octo/sdk#45', 120]),
+    'items.get': () => ({
+      ok: true,
+      rows: [
+        { number: 120, repo: null, title: 'Login page loops after token refresh', url: 'https://github.com/octo/app/issues/120', state: 'open', updatedAt: Date.UTC(2026, 10, 12, 8) },
+        { number: 45, repo: 'octo/sdk', title: 'Stream writer drops the last chunk', url: 'https://github.com/octo/sdk/issues/45', state: 'not_planned', updatedAt: Date.UTC(2026, 10, 11) },
+        { number: 118, repo: null, title: 'Gone', url: 'https://github.com/octo/app/issues/118', state: null, updatedAt: null }
+      ]
+    })
+  })
+  const view = await mount(panel, { host: h })
+  assert.deepEqual(h.last('items.get'), { kind: 'issues', items: [ref(118), ref('octo/sdk#45'), ref(120)] })
+  assert.equal(h.last('issue.get'), undefined)
+  assert.ok(view.find({ text: '3 linked issues' }))
+  assert.deepEqual(
+    view.findAll({ type: 'ListItem' }).map((i) => i.text?.split('#')[0]),
+    ['◉ Login page loops after token refresh ', '⊘ Stream writer drops the last chunk octo/sdk ', '◌ Gone ']
+  )
+  // Another repo's is named, and opens on GitHub: the panel reads and writes this repo only.
+  assert.ok(view.find({ type: 'Badge', text: 'octo/sdk' }))
+  await view.press({ type: 'ListItem', text: /Stream writer/ })
+  assert.deepEqual(h.callsOf('shell.openExternal'), [{ url: 'https://github.com/octo/sdk/issues/45' }])
+  assert.equal(h.last('issue.get'), undefined)
+  await view.press({ type: 'ListItem', text: /Login page loops/ })
+  assert.deepEqual(h.last('issue.get'), { number: 120 })
+  await view.press({ text: '← Back to linked issues' })
+  assert.equal(view.findAll({ type: 'ListItem' }).length, 3)
+  await view.unmount()
+})
+
+test('one linked issue of another repo is a list of one, never opened here', async () => {
+  const h = host({ 'repo.links': links(['octo/sdk#45']) })
+  const view = await mount(panel, { host: h })
+  assert.equal(h.last('issue.get'), undefined)
+  assert.ok(view.find({ text: '1 linked issue' }))
+  assert.equal(view.findAll({ type: 'ListItem' }).length, 1)
+  await view.unmount()
+})
+
+test('a list GitHub will not answer for shows why, and Retry asks again', async () => {
+  let calls = 0
+  const h = host({ 'items.get': ({ items }: { items: LinkedRef[] }) => (++calls === 1 ? failed('rate_limited', 'API rate limit exceeded.') : linkedRows(items)) })
+  const view = await mount(panel, { host: h })
+  assert.ok(view.summary().some((l) => /GitHub rate limit reached/.test(l)))
+  await view.press({ text: 'Retry' })
   assert.equal(view.findAll({ type: 'ListItem' }).length, 3)
   await view.unmount()
 })
 
 test('the linked issue waits for the Issues tab', async () => {
-  const h = host({ 'repo.links': { ok: true, issue: 4, pull: 13 }, 'pull.get': failed('not_found', 'gone') })
+  const h = host({ 'repo.links': links([4], [13]), 'pull.get': failed('not_found', 'gone') })
   const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'pulls' } } })
   assert.equal(h.last('issue.get'), undefined)
   await view.select({ type: 'Tabs' }, 'issues')
@@ -431,37 +429,40 @@ test('the linked issue waits for the Issues tab', async () => {
   await view.unmount()
 })
 
-test('another workspace starts on its own linked issue; no link, or no answer, shows the list', async () => {
-  let link: number | null = null
-  const h = host({ 'repo.links': () => (link === -1 ? failed('host_failed', 'orca CLI missing') : { ok: true, issue: link, pull: null }) })
+test('each workspace starts by its own links, not by what it showed before; no link or no answer is the empty state', async () => {
+  let link: number[] | null = []
+  const h = host({ 'repo.links': () => (link === null ? failed('host_failed', 'orca CLI missing') : links(link)) })
   const view = await mount(panel, { host: h })
   assert.equal(h.last('issue.get'), undefined)
-  link = 7
+  assert.ok(view.summary().some((l) => /No issue linked to this workspace/.test(l)))
+  link = [7]
   await view.post('repo.changed', { ...repoOk, path: '/code/app-issue-7' })
   assert.deepEqual(h.last('issue.get'), { number: 7 })
-  link = -1
+  link = [7, 8]
+  await view.post('repo.changed', { ...repoOk, path: '/code/app-two' })
+  await view.press({ type: 'ListItem', text: /Dark theme/ })
+  // Back to the workspace with two: the list again, not the issue it showed last.
+  await view.post('repo.changed', { ...repoOk, path: '/code/app-issue-7' })
+  await view.post('repo.changed', { ...repoOk, path: '/code/app-two' })
+  assert.equal(view.findAll({ type: 'ListItem' }).length, 2)
+  link = null
   await view.post('repo.changed', { ...repoOk, path: '/code/app-other' })
-  assert.equal(view.findAll({ type: 'ListItem' }).length, 3)
+  assert.ok(view.summary().some((l) => /No issue linked to this workspace/.test(l)))
+  await view.unmount()
+})
+
+test('a mention opened from the only linked issue leads back to it', async () => {
+  const h = host({ 'repo.links': links([120]) }, () => issueDetail({ tail: [{ kind: 'mention', id: 'CRE_97', actor: 'ana', createdAt: Date.UTC(2026, 10, 12), source: { type: 'issue', number: 97, title: 'Older export bug', url: 'https://github.com/octo/app/issues/97', state: 'done', repo: 'octo/app' } }] }))
+  const view = await mount(panel, { host: h })
+  await view.press({ type: 'ListItem', text: /Older export bug/ })
+  assert.deepEqual(h.last('issue.get'), { number: 97 })
+  await view.press({ text: '← Back to #120' })
+  assert.deepEqual(h.last('issue.get'), { number: 120 })
+  assert.equal(view.find({ text: /← Back/ }), null)
   await view.unmount()
 })
 
 const lib = { ...repoOk, nameWithOwner: 'octo/lib', url: 'https://github.com/octo/lib', path: '/code/lib' }
-
-test('a new issue answered after the focus moved to another repo opens nothing there', async () => {
-  const h = host({
-    'issue.create': async () => {
-      await setRepo(lib)
-      return { ok: true, number: 129, url: 'https://github.com/octo/app/issues/129' }
-    }
-  })
-  const view = await mount(panel, { host: h })
-  await view.press({ label: 'New issue' })
-  await view.type({ label: 'Title' }, 'Search ignores accents')
-  await view.press({ text: 'Create issue' })
-  assert.equal(h.last('issue.get'), undefined)
-  assert.ok(view.find({ text: 'octo/lib' }))
-    await view.unmount()
-})
 
 test('an issue answered after the focus moved to another repo is dropped', async () => {
   let calls = 0
@@ -473,7 +474,7 @@ test('an issue answered after the focus moved to another repo is dropped', async
   })
   const view = await openIssue120(h)
   assert.ok(view.find({ text: 'octo/lib' }))
-  assert.equal(view.find({ text: '← Back to issues' }), null)
+  assert.equal(view.find({ text: '← Back to linked issues' }), null)
   await view.unmount()
 })
 
@@ -489,22 +490,6 @@ test('a write with no answer may have landed: it says so, keeps the text and loa
   assert.ok(view.summary().some((l) => /It may have gone through/.test(l)))
   assert.equal(view.valueOf({ label: 'Comment' }), 'Fixed in #131.')
   assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, 2)
-  await view.unmount()
-})
-
-test('a new issue with no answer says it may exist, and Back loads the list again', async () => {
-  const h = host({
-    'issue.create': () => {
-      throw hostError('timeout', 'plugin.request timed out')
-    }
-  })
-  const view = await mount(panel, { host: h })
-  await view.press({ label: 'New issue' })
-  await view.type({ label: 'Title' }, 'Search ignores accents')
-  await view.press({ text: 'Create issue' })
-  assert.ok(view.summary().some((l) => /It may have gone through/.test(l)))
-  await view.press({ text: '← Back to issues' })
-  assert.equal(h.asked.filter((a) => a.name === 'issues.list').length, 2)
   await view.unmount()
 })
 
@@ -594,19 +579,30 @@ test('a timed-out reaction is not flipped back; the issue is loaded again', asyn
   await view.unmount()
 })
 
-test('each workspace shows again what it showed last in this panel run', async () => {
-  const other = { ...repoOk, path: '/code/app-other' }
-  const h = host({ 'repo.links': { ok: true, issue: null, pull: null } })
+
+test('Back into the empty state looks for a free agent there', async () => {
+  const h = host({ 'pull.get': () => ({ ok: true, pull: pullDetail() }) })
   const view = await openIssue120(h)
-  // Another workspace starts on its own (here the list), and coming back shows issue 120 again.
-  await view.post('repo.changed', other)
-  assert.ok(view.find({ type: 'ListItem', text: /Login page loops/ }))
-  await view.post('repo.changed', repoOk)
-  assert.ok(view.find({ type: 'Text', text: 'Export CSV drops rows past 10k' }))
-  // After Back, coming back shows the list, not the link or the issue.
-  await view.press({ text: '← Back to issues' })
-  await view.post('repo.changed', other)
-  await view.post('repo.changed', repoOk)
-  assert.equal(view.find({ text: '← Back to issues' }), null)
+  // Three issues are linked, so no agent was looked for.
+  assert.equal(h.asked.filter((a) => a.name === 'agent.find').length, 0)
+  await view.press({ type: 'ListItem', text: /fix: stream CSV export past 10k rows/ })
+  await view.press({ type: 'Button', text: '← Back' })
+  assert.ok(view.summary().some((l) => /No pull request for this workspace/.test(l)))
+  assert.ok(view.find({ type: 'Button', text: 'Ask Claude Code to link' }))
+  await view.unmount()
+})
+
+test('Refresh on one tab makes the other ask Orca again when it shows', async () => {
+  let pulls: number[] = []
+  const h = host({ 'repo.links': () => links([120, 119, 118], pulls), 'pull.get': () => ({ ok: true, pull: pullDetail() }) })
+  const view = await mount(panel, { host: h })
+  await view.select({ type: 'Tabs' }, 'pulls')
+  assert.ok(view.summary().some((l) => /No pull request for this workspace/.test(l)))
+  await view.select({ type: 'Tabs' }, 'issues')
+  // Linked meanwhile (by the agent, say), then Refresh on the Issues tab.
+  pulls = [131]
+  await view.press({ label: 'Refresh' })
+  await view.select({ type: 'Tabs' }, 'pulls')
+  assert.deepEqual(h.last('pull.get'), { number: 131 })
   await view.unmount()
 })

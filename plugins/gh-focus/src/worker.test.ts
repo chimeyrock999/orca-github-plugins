@@ -238,24 +238,20 @@ function listWorker(gh: Gh) {
   }
 }
 
-test('issues.list runs one gh search in the focused repo and answers its page', async () => {
+test('items.get reads the linked items in one gh call in the focused repo', async () => {
   const calls: { args: string[]; cwd?: string; signal?: AbortSignal }[] = []
   const gh: Gh = async (args, options) => {
     calls.push({ args, cwd: options?.cwd, signal: options?.signal })
-    return {
-      data: {
-        page: { issueCount: 1, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
-        open: { issueCount: 1 },
-        closed: { issueCount: 0 }
-      }
-    }
+    return { data: { r0: { n4: { __typename: 'Issue', number: 4, title: 'Four', url: 'https://github.com/octo/app/issues/4', state: 'OPEN', updatedAt: '2026-11-13T08:00:00Z' } } } }
   }
   const worker = await mountWorker(listWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
-  const answer = await worker.request('issues.list', { state: 'open', query: '', after: null })
-  assert.deepEqual(answer, { ok: true, rows: [], total: 1, open: 1, closed: 0, next: null, limit: 1000 })
+  const answer = await worker.request('items.get', { kind: 'issues', items: [{ number: 4, repo: null, title: null, url: null }] })
+  assert.deepEqual(answer, {
+    ok: true,
+    rows: [{ number: 4, repo: null, title: 'Four', url: 'https://github.com/octo/app/issues/4', state: 'open', updatedAt: Date.parse('2026-11-13T08:00:00Z') }]
+  })
   assert.equal(calls.length, 1)
   assert.equal(calls[0].cwd, '/work/spike')
-  assert.ok(calls[0].args.includes('q=repo:octo/app is:issue is:open sort:created-desc'))
   // The request's own signal reaches gh, so a closed panel stops it.
   assert.ok(calls[0].signal instanceof AbortSignal)
   await worker.deactivate()
@@ -263,7 +259,7 @@ test('issues.list runs one gh search in the focused repo and answers its page', 
 
 test('a list asked with no repo answers the repo error and never runs gh', async () => {
   const worker = await mountWorker(listWorker(noGh), { host: hostFocused({ branch: 'main', displayName: 'out' }) })
-  const answer = await worker.request('issues.list', { state: 'open', query: '', after: null })
+  const answer = await worker.request('runs.list', { query: '', after: null })
   assert.equal(answer.ok, false)
   if (answer.ok) return
   assert.equal(answer.error.code, 'gh_logged_out')
@@ -389,8 +385,12 @@ test('pull request requests run gh pr in the focused repo, and answer the repo e
   await out.deactivate()
 })
 
+const ref = (number: number, repo: string | null = null) => ({ number, repo, title: null, url: null })
+const item = (type: 'issue' | 'pull', number: number, repo: string | null = null) => ({ type, number, repo, title: null, url: null })
+
 test('repo.links answers what Orca links to the workspace, only for its own repo', async () => {
   let project: string | null = 'github:Octo/App'
+  const items = [item('issue', 4), item('issue', 45, 'octo/sdk'), item('pull', 13), item('pull', 12)]
   const module = {
     default: (orca: OrcaWorkerApi) =>
       main.activateWith(orca, {
@@ -398,20 +398,20 @@ test('repo.links answers what Orca links to the workspace, only for its own repo
         ghRepo: async (path) => repos[path],
         terminalPath: async () => null,
         exists: () => true,
-        links: async (path) => (path === '/work/spike' ? { project, issue: 4, pull: 13 } : null)
+        links: async (path) => (path === '/work/spike' ? { project, items } : null)
       })
   }
   const worker = await mountWorker(module, { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
-  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: 4, pull: 13 })
-  // A link Orca keeps for another repo (a workspace of a fork, say) is not this repo's issue 4.
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issues: [ref(4), ref(45, 'octo/sdk')], pulls: [ref(13), ref(12)] })
+  // Links Orca keeps for another repo (a workspace of a fork, say) are not this repo's.
   project = 'github:octo/fork'
-  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: null, pull: null })
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issues: [], pulls: [] })
   project = null
-  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: null, pull: null })
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issues: [], pulls: [] })
   await worker.deactivate()
 })
 
-test('repo.links: with no linked pull request, the branch pull request gh finds stands in', async () => {
+test('repo.links: with no linked pull request of this repo, the branch pull request gh finds comes first', async () => {
   let branch: unknown = { number: 21 }
   const calls: { args: string[]; cwd?: string }[] = []
   const gh: Gh = async (args, options) => {
@@ -419,33 +419,84 @@ test('repo.links: with no linked pull request, the branch pull request gh finds 
     if (branch instanceof Error) throw branch
     return branch
   }
-  let linked: { project: string | null; issue: number | null; pull: number | null } | null = { project: 'github:octo/app', issue: 4, pull: 13 }
+  let linked: { project: string | null; items: ReturnType<typeof item>[] } | null = { project: 'github:octo/app', items: [item('issue', 4), item('pull', 13)] }
   const module = {
     default: (orca: OrcaWorkerApi) =>
       main.activateWith(orca, { gh, ghRepo: async (path) => repos[path], terminalPath: async () => null, exists: () => true, links: async () => linked })
   }
   const worker = await mountWorker(module, { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
   // A linked pull request wins, and gh is not asked.
-  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: 4, pull: 13 })
+  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issues: [ref(4)], pulls: [ref(13)] })
   assert.equal(calls.length, 0)
-  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issue: 4, pull: 13 })
-  assert.equal(calls.length, 0)
-  linked = { project: 'github:octo/app', issue: 4, pull: null }
+  linked = { project: 'github:octo/app', items: [item('issue', 4), item('pull', 7, 'octo/sdk')] }
   // Only the Pull requests tab asks for the branch's: the Issues tab never pays a gh call.
-  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: 4, pull: null })
-  assert.deepEqual(await worker.request('repo.links', {}), { ok: true, issue: 4, pull: null })
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issues: [ref(4)], pulls: [ref(7, 'octo/sdk')] })
+  assert.deepEqual(await worker.request('repo.links', {}), { ok: true, issues: [ref(4)], pulls: [ref(7, 'octo/sdk')] })
   assert.equal(calls.length, 0)
-  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issue: 4, pull: 21 })
+  // A pull request of another repo is not the branch's own.
+  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issues: [ref(4)], pulls: [ref(21), ref(7, 'octo/sdk')] })
   assert.deepEqual(calls[0], { args: ['pr', 'view', '--json', 'number'], cwd: '/work/spike' })
   // Orca's CLI says nothing: gh still finds the branch's.
   linked = null
-  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issue: null, pull: 21 })
+  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issues: [], pulls: [ref(21)] })
   // No pull request for the branch, or gh failing, is none, not an error.
   branch = new GhError('gh_failed', 'no pull requests found for branch "feature/spike"')
-  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issue: null, pull: null })
+  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issues: [], pulls: [] })
   branch = { message: 'odd' }
-  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issue: null, pull: null })
+  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issues: [], pulls: [] })
   await worker.deactivate()
+})
+
+test('agent.find names a free agent; agent.ask types the link prompt into its terminal without Enter', async () => {
+  let agents = [
+    { terminalId: 't-busy', title: 'Codex', agent: 'codex', state: 'working', stateStartedAt: 9 },
+    { terminalId: 't-free', title: 'Claude Code', agent: 'claude', state: 'waiting', stateStartedAt: 5 }
+  ]
+  let accepted = true
+  const host = mockHost({
+    results: {
+      'workspace.readContext': { branch: 'feature/spike', displayName: 'Spike', terminals: [] },
+      'workspace.list': { workspaces, truncated: false },
+      'agents.list': () => ({ agents }),
+      'terminal.sendText': () => ({ accepted })
+    }
+  })
+  const worker = await mountWorker(listWorker(noGh), { host })
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Claude Code', terminalId: 't-free' } })
+  assert.deepEqual(await worker.request('agent.ask', { kind: 'pulls', terminalId: 't-free' }), { ok: true, agent: 'Claude Code' })
+  assert.deepEqual(host.callsOf('terminal.sendText'), [
+    {
+      terminalId: 't-free',
+      text: 'Link the GitHub pull request this workspace is working on to it in Orca: orca reference add https://github.com/octo/app/pull/<number> --worktree current',
+      enter: false
+    }
+  ])
+  accepted = false
+  const refused = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-free' })
+  assert.equal(!refused.ok && refused.error.code, 'no_agent')
+  // Only the agent the panel offered is asked, and only while it is free: never another one.
+  const busy = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-busy' })
+  assert.equal(!busy.ok && busy.error.code, 'no_agent')
+  agents = agents.slice(0, 1)
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null })
+  const gone = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-free' })
+  assert.equal(!gone.ok && gone.error.code, 'no_agent')
+  assert.equal(host.callsOf('terminal.sendText').length, 2)
+  await worker.deactivate()
+
+  const refusing = mockHost({
+    results: {
+      'workspace.readContext': { branch: 'feature/spike', displayName: 'Spike', terminals: [] },
+      'workspace.list': { workspaces, truncated: false },
+      'agents.list': () => {
+        throw hostError('capability_denied', 'agent:read was not granted')
+      }
+    }
+  })
+  const denied = await mountWorker(listWorker(noGh), { host: refusing })
+  const answer = await denied.request('agent.find')
+  assert.equal(!answer.ok && answer.error.code, 'not_allowed')
+  await denied.deactivate()
 })
 
 test('orca.show runs the Tasks page or the Checks tab of Orca, and a refusal is an answer', async () => {

@@ -6,7 +6,6 @@ import {
   closeIssue,
   commentOn,
   COMMENT_BYTES,
-  createIssue,
   deleteComment,
   editComment,
   editIssue,
@@ -257,15 +256,6 @@ test('edit sends only what changed, one flag per label and login', async () => {
   // Nothing to change runs nothing.
   await editIssue(gh, repo, { number: 8, addLabels: [] })
   assert.equal(gh.calls.length, 2)
-})
-
-test('create reads the new number from the URL gh prints', async () => {
-  const gh = fakeGh('\nCreating issue in octo/app\n\nhttps://github.com/octo/app/issues/129\n')
-  const made = await createIssue(gh, repo, { title: 'Search ignores accents', body: '', labels: ['bug'], assignees: ['@me'] })
-  assert.deepEqual(made, { number: 129, url: 'https://github.com/octo/app/issues/129' })
-  assert.deepEqual(gh.calls[0].args, ['issue', 'create', '--title', 'Search ignores accents', '--body', '', '--label', 'bug', '--assignee', '@me'])
-  await assert.rejects(createIssue(fakeGh('no url'), repo, { title: 'x', body: '' }), isGhError)
-  await assert.rejects(createIssue(fakeGh(), repo, { title: ' ', body: '' }), isGhError)
 })
 
 test('reactions: addReaction or removeReaction on the node id', async () => {

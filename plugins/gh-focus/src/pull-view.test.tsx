@@ -3,7 +3,7 @@
 // Checks tab, over a mock host whose `requests` stand in for src/worker.ts.
 import { assert, hostError, mockHost, mount, test } from 'orca/testing'
 import * as panel from './panel'
-import { failed, itemPage, pullDetail, repoOk } from './fixtures'
+import { failed, links, linkedRows, pullDetail, ref, repoOk } from './fixtures'
 import { canReview, timing } from './pull-store'
 import type { PullDetail, TimelineItem } from './protocol'
 
@@ -18,8 +18,10 @@ function host(overrides: Record<string, unknown> = {}, detail: (number: number) 
   const requests: Record<string, unknown> = {
     'repo.get': () => repoOk,
     // The workspace's branch has pull request 124.
-    'repo.links': { ok: true, issue: null, pull: 124 },
-    'issues.list': itemPage([], 0, null),
+    'repo.links': links([], [124]),
+    'items.get': ({ items }: { items: Parameters<typeof linkedRows>[0] }) => linkedRows(items, 'pulls'),
+    'agent.find': { ok: true, agent: { name: 'Claude Code', terminalId: 't1' } },
+    'agent.ask': { ok: true, agent: 'Claude Code' },
     // The pull request asked for, so each number opens its own.
     'pull.get': ({ number }: { number: number }) => ({ ok: true, pull: { ...detail(number), number, url: `https://github.com/octo/app/pull/${number}` } }),
     'pull.comment': () => ok,
@@ -67,7 +69,7 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
   assert.deepEqual(h.last('pull.get'), { number: 124 })
   // The Pull requests tab asks for the branch's pull request when Orca links none.
   assert.deepEqual(h.last('repo.links'), { branch: true })
-  assert.equal(h.count('pulls.list'), 0)
+  assert.equal(h.count('items.get'), 0)
   assert.ok(view.find({ type: 'Text', text: 'fix: stream CSV export past 10k rows' }))
   // Its own pull request: no Back, and Tasks for the rest of the repo's.
   assert.equal(view.find({ type: 'Button', text: /^← Back/ }), null)
@@ -124,11 +126,12 @@ test('the review threads of the workspace pull request open in the Orca Checks t
   await view.unmount()
 })
 
-test('a branch with no pull request says so, with Tasks and the repo pull requests on GitHub', async () => {
-  const h = host({ 'repo.links': { ok: true, issue: null, pull: null } })
+test('a branch with no pull request says so, with how to link one, Tasks and the repo pull requests on GitHub', async () => {
+  const h = host({ 'repo.links': links() })
   const view = await openPull(h)
   assert.equal(h.count('pull.get'), 0)
-  assert.ok(says(view, /No pull request for this branch/))
+  assert.ok(says(view, /No pull request for this workspace/))
+  assert.ok(view.find({ type: 'Code', text: 'orca reference add https://github.com/octo/app/pull/<number> --worktree current' }))
   await view.press({ type: 'Button', text: 'Open on GitHub' })
   assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/app/pulls' })
   await view.press({ type: 'Button', text: 'Tasks' })
@@ -137,15 +140,15 @@ test('a branch with no pull request says so, with Tasks and the repo pull reques
 
   // No answer from the worker reads the same as no pull request.
   const silent = await openPull(host({ 'repo.links': failed('host_failed', 'orca CLI missing') }))
-  assert.ok(says(silent, /No pull request for this branch/))
+  assert.ok(says(silent, /No pull request for this workspace/))
   await silent.unmount()
 })
 
 test('Refresh finds a pull request opened for the branch meanwhile, and reloads the one on screen', async () => {
   let pullNumber: number | null = null
-  const h = host({ 'repo.links': () => ({ ok: true, issue: null, pull: pullNumber }) })
+  const h = host({ 'repo.links': () => links([], pullNumber ? [pullNumber] : []) })
   const view = await openPull(h)
-  assert.ok(says(view, /No pull request for this branch/))
+  assert.ok(says(view, /No pull request for this workspace/))
   pullNumber = 124
   await view.press({ label: 'Refresh' })
   assert.deepEqual(h.last('pull.get'), { number: 124 })
@@ -168,6 +171,50 @@ test('another pull request opened from a mention leads back to the workspace one
   assert.deepEqual(h.last('pull.get'), { number: 124 })
   assert.equal(view.find({ type: 'Button', text: /^← Back/ }), null)
   await view.unmount()
+})
+
+test('several linked pull requests make a list; Back from one returns to it; Checks is for the first of this repo', async () => {
+  const h = host({ 'repo.links': links([], [124, 'octo/sdk#7', 131]) })
+  const view = await openPull(h)
+  assert.equal(h.count('pull.get'), 0)
+  assert.deepEqual(h.last('items.get'), { kind: 'pulls', items: [ref(124), ref('octo/sdk#7'), ref(131)] })
+  assert.ok(view.find({ text: '3 linked pull requests' }))
+  await view.press({ type: 'ListItem', text: /Export CSV drops rows/ })
+  assert.deepEqual(h.last('pull.get'), { number: 131 })
+  // Orca's Checks tab shows the workspace's own pull request, not this one.
+  await view.press({ type: 'Link', text: '1 failing · 1 pending · 4 passed' })
+  assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/app/pull/131/checks' })
+  await view.press({ type: 'Button', text: '← Back to linked pull requests' })
+  assert.equal(view.findAll({ type: 'ListItem' }).length, 3)
+  await view.press({ type: 'ListItem', text: /Login page loops/ })
+  await view.press({ type: 'Link', text: '1 failing · 1 pending · 4 passed' })
+  assert.deepEqual(h.last('orca.show'), { view: 'checks' })
+  await view.unmount()
+})
+
+test('Ask agent types the link prompt into the agent; the person presses Enter there', async () => {
+  const h = host({ 'repo.links': links() })
+  const view = await openPull(h)
+  await view.press({ type: 'Button', text: 'Ask Claude Code to link' })
+  assert.deepEqual(h.last('agent.ask'), { kind: 'pulls', terminalId: 't1' })
+  assert.ok(says(view, /Typed into Claude Code/))
+  await view.press({ type: 'Button', text: 'Show the command again' })
+  assert.ok(view.find({ type: 'Button', text: 'Ask Claude Code to link' }))
+  await view.unmount()
+
+  // No agent free by the time it is asked: the button goes, the command stays, and it says why.
+  const busy = await openPull(host({ 'repo.links': links(), 'agent.ask': failed('no_agent', 'No agent in this workspace is waiting for input.') }))
+  await busy.press({ type: 'Button', text: 'Ask Claude Code to link' })
+  assert.ok(says(busy, /No agent free/))
+  assert.equal(busy.find({ type: 'Button', text: 'Ask Claude Code to link' }), null)
+  assert.ok(busy.find({ text: /No agent is free in this workspace to ask/ }))
+  await busy.unmount()
+
+  // None free from the start: no button.
+  const none = await openPull(host({ 'repo.links': links(), 'agent.find': { ok: true, agent: null } }))
+  assert.equal(none.find({ type: 'Button', text: /^Ask / }), null)
+  assert.ok(none.find({ text: /No agent is free in this workspace to ask/ }))
+  await none.unmount()
 })
 
 test('a tab not on screen while the focus went elsewhere and back still shows the workspace pull request', async () => {

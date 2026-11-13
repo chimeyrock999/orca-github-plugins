@@ -67,23 +67,52 @@ export async function terminalPath(terminalId: string, runner: Run = run): Promi
   return stdout === null ? null : parseTerminalShow(stdout)
 }
 
-/** The GitHub issue and pull request Orca links to a workspace, and its project (`github:o/r`). */
-export type WorkspaceLinks = { project: string | null; issue: number | null; pull: number | null }
+/** A GitHub issue or pull request Orca links to a workspace. `repo` is the `owner/name` its URL (or
+ *  task source) names; null when Orca says neither, which means the workspace's own repo. */
+export type LinkedItem = { type: 'issue' | 'pull'; number: number; repo: string | null; title: string | null; url: string | null }
+/** What Orca links to a workspace, and its project (`github:o/r`). */
+export type WorkspaceLinks = { project: string | null; items: LinkedItem[] }
 
-/** The links in `orca worktree show --json`; null for any other shape. */
+const ITEM_URL = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/(?:issues|pull)\/\d+(?:[/?#]|$)/
+
+const positive = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null)
+const text = (v: unknown) => (typeof v === 'string' && v ? v : null)
+
+/** One of Orca's `linkedItems` (a workspace attachment), when it is a GitHub issue or pull request. */
+function linkedItem(item: unknown): LinkedItem | null {
+  const i = item as { provider?: unknown; type?: unknown; number?: unknown; title?: unknown; url?: unknown; taskSourceContext?: { projectId?: unknown } } | null
+  const number = positive(i?.number)
+  if (!i || i.provider !== 'github' || (i.type !== 'issue' && i.type !== 'pr') || !number) return null
+  const url = text(i.url)
+  const source = text(i.taskSourceContext?.projectId)
+  const repo = url?.match(ITEM_URL)?.[1] ?? (source?.startsWith('github:') ? source.slice('github:'.length) : null)
+  return { type: i.type === 'pr' ? 'pull' : 'issue', number, repo, title: text(i.title), url }
+}
+
+/** The links in `orca worktree show --json`: every linked item, then, as Orca's own
+ *  getWorkspaceAttachments does, the one `linkedIssue` and `linkedPR` it kept before when the list
+ *  does not have them (an older Orca has no list at all); null for any other shape. */
 export function parseWorktreeShow(stdout: string): WorkspaceLinks | null {
   try {
     const w = JSON.parse(stdout)?.result?.worktree
     if (!w || typeof w !== 'object') return null
-    const number = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null)
-    return { project: typeof w.projectId === 'string' ? w.projectId : null, issue: number(w.linkedIssue), pull: number(w.linkedPR) }
+    const project = typeof w.projectId === 'string' ? w.projectId : null
+    const items: LinkedItem[] = Array.isArray(w.linkedItems) ? w.linkedItems.flatMap((i: unknown) => linkedItem(i) ?? []) : []
+    // The legacy fields name the workspace's own repo.
+    const own = project?.startsWith('github:') ? project.slice('github:'.length).toLowerCase() : null
+    for (const [type, v] of [['issue', w.linkedIssue], ['pull', w.linkedPR]] as const) {
+      const number = positive(v)
+      const listed = items.some((i) => i.type === type && i.number === number && (!i.repo || i.repo.toLowerCase() === own))
+      if (number && !listed) items.push({ type, number, repo: null, title: null, url: null })
+    }
+    return { project, items }
   } catch {
     return null
   }
 }
 
-/** What Orca links to the workspace in `path` (a workspace made from an issue or pull request).
- *  Like terminalPath, any failure is null: the panel then just shows the list. */
+/** What Orca links to the workspace in `path` (made from an issue or pull request, or linked to one).
+ *  Like terminalPath, any failure is null: the panel then shows none. */
 export async function workspaceLinks(path: string, runner: Run = run): Promise<WorkspaceLinks | null> {
   const stdout = await orcaCli(['worktree', 'show', `--worktree=path:${path}`, '--json'], runner)
   return stdout === null ? null : parseWorktreeShow(stdout)

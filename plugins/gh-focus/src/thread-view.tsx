@@ -26,7 +26,8 @@ import {
 import { issues } from './issue-store'
 import { count, EMOJI, pullLook, reactionTip, reviewLook, sourceLook, stateWords, type Look } from './look'
 import { Glyph } from './parts'
-import { findPull, focused, handOff, pulls } from './pull-store'
+import { handOff } from './link-store'
+import { pulls, workspacePull } from './pull-store'
 import { REACTIONS, type ReactionGroup, type ThreadDetail, type TimelineComment, type TimelineItem, type TimelineMention, type TimelineReview } from './protocol'
 import { hasImage, linkRefs } from './refs'
 import { choices, repo, selectTab } from './store'
@@ -193,8 +194,8 @@ function CommentItem({ t, c, s }: { t: AnyThread; c: TimelineComment; s: ThreadS
 function openHere(type: 'issue' | 'pull', number: number): Promise<void> {
   const t = type === 'issue' ? issues : pulls
   void selectTab(t.kind)
-  // The Pull requests tab also learns the workspace's own, for Back.
-  return t.open(number).then(() => (type === 'pull' ? findPull() : undefined))
+  // The tab also learns what is linked to the workspace, for Back.
+  return t.open(number).then(() => t.start())
 }
 
 function Mention({ item }: { item: TimelineMention }) {
@@ -250,7 +251,7 @@ function EventLine({ look, actor, words, at }: { look: Look; actor: string | nul
 /** A review's comments on the diff: Orca's Checks tab shows and answers them for the workspace's own
  *  pull request; any other opens on GitHub. */
 function DiffComments({ t, r }: { t: AnyThread; r: TimelineReview }) {
-  const own = t.kind === 'pulls' && read(t.state).number === focused()?.number
+  const own = t.kind === 'pulls' && read(t.state).number === workspacePull()
   return (
     <Row gap="xs" align="center" wrap>
       <Text size="xs" muted>
