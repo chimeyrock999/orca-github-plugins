@@ -10,6 +10,22 @@
   },
   "repository": "https://github.com/chimeyrock999/orca-github-plugins",
   "license": "MIT",
+  "cover": {
+    "path": "images/issue.png",
+    "alt": "gh Focus in Orca's right sidebar, showing the workspace's linked issue with its labels, milestone and description"
+  },
+  "screenshots": [
+    {
+      "path": "images/issue.png",
+      "alt": "gh Focus showing the workspace's linked issue with its labels, milestone and description",
+      "caption": "The workspace's issue, beside your code"
+    },
+    {
+      "path": "images/pull.png",
+      "alt": "gh Focus showing the workspace's merged pull request with its branches, checks, reviewers and description",
+      "caption": "Its pull request: branches, checks and review"
+    }
+  ],
   "engines": {
     "orca": ">=1.4.256"
   },
