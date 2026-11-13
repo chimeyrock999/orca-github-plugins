@@ -12,6 +12,11 @@ export type ErrorCode =
   /** Panel only: the worker threw something that is not a gh failure, or Orca refused the request
    *  as malformed. A bug in the plugin. */
   | 'action_failed'
+  /** Panel only: Orca has not allowed this for the plugin (capability_denied, consent_required,
+   *  not_permitted). */
+  | 'not_allowed'
+  /** Panel only: Orca's own pace for panel requests, with `retryAfterMs` when Orca says how long. */
+  | 'host_rate_limited'
   /** Panel only: the answer is bigger than Orca passes to a panel. */
   | 'too_large'
   /** Panel only: Orca could not reach the plugin's worker. */
@@ -21,7 +26,7 @@ export type ErrorCode =
   | 'gh_logged_out'
   /** GitHub has no such repo, issue, run or workflow, or this login cannot see it. */
   | 'not_found'
-  /** GitHub's rate limit, or Orca's own pace for panel requests (then with `retryAfterMs`). */
+  /** GitHub's rate limit. */
   | 'rate_limited'
   /** gh did not answer within the worker's limit. */
   | 'timeout'
@@ -40,7 +45,7 @@ export type PanelError = {
   path?: string
   /** The workspaces that fit the focused context equally well (`ambiguous_workspace`). */
   candidates?: { id: string; name: string; path: string }[]
-  /** How long Orca asks the panel to wait (`rate_limited` from Orca). */
+  /** How long Orca asks the panel to wait (`host_rate_limited`). */
   retryAfterMs?: number
 }
 

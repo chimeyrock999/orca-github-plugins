@@ -64,19 +64,22 @@ test('every error code has words, and an unknown one falls back to gh_failed', (
 
 test("Orca's own failures say what happened", () => {
   assert.deepEqual(
-    (['action_failed', 'too_large', 'unavailable', 'cancelled', 'host_failed'] as const).map((code) => problemOf({ code }).title),
-    ['Panel error', 'Answer too big for the panel', 'Plugin worker not running', 'Request cancelled', 'Orca did not answer']
+    (['action_failed', 'not_allowed', 'too_large', 'unavailable', 'cancelled', 'host_failed'] as const).map((code) => problemOf({ code }).title),
+    ['Panel error', 'Not allowed by Orca', 'Answer too big for the panel', 'Plugin worker not running', 'Request cancelled', 'Orca did not answer']
   )
+  assert.ok(!/report/i.test(problemOf({ code: 'not_allowed' }).hint))
 })
 
-test("a rate limit with a wait is Orca's and says how long; without one it is GitHub's", () => {
-  const orca = problemOf({ code: 'rate_limited', retryAfterMs: 12_000 })
+test("Orca's rate limit says how long to wait, or a moment; GitHub's keeps its words", () => {
+  const orca = problemOf({ code: 'host_rate_limited', retryAfterMs: 12_000 })
   assert.equal(orca.title, 'Too many requests')
   assert.match(orca.hint, /Wait 12s, then press Retry/)
-  assert.equal(problemOf({ code: 'rate_limited', retryAfterMs: 90_000 }).hint.includes('Wait 1m 30s'), true)
+  assert.match(problemOf({ code: 'host_rate_limited', retryAfterMs: 90_000 }).hint, /Wait 1m 30s/)
   // Never "Wait 0s".
-  assert.match(problemOf({ code: 'rate_limited', retryAfterMs: 400 }).hint, /Wait 1s,/)
+  assert.match(problemOf({ code: 'host_rate_limited', retryAfterMs: 400 }).hint, /Wait 1s,/)
+  assert.match(problemOf({ code: 'host_rate_limited' }).hint, /Wait a moment, then press Retry/)
   assert.equal(problemOf({ code: 'rate_limited' }).title, 'GitHub rate limit reached')
+  assert.equal(problemOf({ code: 'rate_limited', retryAfterMs: 5_000 }).title, 'GitHub rate limit reached')
 })
 
 test('pageLine counts pages GitHub lets anyone reach', () => {

@@ -125,6 +125,8 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
     hint: 'Something in the GitHub panel broke; the message below says what. Report it if Retry does not help.',
     tone: 'danger'
   },
+  not_allowed: { title: 'Not allowed by Orca', hint: 'Orca has not allowed this for the GitHub plugin; the message below says what.', tone: 'warning' },
+  host_rate_limited: { title: 'Too many requests', hint: "Orca paces the panel's requests. Wait a moment, then press Retry.", tone: 'warning' },
   too_large: { title: 'Answer too big for the panel', hint: 'Narrow the search or filters, or open it on GitHub.', tone: 'warning' },
   unavailable: { title: 'Plugin worker not running', hint: 'Press Retry. If it keeps failing, reload the plugin.', tone: 'warning' },
   not_a_repo: { title: 'Not a GitHub repository', hint: 'This folder has no remote on a GitHub host that gh knows.', tone: 'warning' },
@@ -143,12 +145,12 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
   }
 }
 
-/** A rate limit with a wait is Orca pacing the panel's requests, not GitHub's limit. */
+/** Orca's rate limit says how long to wait when Orca does. */
 export function problemOf(error: Pick<PanelError, 'code' | 'retryAfterMs'>): Problem {
-  if (error.code === 'rate_limited' && typeof error.retryAfterMs === 'number') {
+  if (error.code === 'host_rate_limited' && typeof error.retryAfterMs === 'number') {
     // Whole seconds, rounded up, so it never says "Wait 0s".
     const wait = duration(Math.max(1, Math.ceil(error.retryAfterMs / 1000)) * 1000)
-    return { title: 'Too many requests', hint: `Orca paces the panel's requests. Wait ${wait}, then press Retry.`, tone: 'warning' }
+    return { ...PROBLEMS.host_rate_limited, hint: `Orca paces the panel's requests. Wait ${wait}, then press Retry.` }
   }
   return PROBLEMS[error.code] ?? PROBLEMS.gh_failed
 }

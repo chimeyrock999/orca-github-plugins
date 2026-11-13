@@ -78,16 +78,27 @@ const loads: Record<Kind, number> = { issues: 0, pulls: 0, runs: 0 }
 // Tabs whose first page was asked for since the repo was set.
 const started = new Set<Kind>()
 
-// Orca's rejection codes the panel has its own words for; any other code is a request the plugin
-// got wrong, which Orca's typings say to treat as action_failed.
-const KEPT = new Set<ErrorCode>(['timeout', 'cancelled', 'rate_limited', 'too_large', 'unavailable', 'action_failed'])
+// Orca's rejection codes as the panel's: kept where the panel has words for them, its permission
+// answers as not_allowed, and its rate limit as its own (GitHub's comes as an answer, never a
+// rejection). Any other code is a request the plugin got wrong, which Orca's typings say to treat
+// as action_failed.
+const HOST_CODES = new Map<string, ErrorCode>([
+  ['timeout', 'timeout'],
+  ['cancelled', 'cancelled'],
+  ['too_large', 'too_large'],
+  ['unavailable', 'unavailable'],
+  ['action_failed', 'action_failed'],
+  ['rate_limited', 'host_rate_limited'],
+  ['capability_denied', 'not_allowed'],
+  ['consent_required', 'not_allowed'],
+  ['not_permitted', 'not_allowed']
+])
 
-/** A rejected plugin.request as a failed answer, keeping Orca's code; one with no code is Orca not
- *  answering. */
+/** A rejected plugin.request as a failed answer, keeping what Orca's code means; one with no code
+ *  is Orca not answering. */
 export function requestFailed(error: unknown): { ok: false; error: PanelError } {
   const e = error as { code?: unknown; message?: unknown; retryAfterMs?: unknown }
-  const code: ErrorCode =
-    typeof e?.code !== 'string' ? 'host_failed' : KEPT.has(e.code as ErrorCode) ? (e.code as ErrorCode) : 'action_failed'
+  const code: ErrorCode = typeof e?.code !== 'string' ? 'host_failed' : (HOST_CODES.get(e.code) ?? 'action_failed')
   const failure: PanelError = { code, message: String(e?.message ?? error) }
   if (typeof e?.retryAfterMs === 'number') failure.retryAfterMs = e.retryAfterMs
   return { ok: false, error: failure }
