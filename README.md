@@ -56,3 +56,8 @@ orca plugin dev watch .             # load into Orca with live reload
 
 All four checks (validate, test, check, tsc) pass before a pull request; pull requests go into
 `dev`. More in [`plugins/gh-focus/README.md`](plugins/gh-focus/README.md#develop) and `CLAUDE.md`.
+
+## Releases
+
+What changed in each version: [`CHANGELOG.md`](CHANGELOG.md). How to cut a release or a hotfix:
+[`RELEASING.md`](RELEASING.md).
