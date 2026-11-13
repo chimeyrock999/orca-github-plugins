@@ -65,7 +65,7 @@ export default function Panel() {
   if (!r.ok) {
     return (
       <Stack gap="md">
-        <Heading level={3}>GitHub</Heading>
+        <Heading level={3}>gh Focus</Heading>
         <Problem error={r.error} onRetry={refreshAll} onPick={(path) => thenIssues(pickRepo(path))} />
       </Stack>
     )
