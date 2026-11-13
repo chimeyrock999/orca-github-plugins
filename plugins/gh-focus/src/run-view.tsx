@@ -195,23 +195,13 @@ function ArtifactRow({ artifact, url }: { artifact: RunArtifact; url: string }) 
   const gone = artifact.expired || (artifact.expiresAt !== null && artifact.expiresAt <= Date.now())
   const when = expiry(gone, artifact.expiresAt)
   return (
-    <ListItem onPress={gone ? undefined : () => shell.openExternal(url)}>
-      <Box direction="row" gap="sm" align="center">
-        <Box grow minWidth={0}>
-          <Text size="sm" weight="medium" muted={gone} truncate>
-            {artifact.name}
-          </Text>
-          <Text size="xs" muted>
-            {when ? `${bytes(artifact.bytes)} · ${when}` : bytes(artifact.bytes)}
-          </Text>
-        </Box>
-        {!gone && (
-          <Text size="xs" muted>
-            ↗
-          </Text>
-        )}
-      </Box>
-    </ListItem>
+    <ListItem
+      icon="package"
+      title={artifact.name}
+      description={when ? `${bytes(artifact.bytes)} · ${when}` : bytes(artifact.bytes)}
+      disabled={gone}
+      onPress={() => shell.openExternal(url)}
+    />
   )
 }
 
