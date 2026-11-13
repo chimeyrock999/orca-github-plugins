@@ -1,4 +1,4 @@
-// The open issue: a thread (src/thread-store.ts) with what only issues have, closing with a reason.
+// The open issue: a thread (src/panel/thread/thread-store.ts) with what only issues have, closing with a reason.
 // New issues are made on Orca's Tasks page.
 import { plugin, read, update } from 'orca'
 import type { CloseReason, IssueDetail } from '../../shared/protocol'

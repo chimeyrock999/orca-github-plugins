@@ -77,7 +77,7 @@ export default defineCheck({
   'pull-not-found': pullScenario(failed('not_found', 'Could not resolve to a PullRequest with the number of 131.')),
   actions: { requests: lists, persisted: { plugin: { tab: 'runs' } } },
   // Scenarios cannot press, so a run's detail and the Run workflow form are covered by
-  // src/run-view.test.tsx; this one shows the list with a run waiting to start.
+  // tests/panel/runs/run-view.test.tsx; this one shows the list with a run waiting to start.
   'actions-queued': {
     requests: { ...lists, 'runs.list': runPage([{ ...runRows[0], id: 9002, runNumber: 297, state: 'queued', startedAt: runRows[0].startedAt + 60_000 }, ...runRows], 297, '2') },
     persisted: { plugin: { tab: 'runs' } }

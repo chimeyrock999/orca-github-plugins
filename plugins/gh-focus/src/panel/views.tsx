@@ -1,5 +1,5 @@
 // The tabs' content: on Actions a list with its search, filters and pager, or one run in detail; on
-// Issues and Pull requests what Orca links to the workspace (src/linked-view.tsx), or one in detail.
+// Issues and Pull requests what Orca links to the workspace (src/panel/linked/linked-view.tsx), or one in detail.
 import {
   Box,
   Button,

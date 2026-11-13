@@ -1,4 +1,4 @@
-// What Orca links to the focused workspace: its issues and pull requests (src/exec.ts reads them
+// What Orca links to the focused workspace: its issues and pull requests (src/worker/exec.ts reads them
 // from Orca's CLI), the state GitHub has for them now, and the free agent that can be asked to link one.
 import { GhError, type Gh } from '../gh'
 import type { LinkedItem, WorkspaceLinks } from '../exec'

@@ -1,7 +1,7 @@
 // One page of the Actions tab's runs, fetched with gh in the repo's folder through the REST runs API,
 // which pages by number and has no word search; the repo's labels and workflows; and the states of
 // issues and pull requests as GitHub names them. The Issues and Pull requests tabs list no more than
-// what Orca links to the workspace (src/linked.ts).
+// what Orca links to the workspace (src/worker/linked/linked.ts).
 import { GhError, type Gh } from './gh'
 import {
   PAGE_SIZE,

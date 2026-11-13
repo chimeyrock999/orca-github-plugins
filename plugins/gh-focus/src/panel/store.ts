@@ -1,7 +1,7 @@
 // The panel's state in atoms, and the actions that change it. Each tab keeps the row open in detail;
 // the Actions tab also keeps its list: the search, the page (a stack of cursors, so Previous goes back
 // without asking GitHub for one) and the answer. The Issues and Pull requests tabs list only what Orca
-// links to the workspace (src/thread-store.ts).
+// links to the workspace (src/panel/thread/thread-store.ts).
 import { atom, plugin, read, set, update, type Atom } from 'orca'
 import { hostFailure } from '../shared/host-error'
 import type { Answer, ErrorCode, PanelError, RepoAnswer, RunPage } from '../shared/protocol'
