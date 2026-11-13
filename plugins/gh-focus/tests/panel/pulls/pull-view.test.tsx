@@ -398,8 +398,8 @@ test('on your own pull request only a comment review is offered', async () => {
   await view.unmount()
 })
 
-test('your own draft is marked ready for review in one press, and loads again', async () => {
-  const h = host({}, () => pullDetail({ author: 'chimeyrock999', state: 'draft', merge: 'draft' }))
+test("a draft is marked ready for review in one press, and loads again, someone else's too", async () => {
+  const h = host({}, () => pullDetail({ state: 'draft', merge: 'draft' }))
   const view = await openPull(h)
   assert.equal(view.find({ type: 'Button', text: 'Convert to draft…' }), null)
   await view.press({ type: 'Button', text: 'Ready for review' })
@@ -408,7 +408,7 @@ test('your own draft is marked ready for review in one press, and loads again', 
   await view.unmount()
 })
 
-test('your own open pull request goes back to draft only once confirmed', async () => {
+test('an open pull request goes back to draft only once confirmed', async () => {
   const h = host({}, () => pullDetail({ author: 'chimeyrock999' }))
   const view = await openPull(h)
   assert.equal(view.find({ type: 'Button', text: 'Ready for review' }), null)
@@ -425,10 +425,10 @@ test('your own open pull request goes back to draft only once confirmed', async 
   await view.unmount()
 })
 
-test('draft and ready are offered only on your own pull request while it is open', async () => {
+test('draft and ready are offered only on a pull request you may edit, while it is open', async () => {
   const buttons = (view: Awaited<ReturnType<typeof mount>>) =>
     [view.find({ type: 'Button', text: 'Ready for review' }), view.find({ type: 'Button', text: 'Convert to draft…' })].filter(Boolean).length
-  for (const change of [{}, { state: 'draft' as const }, { author: 'chimeyrock999', state: 'closed' as const }, { author: 'chimeyrock999', state: 'merged' as const }]) {
+  for (const change of [{ canEdit: false }, { canEdit: false, state: 'draft' as const }, { state: 'closed' as const }, { state: 'merged' as const }]) {
     const view = await openPull(host({}, () => pullDetail(change)))
     assert.equal(buttons(view), 0, JSON.stringify(change))
     await view.unmount()

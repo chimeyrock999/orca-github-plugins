@@ -1,6 +1,6 @@
 // The Pull requests tab: the pull requests linked to the focused workspace (or its branch's), each a
 // thread (src/panel/thread/thread-store.ts) with what only pull requests have, a review (approve,
-// request changes or comment) and, on your own, draft or ready for review. Orca's Tasks page lists,
+// request changes or comment) and, where you may edit it, draft or ready for review. Orca's Tasks page lists,
 // searches and filters a repo's pull requests, and its own pull request views close, reopen and
 // merge them.
 import { atom, plugin, read, set, update } from 'orca'
@@ -68,9 +68,10 @@ export function submitReview(): Promise<boolean> | void {
   return pulls.write('review', () => plugin.request('pull.review', input, WRITE), (s) => ({ ...s, draft: '', reviewing: null }))
 }
 
-/** Whether the viewer can mark it ready or back to draft: their own, while it is open. */
+/** Whether the viewer can mark it ready or back to draft: GitHub lets anyone who may edit it (its
+ *  author, or a gh account with write access to the repo), while it is open. */
 export function canToggleDraft(d: PullDetail): boolean {
-  return ownPull(d) && (d.state === 'open' || d.state === 'draft')
+  return d.canEdit && (d.state === 'open' || d.state === 'draft')
 }
 
 export const startDraft = () => update(pull, (s) => ({ ...s, toDraft: true }))

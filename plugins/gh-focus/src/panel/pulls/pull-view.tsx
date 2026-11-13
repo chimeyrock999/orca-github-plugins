@@ -1,7 +1,7 @@
 // One pull request as GitHub shows it: title, state, base ← head, its review decision, merge state
 // and checks in one line each (Orca's words), reviewers, labels and assignees, the body, the timeline
-// of comments, reviews and events, and a box to comment or review; your own goes ready or back to
-// draft.
+// of comments, reviews and events, and a box to comment or review; one you may edit goes ready or
+// back to draft.
 import {
   Box,
   Button,
@@ -145,7 +145,7 @@ function ReviewBox({ d, s }: { d: PullDetail; s: PullState }) {
   )
 }
 
-/** Asks before your own pull request goes back to draft. */
+/** Asks before the pull request goes back to draft. */
 function DraftBox({ d, s }: { d: PullDetail; s: PullState }) {
   return (
     <Callout tone="warning" title={`Convert #${d.number} to draft?`}>
@@ -167,8 +167,8 @@ function DraftBox({ d, s }: { d: PullDetail; s: PullState }) {
   )
 }
 
-/** Your own pull request: a draft is marked ready in one press, an open one goes back to draft once
- *  confirmed. */
+/** A pull request you may edit: a draft is marked ready in one press, an open one goes back to draft
+ *  once confirmed. */
 function DraftButton({ d, s }: { d: PullDetail; s: PullState }) {
   if (!canToggleDraft(d)) return <Box />
   return d.state === 'draft' ? (

@@ -14,8 +14,8 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 **Issues and pull requests**
 
-- On your own open pull request: Ready for review marks a draft ready, and Convert to draft (asked
-  first) turns it back into one.
+- On an open pull request you may edit: Ready for review marks a draft ready, and Convert to draft
+  (asked first) turns it back into one.
 
 ## 0.1.0 - 2026-11-13
 

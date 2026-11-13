@@ -70,8 +70,8 @@ export default defineCheck({
   'pull-ready': showPull({ merge: 'clean', review: 'approved', reviewers: [], checks: { passed: 5, failed: 0, cancelled: 0, needsAction: 0, pending: 0, neutral: 0 } }),
   'pull-conflicts': showPull({ merge: 'conflicts' }),
   'pull-draft': showPull({ state: 'draft', merge: 'draft', review: null, checks: null, head: [], total: 0, comments: 0 }),
-  // Your own draft offers Ready for review; your own open one (pull-own) Convert to draft.
-  'pull-own-draft': showPull({ author: 'chimeyrock999', state: 'draft', merge: 'draft', review: null, checks: null }),
+  // One you may not edit offers neither Ready for review (pull-draft) nor Convert to draft (pull-detail).
+  'pull-read-only': showPull({ canEdit: false }),
   'pull-closed': showPull({
     state: 'closed',
     closedAt: mergedAt,
