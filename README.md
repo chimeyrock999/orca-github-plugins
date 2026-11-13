@@ -34,3 +34,8 @@ orca plugin validate ./plugins/gh-focus
 orca plugin test ./plugins/gh-focus
 orca plugin dev watch ./plugins/gh-focus
 ```
+
+## Releases
+
+What changed in each version: [`CHANGELOG.md`](CHANGELOG.md). How to cut a release or a hotfix:
+[`RELEASING.md`](RELEASING.md).
