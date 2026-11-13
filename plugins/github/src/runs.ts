@@ -17,9 +17,14 @@ export const FAILED_JOBS = 5
 export const RUN_BYTES = 200_000
 /** Writes call the API once, but gh may be slow to start: as long as issue writes get. */
 const WRITE_MS = 60_000
-/** How often a watched run is asked for, and how long one watch request holds (under 120 s). */
-export const POLL_MS = 5_000
+/** How often a watched run is asked for: every 10 s while it changes, doubling up to 60 s while it
+ *  does not, as Orca's Checks tab backs off; and how long one watch request holds (under 120 s). */
+export const POLL_MIN_MS = 10_000
+export const POLL_MAX_MS = 60_000
 export const LEASE_MS = 100_000
+/** After Run workflow: how often and how many times to look for the run it started. */
+const FIND_MS = 2_000
+const FIND_TRIES = 5
 
 type StepJson = { name: string; number: number; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null }
 type JobJson = {
@@ -89,8 +94,21 @@ export async function getRun(gh: Gh, repo: RepoRef, id: number, signal?: AbortSi
     throw new GhError('gh_failed', `Unexpected gh output: ${JSON.stringify(run).slice(0, 200)}`)
   }
   const jobs = pages.flatMap((p) => p?.jobs ?? []).map(jobOf)
+  const waitingFor = run.status === 'waiting' ? await pendingEnvironments(gh, repo, path, signal) : []
   return {
-    run: fitRun({ ...runRow(run), attempt: run.run_attempt ?? 1, workflowId: run.workflow_id ?? 0, done: run.status === 'completed', jobs })
+    run: fitRun({ ...runRow(run), attempt: run.run_attempt ?? 1, workflowId: run.workflow_id ?? 0, done: run.status === 'completed', jobs, waitingFor })
+  }
+}
+
+/** The environments a waiting run needs an approval for. */
+async function pendingEnvironments(gh: Gh, repo: RepoRef, path: string, signal?: AbortSignal): Promise<string[]> {
+  try {
+    const out = (await gh(['api', `${path}/pending_deployments`], { cwd: repo.path, signal, json: true })) as { environment?: { name?: string } }[]
+    return Array.isArray(out) ? out.map((d) => d.environment?.name).filter((n): n is string => !!n) : []
+  } catch (error) {
+    // Waiting on something else (a concurrency group), or no right to see it: the run still shows.
+    if (error instanceof GhError && error.code !== 'cancelled') return []
+    throw error
   }
 }
 
@@ -168,28 +186,41 @@ export type WatchDeps = {
   now?: () => number
 }
 
-/** Asks for the run every POLL_MS and posts it, until it is done, the lease runs out, or the panel
- *  stops waiting (closed, or the request timed out). Never posts after that. With `attempt`, a run
+/** What a poll compares: the run's and every job's and step's state, as Orca's Checks tab does. */
+export function fingerprint(run: RunDetail): string {
+  return JSON.stringify([run.attempt, run.state, run.waitingFor, ...run.jobs.map((j) => [j.name, j.state, ...j.steps.map((s) => `${s.name}:${s.state}`)])])
+}
+
+/** The next wait: back to the shortest when the run changed, else twice the last, up to the longest. */
+export function nextPollMs(last: number, changed: boolean): number {
+  return changed ? POLL_MIN_MS : Math.min(Math.max(POLL_MIN_MS, last) * 2, POLL_MAX_MS)
+}
+
+export type WatchInput = { id: number; attempt?: number; every?: number; mark?: string }
+export type WatchAnswer = { done: boolean; every: number; mark: string | null }
+
+/** Asks for the run and posts it, until it is done, the lease runs out, or the panel stops waiting
+ *  (closed, or the request timed out). Never posts after that. The wait backs off while the run
+ *  does not change; `every` and `mark` carry it from one lease to the next. With `attempt`, a run
  *  is done only once that attempt is: a re-run starts its new attempt a moment after it is asked. */
-export async function watchRun(
-  gh: Gh,
-  repo: RepoRef,
-  input: { id: number; attempt?: number },
-  signal: AbortSignal,
-  deps: WatchDeps
-): Promise<{ done: boolean }> {
+export async function watchRun(gh: Gh, repo: RepoRef, input: WatchInput, signal: AbortSignal, deps: WatchDeps): Promise<WatchAnswer> {
   const { id, attempt = 0 } = input
   const wait = deps.sleep ?? sleep
   const now = deps.now ?? Date.now
   const start = now()
+  let every = Math.min(Math.max(input.every ?? POLL_MIN_MS, POLL_MIN_MS), POLL_MAX_MS)
+  let mark = input.mark ?? null
   for (;;) {
-    await wait(POLL_MS, signal)
+    await wait(every, signal)
     if (signal.aborted) throw new GhError('cancelled', 'The panel stopped watching the run.')
     const { run } = await getRun(gh, repo, id, signal)
     if (signal.aborted) throw new GhError('cancelled', 'The panel stopped watching the run.')
     deps.post(run)
-    if (run.done && run.attempt >= attempt) return { done: true }
-    if (now() - start + POLL_MS >= LEASE_MS) return { done: false }
+    const seen = fingerprint(run)
+    every = nextPollMs(every, seen !== mark)
+    mark = seen
+    if (run.done && run.attempt >= attempt) return { done: true, every, mark }
+    if (now() - start + every >= LEASE_MS) return { done: false, every, mark }
   }
 }
 
@@ -243,16 +274,42 @@ export async function workflowForm(
   return { form: { ref, dispatch, inputs } }
 }
 
-/** Runs the workflow on `ref`. Empty inputs are left out, so the workflow's defaults apply. */
+/** Runs the workflow on `ref`, then looks a few times for the run it started (GitHub makes it a
+ *  moment after the event): `run` is its id, or null when it has not shown yet. Empty inputs are
+ *  left out, so the workflow's defaults apply. */
 export async function dispatchWorkflow(
   gh: Gh,
   repo: RepoRef,
   input: { workflow: number; ref: string; inputs: Record<string, string> },
-  signal?: AbortSignal
-): Promise<object> {
-  if (!input.ref.trim()) throw new GhError('gh_failed', 'Choose a branch or tag to run the workflow on.')
-  const args = ['workflow', 'run', String(input.workflow), '--ref', input.ref.trim(), '-R', repo.nameWithOwner]
+  signal?: AbortSignal,
+  deps: Omit<WatchDeps, 'post'> = {}
+): Promise<{ run: number | null }> {
+  const ref = input.ref.trim()
+  if (!ref) throw new GhError('gh_failed', 'Choose a branch or tag to run the workflow on.')
+  const wait = deps.sleep ?? sleep
+  const now = deps.now ?? Date.now
+  const args = ['workflow', 'run', String(input.workflow), '--ref', ref, '-R', repo.nameWithOwner]
   for (const [name, value] of Object.entries(input.inputs)) if (name.trim() && value !== '') args.push('-f', `${name.trim()}=${value}`)
+  // Clocks differ: a run made just before the press would be older still.
+  const since = now() - 10_000
   await gh(args, { cwd: repo.path, signal, timeoutMs: WRITE_MS })
-  return {}
+  const path = `repos/${repo.nameWithOwner}/actions/workflows/${input.workflow}/runs`
+  for (let tries = 0; tries < FIND_TRIES; tries++) {
+    await wait(FIND_MS, signal)
+    if (signal?.aborted) break
+    try {
+      const out = (await gh(['api', '-X', 'GET', path, '-f', 'event=workflow_dispatch', '-f', `branch=${ref}`, '-F', 'per_page=5'], {
+        cwd: repo.path,
+        signal,
+        json: true
+      })) as { workflow_runs?: { id: number; created_at: string }[] }
+      const fresh = (out?.workflow_runs ?? []).find((r) => Date.parse(r.created_at) >= since)
+      if (fresh) return { run: fresh.id }
+    } catch (error) {
+      // The dispatch landed; only finding its run failed.
+      if (!(error instanceof GhError) || error.code === 'cancelled') throw error
+      break
+    }
+  }
+  return { run: null }
 }

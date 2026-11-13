@@ -19,7 +19,7 @@ import {
 import { issue, loadIssue, newIssue, startIssues } from './issue-store'
 import { githubUrl, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
 import { Problem } from './parts'
-import { DISPATCH, loadForm, loadRun, progress } from './run-store'
+import { DISPATCH, loadForm, loadRun, progress, tabShown } from './run-store'
 import { KindView } from './views'
 
 /** Runs `step`, then lets the Issues tab start on the workspace's issue if it has not yet. */
@@ -89,7 +89,14 @@ export default function Panel() {
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" onPress={openOnGitHub} />
         </Toolbar>
       </Row>
-      <Tabs label="GitHub" value={read(tab)} onChange={(value) => thenIssues(selectTab(value as Kind))}>
+      <Tabs
+        label="GitHub"
+        value={read(tab)}
+        onChange={(value) => {
+          const shown = thenIssues(selectTab(value as Kind))
+          return Promise.all([shown, tabShown()])
+        }}
+      >
         <Tab value="issues" label="Issues" icon="bug" />
         <Tab value="pulls" label="Pull requests" icon="branch" />
         <Tab value="runs" label="Actions" icon="play" />

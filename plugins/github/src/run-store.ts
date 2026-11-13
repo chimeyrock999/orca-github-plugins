@@ -3,7 +3,7 @@
 // goes on; leaving the run aborts that request, and the panel closing ends it on the worker's side.
 import { atom, plugin, read, set, update } from 'orca'
 import type { Answer, DispatchForm, PanelError, RunDetail, RunLogs, RunRow } from './protocol'
-import { back, choices, lists, load, loadChoices, requestFailed, unsure } from './store'
+import { back, choices, lists, load, loadChoices, requestFailed, setScope, tab, unsure } from './store'
 
 /** The log on screen: the run's failed steps (`job` null) or one job's whole log. */
 export type LogView = { job: number | null; answer: Answer<{ logs: RunLogs }> | null }
@@ -59,6 +59,9 @@ const blankDispatch = (): DispatchState => ({ workflow: null, ref: '', form: nul
 
 export const runView = atom<OpenRun>(freshRun(0))
 export const dispatch = atom<DispatchState>(blankDispatch())
+/** A Run workflow whose run GitHub had not shown yet, for the line over the list. */
+export const requested = atom<{ ref: string } | null>(null)
+export const forgetRequested = () => set(requested, null)
 
 /** The key the Run workflow form takes in the runs list's `open`. */
 export const DISPATCH = 'run-workflow'
@@ -78,7 +81,8 @@ let listStale = false
 let watching: AbortController | null = null
 let watchingRun: number | null = null
 
-const isShown = (id: number) => read(lists.runs).open === String(id) && read(runView).id === id
+/** On screen: the Actions tab with this run open. Another tab stops its watch until it comes back. */
+const isShown = (id: number) => read(tab) === 'runs' && read(lists.runs).open === String(id) && read(runView).id === id
 
 function stopWatch(): void {
   watching?.abort()
@@ -113,10 +117,12 @@ async function watch(): Promise<void> {
   const mine = new AbortController()
   watching = mine
   watchingRun = id
+  // The worker's cadence, carried from one lease to the next.
+  let cadence: { every?: number; mark?: string } = {}
   try {
     for (;;) {
       const attempt = read(runView).awaitAttempt
-      const input = attempt ? { id, attempt } : { id }
+      const input = { id, ...(attempt ? { attempt } : {}), ...cadence }
       const answer = await plugin.request('run.watch', input, { ...WATCH, signal: mine.signal }).catch(requestFailed)
       if (mine.signal.aborted || !isShown(id)) return
       if (!answer.ok) {
@@ -125,6 +131,7 @@ async function watch(): Promise<void> {
         return
       }
       if (answer.done || settled(read(runView))) return
+      cadence = { every: answer.every, ...(answer.mark === null ? {} : { mark: answer.mark }) }
     }
   } finally {
     if (watching === mine) {
@@ -162,8 +169,16 @@ export async function loadRun(): Promise<void> {
   void watch()
 }
 
+/** The tab changed: a run open on Actions is watched only while that tab shows. */
+export function tabShown(): Promise<void> | void {
+  if (read(tab) !== 'runs') return stopWatch()
+  const open = read(lists.runs).open
+  if (open && open !== DISPATCH && read(runView).answer?.ok) return loadRun()
+}
+
 /** Opens a run from the list. */
 export function openRun(id: number): Promise<void> {
+  forgetRequested()
   stopWatch()
   views++
   update(lists.runs, (s) => ({ ...s, open: String(id) }))
@@ -246,6 +261,7 @@ let dispatches = 0
 
 /** Opens the Run workflow form on the workflow the list is filtered by, else the first one. */
 export async function startDispatch(): Promise<void> {
+  forgetRequested()
   stopWatch()
   views++
   dispatches++
@@ -317,9 +333,13 @@ export async function runWorkflow(): Promise<void> {
     return
   }
   set(dispatch, blankDispatch())
+  listStale = true
+  if (typeof answer.run === 'number') return openRun(answer.run)
+  // Not shown by GitHub yet: say so on the list, which lists every branch when the run's is another.
+  set(requested, { ref: form.ref })
   views++
   back('runs')
-  // GitHub starts the run a moment later; the list shows it on the next load.
+  if (read(lists.runs).branch && read(lists.runs).branch !== form.ref) return setScope('all')
   return load('runs')
 }
 

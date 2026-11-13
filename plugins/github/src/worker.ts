@@ -102,7 +102,7 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   orca.panels.handle('workflow.form', (input, { signal }) =>
     inRepo(tracker, async (repo) => workflowForm(deps.gh, repo, input, (await deps.branch?.(repo.path)) ?? null, signal))
   )
-  orca.panels.handle('workflow.run', (input, { signal }) => inRepo(tracker, (repo) => dispatchWorkflow(deps.gh, repo, input, signal)))
+  orca.panels.handle('workflow.run', (input, { signal }) => inRepo(tracker, (repo) => dispatchWorkflow(deps.gh, repo, input, signal, deps.watch)))
 }
 
 export default function activate(orca: OrcaWorkerApi): void {

@@ -27,7 +27,7 @@ import { NewIssueView } from './issue-forms'
 import { openIssue, startNewIssue } from './issue-store'
 import { IssueView } from './issue-view'
 import { DISPATCH, openRun, startDispatch } from './run-store'
-import { DispatchView, RunView } from './run-view'
+import { DispatchView, Requested, RunView } from './run-view'
 import { PAGE_SIZE, type IssueRow, type ItemSort, type PullRow, type RunRow } from './protocol'
 import {
   back,
@@ -313,6 +313,7 @@ function ListView({ kind, s }: { kind: Kind; s: ListState }) {
         <Tools kind={kind} s={s} />
       </Row>
       {s.tool && <Strip kind={kind} s={s} />}
+      {kind === 'runs' && <Requested />}
       <Box grow minHeight={0} scroll="y">
         <Body kind={kind} s={s} />
       </Box>

@@ -175,6 +175,7 @@ export function runDetail(change: Partial<RunDetail> = {}): RunDetail {
     workflowId: 77,
     done: true,
     jobs: [job(501, 'lint', false), job(502, 'test (ubuntu-latest)', true)],
+    waitingFor: [],
     ...change
   }
 }

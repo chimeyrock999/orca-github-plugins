@@ -403,7 +403,8 @@ test('run.watch posts each poll to the panel that asked, and answers done when t
     return { id: 9, name: 'CI', display_title: 'CI', run_number: 1, event: 'push', status: polls < 3 ? 'in_progress' : 'completed', conclusion: polls < 3 ? null : 'success', head_branch: 'main', head_sha: 'abc1234', actor: null, run_started_at: '2026-11-13T06:40:00Z', updated_at: '2026-11-13T06:41:00Z', html_url: 'https://github.com/octo/app/actions/runs/9' }
   }
   const worker = await mountWorker(runWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
-  assert.deepEqual(await worker.request('run.watch', { id: 9 }), { ok: true, done: true })
+  const watched = await worker.request('run.watch', { id: 9 })
+  assert.equal(watched.ok && watched.done, true)
   const progress = worker.posts.filter((p) => p.event === 'run.progress')
   assert.equal(progress.length, 3)
   assert.ok(progress.every((p) => typeof p.panel === 'string' && p.panel.length > 0))
@@ -420,13 +421,15 @@ test('workflow.form reads the workflow at the workspace branch, and run writes r
   }
   const worker = await mountWorker(runWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
   assert.deepEqual(await worker.request('workflow.form', { workflow: 77 }), { ok: true, form: { ref: 'feature/spike', dispatch: true, inputs: [] } })
-  assert.deepEqual(await worker.request('workflow.run', { workflow: 77, ref: 'feature/spike', inputs: {} }), { ok: true })
+  assert.deepEqual(await worker.request('workflow.run', { workflow: 77, ref: 'feature/spike', inputs: {} }), { ok: true, run: null })
   assert.deepEqual(await worker.request('run.rerun', { id: 9, failed: true }), { ok: true })
   assert.deepEqual(await worker.request('run.cancel', { id: 9 }), { ok: true })
   assert.deepEqual(calls.map((a) => a.slice(0, 2)), [
     ['api', 'repos/octo/app/branches/feature%2Fspike'],
     ['workflow', 'view'],
     ['workflow', 'run'],
+    // Looking for the run it started: GitHub shows none here.
+    ...Array.from({ length: 5 }, () => ['api', '-X']),
     ['run', 'rerun'],
     ['run', 'cancel']
   ])

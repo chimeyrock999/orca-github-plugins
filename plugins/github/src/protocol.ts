@@ -150,8 +150,9 @@ export type RunJob = {
   stepsCut?: boolean
 }
 
-/** One run with the jobs of its latest attempt. `done` once it is completed: nothing changes after. */
-export type RunDetail = RunRow & { attempt: number; workflowId: number; done: boolean; jobs: RunJob[] }
+/** One run with the jobs of its latest attempt. `done` once it is completed: nothing changes after.
+ *  `waitingFor`: the environments a waiting run needs a deployment approval for. */
+export type RunDetail = RunRow & { attempt: number; workflowId: number; done: boolean; jobs: RunJob[]; waitingFor: string[] }
 
 /** One step's log: its last lines, `dropped` the lines cut before them. */
 export type LogStep = {
@@ -321,18 +322,23 @@ declare module 'orca' {
     /** A finished run's failed steps, or with `job` that job's whole log; trimmed to fit a panel
      *  message. */
     'run.logs': { input: { id: number; job?: number }; output: Answer<{ logs: RunLogs }> }
-    /** Re-runs every job, or only the failed ones (and those that depend on them). */
+    /** Reruns every job, or only the failed ones (and those that depend on them). */
     'run.rerun': { input: { id: number; failed: boolean }; output: Done }
     'run.cancel': { input: { id: number }; output: Done }
-    /** Holds while the run goes on, posting `run.progress` to the asking panel every few seconds.
-     *  Answers once the run is done (`done`; with `attempt`, once that attempt is), or after a
-     *  while so the panel asks again (a request cannot outlive 120 s); closing the panel ends it. */
-    'run.watch': { input: { id: number; attempt?: number }; output: Answer<{ done: boolean }> }
+    /** Holds while the run goes on, posting `run.progress` to the asking panel: every 10 s while it
+     *  changes, backing off to 60 s while it does not. Answers once the run is done (`done`; with
+     *  `attempt`, once that attempt is), or after a while so the panel asks again (a request cannot
+     *  outlive 120 s) with `every` and `mark` to carry the cadence on; closing the panel ends it. */
+    'run.watch': {
+      input: { id: number; attempt?: number; every?: number; mark?: string }
+      output: Answer<{ done: boolean; every: number; mark: string | null }>
+    }
     /** The Run workflow form of a workflow, read at `ref` (default: the workspace's branch when
      *  GitHub has it, else the repo's default branch). */
     'workflow.form': { input: { workflow: number; ref?: string }; output: Answer<{ form: DispatchForm }> }
-    /** Runs a workflow by hand (`workflow_dispatch`) on `ref` with these inputs. */
-    'workflow.run': { input: { workflow: number; ref: string; inputs: Record<string, string> }; output: Done }
+    /** Runs a workflow by hand (`workflow_dispatch`) on `ref` with these inputs; `run` is the run it
+     *  started once GitHub shows it (a few seconds), else null. */
+    'workflow.run': { input: { workflow: number; ref: string; inputs: Record<string, string> }; output: Answer<{ run: number | null }> }
   }
   interface PluginPanelEvents {
     /** Posted to every open panel when the focused workspace's repo answer changes. */

@@ -11,7 +11,8 @@ import {
   getRun,
   LEASE_MS,
   LOG_BUFFER,
-  POLL_MS,
+  POLL_MAX_MS,
+  POLL_MIN_MS,
   rerunRun,
   runLogs,
   sleep,
@@ -252,18 +253,44 @@ test('workflow.form reads at the ref asked for, and with no branch at the defaul
   assert.equal((await workflowForm(detached, repo, { workflow: 1 }, null)).form.ref, 'dev')
 })
 
+/** A clock that moves only when the watch sleeps; `slept` lists each wait. */
+function clock(start = 0) {
+  let t = start
+  const slept: number[] = []
+  return { slept, now: () => t, sleep: async (ms: number) => void (slept.push(ms), (t += ms)) }
+}
+
+const NOW = Date.parse('2026-11-13T07:00:00Z')
+
 test('workflow.run passes each filled input as a raw field and leaves empty ones to their defaults', async () => {
-  const gh = routedGh([[/^workflow run/, '']])
-  await dispatchWorkflow(gh, repo, { workflow: 925645, ref: 'main', inputs: { version: '1.9.1', note: '@notes.md', empty: '' } })
+  const gh = routedGh([
+    [/^workflow run/, ''],
+    [/^api -X GET repos\/octo\/app\/actions\/workflows\/\d+\/runs/, { workflow_runs: [] }]
+  ])
+  await dispatchWorkflow(gh, repo, { workflow: 925645, ref: 'main', inputs: { version: '1.9.1', note: '@notes.md', empty: '' } }, undefined, clock(NOW))
   assert.deepEqual(gh.calls[0].args, ['workflow', 'run', '925645', '--ref', 'main', '-R', 'octo/app', '-f', 'version=1.9.1', '-f', 'note=@notes.md'])
   await assert.rejects(dispatchWorkflow(gh, repo, { workflow: 1, ref: ' ', inputs: {} }), (e: unknown) => e instanceof GhError)
 })
 
-/** A clock that moves only when the watch sleeps. */
-function clock() {
-  let t = 0
-  return { now: () => t, sleep: async (ms: number) => void (t += ms) }
-}
+test('workflow.run finds the run it started once GitHub shows it, ignoring older runs', async () => {
+  let looks = 0
+  const older = { id: 1, created_at: '2026-11-13T06:00:00Z' }
+  const gh = routedGh([
+    [/^workflow run/, ''],
+    [/^api -X GET repos\/octo\/app\/actions\/workflows\/77\/runs -f event=workflow_dispatch -f branch=main/, () => ({ workflow_runs: ++looks < 2 ? [older] : [{ id: 99, created_at: '2026-11-13T07:00:03Z' }, older] })]
+  ])
+  assert.deepEqual(await dispatchWorkflow(gh, repo, { workflow: 77, ref: 'main', inputs: {} }, undefined, clock(NOW)), { run: 99 })
+  assert.equal(looks, 2)
+})
+
+test('workflow.run answers no run when GitHub has not shown it after a few looks, or the look fails', async () => {
+  const none = routedGh([[/^workflow run/, ''], [/^api -X GET/, { workflow_runs: [] }]])
+  const c = clock(NOW)
+  assert.deepEqual(await dispatchWorkflow(none, repo, { workflow: 77, ref: 'main', inputs: {} }, undefined, c), { run: null })
+  assert.equal(c.slept.length, 5)
+  const failing = routedGh([[/^workflow run/, ''], [/^api -X GET/, new GhError('rate_limited', 'API rate limit exceeded')]])
+  assert.deepEqual(await dispatchWorkflow(failing, repo, { workflow: 77, ref: 'main', inputs: {} }, undefined, clock(NOW)), { run: null })
+})
 
 function stateRoutes(states: string[]) {
   let n = 0
@@ -276,16 +303,48 @@ test('run.watch posts the run at each poll and answers done once it completes', 
   const posted: RunDetail[] = []
   const gh = routedGh(stateRoutes(['in_progress', 'in_progress', 'completed']))
   const answer = await watchRun(gh, repo, { id: 43380486297 }, new AbortController().signal, { ...clock(), post: (run) => posted.push(run) })
-  assert.deepEqual(answer, { done: true })
+  assert.equal(answer.done, true)
   assert.deepEqual(posted.map((r) => r.done), [false, false, true])
+})
+
+test('run.watch backs off while the run does not change and comes back to 10 s when it does', async () => {
+  let moved = false
+  const gh = routedGh([
+    [/jobs/, () => [{ jobs: [job(12, 'test', null, 'in_progress', [step(1, 'Test', moved ? 'success' : null, moved ? 'completed' : 'in_progress')])] }]],
+    [/^api repos\/octo\/app\/actions\/runs\/43380486297$/, runJson({ status: 'in_progress', conclusion: null })]
+  ])
+  const c = clock()
+  const answer = await watchRun(gh, repo, { id: 43380486297 }, new AbortController().signal, { ...c, post: () => {} })
+  // The first poll is new; the rest find nothing changed and wait twice as long, up to 60 s.
+  assert.deepEqual(c.slept, [POLL_MIN_MS, POLL_MIN_MS, 20_000, 40_000])
+  assert.deepEqual([answer.done, answer.every], [false, POLL_MAX_MS])
+  // The next lease carries the cadence on; a change brings it back to the shortest wait.
+  moved = true
+  const next = clock()
+  await watchRun(gh, repo, { id: 43380486297, every: answer.every, mark: answer.mark ?? undefined }, new AbortController().signal, { ...next, post: () => {} })
+  assert.deepEqual(next.slept.slice(0, 3), [POLL_MAX_MS, POLL_MIN_MS, 20_000])
+})
+
+test('a waiting run names the environments that need an approval', async () => {
+  const gh = routedGh([
+    ...runRoutes(runJson({ status: 'waiting', conclusion: null }), [{ jobs: [] }]),
+    [/pending_deployments$/, [{ environment: { name: 'production' }, wait_timer: 0 }]]
+  ])
+  const { run } = await getRun(gh, repo, 43380486297)
+  assert.equal(run.state, 'waiting')
+  assert.deepEqual(run.waitingFor, ['production'])
+  const done = await getRun(routedGh(runRoutes()), repo, 43380486297)
+  assert.deepEqual(done.run.waitingFor, [])
 })
 
 test('run.watch answers not done before its lease runs out, so the panel asks again', async () => {
   const posted: RunDetail[] = []
   const gh = routedGh(stateRoutes(['in_progress']))
   const answer = await watchRun(gh, repo, { id: 43380486297 }, new AbortController().signal, { ...clock(), post: (run) => posted.push(run) })
-  assert.deepEqual(answer, { done: false })
-  assert.equal(posted.length, Math.floor(LEASE_MS / POLL_MS) - 1)
+  assert.equal(answer.done, false)
+  // 10 + 10 + 20 + 40 s, and the next 60 s wait would pass the lease.
+  assert.equal(posted.length, 4)
+  assert.ok(80_000 + answer.every >= LEASE_MS)
 })
 
 test('run.watch after a re-run waits for the new attempt, not the finished one before it', async () => {
@@ -299,7 +358,7 @@ test('run.watch after a re-run waits for the new attempt, not the finished one b
     )
   )
   const answer = await watchRun(gh, repo, { id: 43380486297, attempt: 2 }, new AbortController().signal, { ...clock(), post: (run) => posted.push(run) })
-  assert.deepEqual(answer, { done: true })
+  assert.equal(answer.done, true)
   assert.deepEqual(posted.map((r) => [r.attempt, r.state]), [
     [1, 'failure'],
     [2, 'queued'],

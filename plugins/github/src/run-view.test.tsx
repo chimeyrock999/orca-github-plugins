@@ -11,7 +11,7 @@ const ok = { ok: true } as const
  *  was asked. (A held request would keep the mock panel from settling, so each answers at once.) */
 function leasedWatch(leases: number) {
   let asked = 0
-  return () => ({ ok: true, done: ++asked > leases })
+  return () => ({ ok: true, done: ++asked > leases, every: 10_000, mark: null })
 }
 
 function host(overrides: Record<string, unknown> = {}, run: () => RunDetail = () => runDetail()) {
@@ -84,7 +84,7 @@ test('a failed run shows its jobs and opens its failed steps by itself', async (
   assert.ok(view.find({ type: 'Collapsible', text: /test \(ubuntu-latest\) › Test/ }))
   // A run that is done is not watched.
   assert.equal(h.count('run.watch'), 0)
-  assert.ok(view.find({ type: 'Button', text: 'Re-run failed jobs' }))
+  assert.ok(view.find({ type: 'Button', text: 'Rerun failed jobs' }))
   assert.equal(view.find({ type: 'Button', text: 'Cancel run…' }), null)
   assert.deepEqual(view.errors, [])
   assert.deepEqual(view.warnings, [])
@@ -149,6 +149,28 @@ test('a watch the worker ends early says live updates stopped', async () => {
   await view.unmount()
 })
 
+test('another tab ends the watch; coming back reads the run and watches it again', async () => {
+  const h = host({ 'run.watch': leasedWatch(0) }, runningRun)
+  const view = await openRun(h)
+  assert.equal(h.count('run.watch'), 1)
+  await view.select({ type: 'Tabs' }, 'issues')
+  // Not watched off screen: no new lease while Issues shows.
+  assert.equal(h.count('run.watch'), 1)
+  await view.select({ type: 'Tabs' }, 'runs')
+  assert.equal(h.count('run.get'), 2)
+  assert.equal(h.count('run.watch'), 2)
+  assert.ok(view.find({ text: /Live · updated/ }))
+  await view.unmount()
+})
+
+test('a run waiting for a deployment approval names the environment and hands off to GitHub', async () => {
+  const waiting = () => ({ ...runningRun(), state: 'waiting' as const, waitingFor: ['production'] })
+  const view = await openRun(host({ 'run.watch': leasedWatch(0) }, waiting))
+  assert.ok(view.findAll({ type: 'Callout' }).some((c) => c.props.title === 'Waiting for approval to deploy to production'))
+  assert.ok(view.find({ type: 'Button', text: 'Review deployments on GitHub' }))
+  await view.unmount()
+})
+
 test('a failed job whose log could not be read says so beside the ones that could', async () => {
   const logs = { ...failedLogs(), unread: [{ job: 'test (macos-latest)', message: 'log not found' }] }
   const view = await openRun(host({ 'run.logs': () => ({ ok: true, logs }) }))
@@ -162,31 +184,31 @@ test('after a re-run the panel waits for the new attempt: the watch asks for it 
   const h = host({ 'run.rerun': () => ok, 'run.watch': leasedWatch(0) }, () => runDetail({ attempt }))
   const view = await openRun(h)
   assert.equal(h.count('run.logs'), 1)
-  await view.press({ type: 'Button', text: 'Re-run failed jobs' })
+  await view.press({ type: 'Button', text: 'Rerun failed jobs' })
   // GitHub still shows attempt 1, finished: the panel keeps watching for attempt 2.
   assert.deepEqual(h.last('run.watch'), { id: 9001, attempt: 2 })
   assert.ok(view.find({ text: /Starting attempt 2/ }))
-  assert.equal(view.find({ type: 'Button', text: 'Re-run all jobs' }), null)
+  assert.equal(view.find({ type: 'Button', text: 'Rerun all jobs' }), null)
   assert.equal(view.find({ type: 'CodeView' }), null)
   attempt = 2
   await view.post('run.progress', { run: runDetail({ attempt: 2, state: 'running', done: false }) })
   assert.ok(view.find({ text: /Live · updated/ }))
   await view.post('run.progress', { run: runDetail({ attempt: 2 }) })
   assert.equal(view.find({ text: /Live · updated|Starting attempt/ }), null)
-  assert.ok(view.find({ type: 'Button', text: 'Re-run all jobs' }))
+  assert.ok(view.find({ type: 'Button', text: 'Rerun all jobs' }))
   // The new attempt failed too: its failed steps load.
   assert.equal(h.count('run.logs'), 2)
   await view.unmount()
 })
 
-test('Re-run failed jobs sends the write, then reads the run again', async () => {
+test('Rerun failed jobs sends the write, then reads the run again', async () => {
   let attempt = 1
   const h = host({ 'run.rerun': () => (attempt++, ok) }, () => runDetail({ attempt }))
   const view = await openRun(h)
-  await view.press({ type: 'Button', text: 'Re-run failed jobs' })
+  await view.press({ type: 'Button', text: 'Rerun failed jobs' })
   assert.deepEqual(h.last('run.rerun'), { id: 9001, failed: true })
   assert.equal(h.count('run.get'), 2)
-  await view.press({ type: 'Button', text: 'Re-run all jobs' })
+  await view.press({ type: 'Button', text: 'Rerun all jobs' })
   assert.deepEqual(h.last('run.rerun'), { id: 9001, failed: false })
   assert.equal(h.count('run.get'), 3)
   await view.unmount()
@@ -199,7 +221,7 @@ test('a re-run with no answer may have landed: it says so and reads the run agai
     }
   })
   const view = await openRun(h)
-  await view.press({ type: 'Button', text: 'Re-run all jobs' })
+  await view.press({ type: 'Button', text: 'Rerun all jobs' })
   assert.ok(view.findAll({ type: 'Callout' }).some((c) => c.props.title === 'It may have gone through'))
   assert.equal(h.count('run.get'), 2)
   await view.unmount()
@@ -290,6 +312,33 @@ test('Run workflow: the first workflow, typed inputs with defaults, then the run
   assert.deepEqual(h.last('workflow.run'), { workflow: 77, ref: 'fix/token-refresh', inputs: { version: '1.9.1', channel: 'beta', dry_run: 'false' } })
   assert.equal(h.count('runs.list'), lists + 1)
   assert.ok(view.find({ type: 'ListItem', text: /Fix token refresh loop/ }))
+  await view.unmount()
+})
+
+test('Run workflow: opens the run it started when GitHub shows it in time', async () => {
+  const h = host({ 'workflow.run': () => ({ ok: true, run: 9001 }) })
+  const view = await mount(panel, { host: h, ...onRuns })
+  await view.press({ label: 'Run workflow' })
+  await view.type({ label: 'version *' }, '1.9.1')
+  await view.press({ type: 'Button', text: 'Run workflow' })
+  assert.deepEqual(h.last('run.get'), { id: 9001 })
+  assert.ok(view.find({ type: 'Button', text: '← Back to runs' }))
+  await view.unmount()
+})
+
+test('Run workflow: a run not shown yet is announced on the list, across branches when its ref is another', async () => {
+  const h = host({
+    'workflow.run': () => ({ ok: true, run: null }),
+    'runs.list': (input: { scope?: string }) => (input.scope === 'branch' ? runPage([], 0, null, 1000, 'feature/other') : runPage(runRows, 3))
+  })
+  const view = await mount(panel, { host: h, ...onRuns })
+  await view.press({ label: 'Run workflow' })
+  await view.type({ label: 'version *' }, '1.9.1')
+  await view.press({ type: 'Button', text: 'Run workflow' })
+  assert.ok(view.find({ text: 'Run requested on fix/token-refresh; it shows in a few seconds. Refresh to look again.' }))
+  assert.equal((h.last('runs.list') as { scope: string }).scope, 'all')
+  await view.press({ label: 'Dismiss' })
+  assert.equal(view.find({ text: /Run requested/ }), null)
   await view.unmount()
 })
 

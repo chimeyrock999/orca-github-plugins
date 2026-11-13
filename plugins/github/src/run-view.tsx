@@ -33,6 +33,7 @@ import {
   cancelRun,
   dismissError,
   dispatch,
+  forgetRequested,
   leaveDispatch,
   loadForm,
   loadLogs,
@@ -40,6 +41,7 @@ import {
   missing,
   pickWorkflow,
   refChanged,
+  requested,
   rerun,
   resumeLive,
   runView,
@@ -124,13 +126,13 @@ function Actions({ s, run }: { s: OpenRun; run: RunDetail }) {
     <Row gap="xs" align="center" wrap>
       {failed && (
         <Button size="sm" variant="outline" disabled={!!s.busy} onPress={() => rerun(true)}>
-          Re-run failed jobs
+          Rerun failed jobs
         </Button>
       )}
       <Button size="sm" variant="outline" disabled={!!s.busy} onPress={() => rerun(false)}>
-        Re-run all jobs
+        Rerun all jobs
       </Button>
-      {s.busy && <Spinner label="Re-running" labelHidden />}
+      {s.busy && <Spinner label="Rerunning" labelHidden />}
     </Row>
   )
 }
@@ -343,6 +345,15 @@ export function RunView() {
           </Text>
         </Row>
         <Live s={s} run={run} />
+        {run.state === 'waiting' && run.waitingFor.length > 0 && (
+          <Callout tone="warning" title={`Waiting for approval to deploy to ${run.waitingFor.join(', ')}`}>
+            <Row>
+              <Button size="sm" variant="outline" icon="open-external" onPress={() => shell.openExternal(run.url)}>
+                Review deployments on GitHub
+              </Button>
+            </Row>
+          </Callout>
+        )}
         <KeyValue items={details(run)} />
         <Actions s={s} run={run} />
         {s.error && <Problem error={s.error} onRetry={dismissError} retryLabel="Dismiss" />}
@@ -436,6 +447,18 @@ function FormBody({ d }: { d: DispatchState }) {
         <InputField key={input.name} input={input} value={d.values[input.name] ?? ''} />
       ))}
     </Stack>
+  )
+}
+
+/** After Run workflow, when GitHub had not shown the run yet: it shows on the list in a moment. */
+export function Requested() {
+  const r = read(requested)
+  if (!r) return null
+  return (
+    <Row gap="xs" align="center" wrap>
+      <Text size="xs" muted>{`Run requested on ${r.ref}; it shows in a few seconds. Refresh to look again.`}</Text>
+      <IconButton icon="close" label="Dismiss" variant="ghost" size="xs" onPress={forgetRequested} />
+    </Row>
   )
 }
 
