@@ -4,7 +4,7 @@
 // links to the workspace (src/panel/thread/thread-store.ts).
 import { atom, plugin, read, set, update, type Atom } from 'orca'
 import { hostFailure } from '../shared/host-error'
-import type { Answer, ErrorCode, PanelError, RepoAnswer, RunPage } from '../shared/protocol'
+import type { Answer, ErrorCode, GitHubBudget, PanelError, RepoAnswer, RunPage } from '../shared/protocol'
 
 export type Kind = 'issues' | 'pulls' | 'runs'
 export const KINDS: Kind[] = ['issues', 'pulls', 'runs']
@@ -45,6 +45,19 @@ function fresh(): ListState {
 
 /** What the worker last answered for the focused repo; null until it answers. */
 export const repo = atom<RepoAnswer | null>(null)
+/** The GitHub budget while it is low (the worker says so), else null. */
+export const budget = atom<GitHubBudget | null>(null)
+// Whether the worker told of a change yet: one heard before the answer to budget.get is newer.
+const budgetTold = atom(false)
+/** The worker's budget.changed. */
+export function budgetChanged(b: GitHubBudget | null): void {
+  set(budgetTold, true)
+  set(budget, b)
+}
+/** The answer to budget.get, asked when the panel opens: the budget may be low already. */
+export function budgetAnswered(b: GitHubBudget | null): void {
+  if (!read(budgetTold)) set(budget, b)
+}
 export const tab = atom<Kind>('tab', 'issues', { persist: 'plugin' })
 export const lists: Record<Kind, Atom<ListState>> = { issues: atom(fresh()), pulls: atom(fresh()), runs: atom(fresh()) }
 /** Labels and assignees by repo (`choiceKey`): the focused one's, and those of each other repo a
@@ -211,8 +224,10 @@ export async function unpickRepo(): Promise<void> {
   await setRepo(await plugin.request('repo.unpick').catch(requestFailed))
 }
 
-/** Asks for the repo again (an error may be gone), then reloads the page on screen. */
+/** Asks for the repo again (an error may be gone), then reloads the page on screen. The worker
+ *  forgets what it kept first, so all of it comes from GitHub. */
 export async function refresh(): Promise<void> {
+  await plugin.request('cache.drop').catch(() => null)
   const answer = await plugin.request('repo.get').catch(requestFailed)
   const same = sameRepo(read(repo), answer)
   await setRepo(answer)

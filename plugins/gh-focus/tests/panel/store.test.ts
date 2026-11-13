@@ -42,3 +42,14 @@ test('a write Orca refused or held back did not run; one that broke on its way b
     ['not_allowed', 'host_rate_limited', 'unsure', 'unsure', 'unsure', 'unsure', 'unsure']
   )
 })
+
+test('a budget change the worker told of wins over an older answer to budget.get', async () => {
+  const { read } = await import('orca')
+  const { budget, budgetAnswered, budgetChanged } = await import('../../src/panel/store')
+  const low = { limit: 5_000, remaining: 312, resetAt: 1 }
+  budgetAnswered(low)
+  assert.deepEqual(read(budget), low)
+  budgetChanged(null)
+  budgetAnswered(low)
+  assert.equal(read(budget), null)
+})

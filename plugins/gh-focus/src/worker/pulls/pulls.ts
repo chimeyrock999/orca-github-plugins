@@ -283,17 +283,19 @@ export async function pullTimeline(
   return laterPage(page, pullItem(mergedAt))
 }
 
-export const commentOnPull = (gh: Gh, repo: RepoRef, number: number, body: string, signal?: AbortSignal) => commentOn(gh, repo, number, body, signal, 'pr')
+export const commentOnPull = (gh: Gh, repo: RepoRef, number: number, body: string, signal?: AbortSignal) => commentOn(gh, repo, number, body, signal)
 export const editPull = (gh: Gh, repo: RepoRef, input: IssueEdit, signal?: AbortSignal) => editIssue(gh, repo, input, signal, 'pr')
 
 /** The pull request of the branch checked out in the repo's folder, as gh finds it (the latest
- *  one, open or not, fork heads too), or null when there is none or gh cannot tell. */
-export async function branchPull(gh: Gh, repo: RepoRef, signal?: AbortSignal): Promise<number | null> {
+ *  one, open or not, fork heads too), or null when there is none; throws when gh cannot tell (a
+ *  failure worth asking again, so not one to keep). */
+export async function findBranchPull(gh: Gh, repo: RepoRef, signal?: AbortSignal): Promise<number | null> {
   try {
     const out = (await gh(['pr', 'view', '--json', 'number'], { cwd: repo.path, signal, json: true })) as { number?: number } | null
     return typeof out?.number === 'number' ? out.number : null
-  } catch {
-    return null
+  } catch (error) {
+    if (error instanceof GhError && /no (open )?pull requests? found/i.test(error.message)) return null
+    throw error
   }
 }
 

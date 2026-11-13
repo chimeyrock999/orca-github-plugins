@@ -290,17 +290,36 @@ test('mergeTimeline joins the head and tail where they meet, or at the end', () 
   assert.deepEqual(mergeTimeline([a], [c, d], [b], null), { head: [a, b, c, d], tail: [], next: null })
 })
 
-test('Back without a write keeps the list as it was; after a write it asks GitHub again', async () => {
-  const h = host()
+test('Back without a write keeps the list as it was; a comment shows as GitHub answered it and keeps the list; a close asks again', async () => {
+  const h = host({ 'issue.comment': () => ({ ok: true, comment: commentItem(9, { body: 'On it.' }) }) })
   const view = await openIssue120(h)
   await view.press({ text: '← Back to linked issues' })
   assert.equal(h.asked.filter((a) => a.name === 'items.get').length, 1)
   assert.equal(view.findAll({ type: 'ListItem' }).length, 3)
   await view.press({ type: 'ListItem', text: /Login page loops/ })
+  const loads = h.asked.filter((a) => a.name === 'issue.get').length
   await view.type({ label: 'Comment' }, 'On it.')
   await view.press({ text: 'Comment' })
+  // The comment GitHub answered is shown in place: the issue is not asked for again.
+  assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, loads)
+  assert.ok(view.find({ text: 'On it.' }))
+  await view.press({ text: '← Back to linked issues' })
+  assert.equal(h.asked.filter((a) => a.name === 'items.get').length, 1)
+  await view.press({ type: 'ListItem', text: /Login page loops/ })
+  await view.press({ text: 'Close issue…' })
+  await view.press({ text: /^Close as/ })
   await view.press({ text: '← Back to linked issues' })
   assert.equal(h.asked.filter((a) => a.name === 'items.get').length, 2)
+  await view.unmount()
+})
+
+test('a comment answered without the comment loads the issue again', async () => {
+  const h = host()
+  const view = await openIssue120(h)
+  const loads = h.asked.filter((a) => a.name === 'issue.get').length
+  await view.type({ label: 'Comment' }, 'On it.')
+  await view.press({ text: 'Comment' })
+  assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, loads + 1)
   await view.unmount()
 })
 

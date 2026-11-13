@@ -1,10 +1,11 @@
 // An open issue or pull request (a thread), in atoms, and the actions both share: its timeline
 // pages, the comment box, comment edits and deletes, title and body edits, label and assignee
 // pickers, and reactions. Every write asks GitHub for the thread again afterwards, so the panel
-// shows what GitHub has; comment edits, deletes and reactions change the timeline in place, so
-// pages loaded with Load more stay.
+// shows what GitHub has; a new comment (as GitHub answered it), comment edits, deletes and
+// reactions change the timeline in place instead, so pages loaded with Load more stay and GitHub
+// is not asked again.
 import { atom, plugin, read, set, update, type Atom } from 'orca'
-import type { Answer, IssueEdit, LinkedKind, LinkedRef, LinkedRow, PanelError, Reaction, ReactionGroup, ThreadDetail, TimelineItem } from '../../shared/protocol'
+import type { Answer, Commented, IssueEdit, LinkedKind, LinkedRef, LinkedRow, PanelError, Reaction, ReactionGroup, ThreadDetail, TimelineComment, TimelineItem } from '../../shared/protocol'
 import { back, itemKey, lists, loadChoices, repo, repoEpoch, requestFailed, tab, unsure } from '../store'
 
 export type ThreadKind = LinkedKind
@@ -45,7 +46,7 @@ export const atRepo = (s: { repo: string | null }): At => (s.repo ? { repo: s.re
 export type ThreadRequests<D extends ThreadDetail> = {
   get: (number: number, at: At) => Promise<Answer<{ detail: D }>>
   timeline: (number: number, after: string, at: At) => Promise<Answer<{ items: TimelineItem[]; next: string | null }>>
-  comment: (number: number, body: string, at: At) => Promise<Answer<object>>
+  comment: (number: number, body: string, at: At) => Promise<Commented>
   edit: (input: IssueEdit & At) => Promise<Answer<object>>
 }
 
@@ -76,6 +77,24 @@ export function mergeTimeline(head: TimelineItem[], tail: TimelineItem[], page: 
   if (meet >= 0) return { head: [...head, ...page.slice(0, meet), ...tail], tail: [], next: null }
   if (next === null) return { head: [...head, ...page, ...tail.filter((i) => !page.some((p) => p.id === i.id))], tail: [], next: null }
   return { head: [...head, ...page], tail, next }
+}
+
+/** The thread with a comment just posted at the end of its timeline: the tail while part of the
+ *  timeline is not loaded, else the head. */
+export function withComment<D extends ThreadDetail>(detail: D, comment: TimelineComment): D {
+  const end = detail.next === null ? { head: [...detail.head, comment] } : { tail: [...detail.tail, comment] }
+  return { ...detail, ...end, comments: detail.comments + 1, total: detail.total + 1 }
+}
+
+type ItemRef = Pick<LinkedRef, 'number' | 'repo'>
+/** Whether two refs name the same item: the number, and the repo whatever its case (null: the focused one). */
+export const sameRef = (a: ItemRef, b: ItemRef) => a.number === b.number && (a.repo ?? '').toLowerCase() === (b.repo ?? '').toLowerCase()
+
+/** The linked rows with one item's activity now, newest first as GitHub lists them. */
+export function touched(rows: LinkedRow[], ref: ItemRef, at: number): LinkedRow[] {
+  const same = (r: LinkedRow) => sameRef(r, ref)
+  if (!rows.some(same)) return rows
+  return rows.map((r) => (same(r) ? { ...r, updatedAt: at } : r)).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
 }
 
 /** How many timeline items sit between the head and the tail. */
@@ -167,6 +186,10 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   // new panel run starts clean.
   const listStale = atom(false)
   const linked = atom<LinkedState | null>(null)
+  // What each workspace (repo and folder) showed last in this panel run, so coming back to it
+  // shows that at once while Orca and GitHub are asked again. An atom, so a new panel run starts clean.
+  const seen = atom<Record<string, Pick<LinkedState, 'refs' | 'rows'>>>({})
+  const remember = (ws: string, l: Pick<LinkedState, 'refs' | 'rows'>) => update(seen, (all) => ({ ...all, [ws]: l }))
 
   /** The thread on screen, once it has loaded. */
   function shown(): D | null {
@@ -207,20 +230,23 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   const sole = () => soleRef(linkedNow()?.refs ?? null)
 
   /** Whether the thread open is this linked item. */
-  function isShown(ref: Pick<LinkedRef, 'number' | 'repo'>): boolean {
-    const s = read(state)
-    return s.number === ref.number && (s.repo ?? '').toLowerCase() === (ref.repo ?? '').toLowerCase()
+  function isShown(ref: ItemRef): boolean {
+    return sameRef(read(state), ref)
   }
 
-  /** Asks GitHub for the linked items' title and state, for the list. */
-  async function loadRows(): Promise<void> {
+  /** Asks GitHub for the linked items' title and state, for the list; `quiet` keeps the rows on
+   *  screen until the answer. */
+  async function loadRows(quiet = false): Promise<void> {
     const l = linkedNow()
     if (!l?.refs?.length) return
     const { where, refs } = l
+    const ws = workspace()
     const mine = (x: LinkedState | null) => !!x && x.where === where && x.refs === refs
-    update(linked, (x) => (mine(x) ? { ...x!, rows: null } : x))
+    if (!quiet) update(linked, (x) => (mine(x) ? { ...x!, rows: null } : x))
     const rows = await plugin.request('items.get', { kind, items: refs }).catch(requestFailed)
-    update(linked, (x) => (mine(x) ? { ...x!, rows } : x))
+    if (!mine(read(linked))) return
+    update(linked, (x) => ({ ...x!, rows }))
+    remember(ws, { refs, rows })
   }
 
   /** Back from a thread: to the workspace's only link when another one (a mention) is open, else to
@@ -236,7 +262,11 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     return loadRows()
   }
 
-  const markStale = () => set(listStale, true)
+  // A write that changes the list changes what any workspace remembers of it too.
+  const markStale = () => {
+    set(listStale, true)
+    set(seen, {})
+  }
 
   function changeShown(change: (detail: D) => D): void {
     update(state, (s) => (s.answer?.ok ? { ...s, answer: { ...s.answer, detail: change(s.answer.detail) } } : s))
@@ -255,13 +285,21 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     if (answer.ok && shown()?.next === detail.next) changeShown((d) => ({ ...d, ...mergeTimeline(d.head, d.tail, answer.items, answer.next) }))
   }
 
-  /** Runs one write; on success `done` tidies the state and the thread is asked for again. */
-  async function write(name: string, request: () => Promise<Answer<object>>, done: (s: S) => S, reload = true): Promise<boolean> {
+  /** Runs one write; on success `done` tidies the state and the thread is asked for again, unless
+   *  `reload` is false or says the answer was put in place. `stale`: the write changes what the
+   *  linked list shows, so Back asks for it again. */
+  async function write<A extends object>(
+    name: string,
+    request: () => Promise<Answer<A>>,
+    done: (s: S) => S,
+    reload: boolean | ((answer: A) => boolean) = true,
+    stale = true
+  ): Promise<boolean> {
     if (read(state).busy) return false
     const view = here()
     update(state, (s) => ({ ...s, busy: name, error: null }))
     const answer = await request().catch(requestFailed)
-    if (answer.ok) markStale()
+    if (answer.ok && stale) markStale()
     if (view !== here()) return false
     if (!answer.ok) {
       const error = unsure(answer.error)
@@ -275,17 +313,30 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
       return false
     }
     update(state, (s) => done({ ...s, busy: null }))
-    if (reload) await loadThread()
+    if (typeof reload === 'function' ? reload(answer) : reload) await loadThread()
     return true
   }
 
   const setDraft = (draft: string) => update(state, (s) => ({ ...s, draft }))
   const dismissError = () => update(state, (s) => ({ ...s, error: null }))
 
+  /** Posts the comment and shows it as GitHub answered it; only an answer without it asks for the
+   *  thread again. The linked row's activity moves to now. */
   function sendComment(): Promise<boolean> | void {
-    const { number, draft } = read(state)
+    const { number, draft, repo: of } = read(state)
     if (!draft.trim()) return
-    return write('comment', () => requests.comment(number, draft, atRepo(read(state))), (s) => ({ ...s, draft: '' }))
+    const placed = ({ comment }: { comment: TimelineComment | null }) => {
+      if (!comment || !shown()) return true
+      changeShown((d) => withComment(d, comment))
+      const l = read(linked)
+      if (l?.rows?.ok && l.where === focusKey()) {
+        const rows = { ...l.rows, rows: touched(l.rows.rows, { number, repo: of }, comment.createdAt) }
+        set(linked, { ...l, rows })
+        remember(workspace(), { refs: l.refs, rows })
+      }
+      return false
+    }
+    return write('comment', () => requests.comment(number, draft, atRepo(read(state))), (s) => ({ ...s, draft: '' }), (a) => placed(a), false)
   }
 
   function changeComment(id: number, change: (item: TimelineItem) => TimelineItem | null): void {
@@ -300,7 +351,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   async function saveComment(): Promise<void> {
     const editing = read(state).editingComment
     if (!editing?.body.trim()) return
-    const ok = await write('edit-comment', () => plugin.request('comment.edit', { ...editing, ...atRepo(read(state)) }, WRITE), (s) => ({ ...s, editingComment: null }), false)
+    const ok = await write('edit-comment', () => plugin.request('comment.edit', { ...editing, ...atRepo(read(state)) }, WRITE), (s) => ({ ...s, editingComment: null }), false, false)
     if (ok) changeComment(editing.id, (c) => ({ ...c, body: editing.body, edited: true, truncated: false }))
   }
 
@@ -310,7 +361,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   async function confirmDelete(): Promise<void> {
     const id = read(state).deleting
     if (id === null) return
-    const ok = await write('delete', () => plugin.request('comment.delete', { id, ...atRepo(read(state)) }, WRITE), (s) => ({ ...s, deleting: null }), false)
+    const ok = await write('delete', () => plugin.request('comment.delete', { id, ...atRepo(read(state)) }, WRITE), (s) => ({ ...s, deleting: null }), false, false)
     if (ok) {
       changeComment(id, () => null)
       changeShown((d) => ({ ...d, comments: Math.max(0, d.comments - 1), total: Math.max(0, d.total - 1) }))
@@ -404,16 +455,25 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     if (read(tab) !== kind) return again ? set(linked, null) : undefined
     const where = focusKey()
     if (!again && read(linked)?.where === where) return
-    if (!again || read(linked)?.where !== where) set(linked, { where, refs: null, rows: null })
+    const ws = workspace()
+    // Back to a workspace shown before: its list shows at once while Orca (local, no GitHub budget)
+    // and GitHub are asked again; the worker answers from what it kept while that is fresh, longer
+    // while the budget is low. Its only item opens once Orca says it still is the only one.
+    const before = again ? undefined : read(seen)[ws]
+    if (before) set(linked, { where, ...before })
+    else if (!again || read(linked)?.where !== where) set(linked, { where, refs: null, rows: null })
     const links = await plugin.request('repo.links', kind === 'pulls' ? { branch: true } : {}).catch(() => null)
     // The person may have moved to another workspace meanwhile.
     if (focusKey() !== where) return
-    const refs = links?.ok ? links[kind] : []
-    set(linked, { where, refs, rows: null })
+    const found = links?.ok ? links[kind] : []
+    const same = !!before && JSON.stringify(before.refs) === JSON.stringify(found)
+    const refs = same ? before!.refs : found
+    set(linked, { where, refs, rows: same ? before!.rows : null })
+    if (!same) remember(ws, { refs, rows: null })
     const one = soleRef(refs)
     if (read(lists[kind]).open || read(tab) !== kind) return
     if (one) return open(one.number, one.repo)
-    return loadRows()
+    return loadRows(same && !!before!.rows)
   }
 
   /** Whether `here` still names the view a write began in. */

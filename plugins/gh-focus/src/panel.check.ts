@@ -33,6 +33,15 @@ export default defineCheck({
   issues: { requests: lists },
   'issues-no-agent': { requests: { ...lists, 'agent.find': { ok: true, agent: null } } },
   'issues-several': { requests: { ...lists, 'repo.links': links([120, 'octo/sdk#45', 98]), 'items.get': linkedRows(several) } },
+  // The GitHub budget shared with Orca is low: the panel says so above the tabs.
+  'budget-low': {
+    requests: {
+      ...lists,
+      'repo.links': links([120, 'octo/sdk#45', 98]),
+      'items.get': linkedRows(several),
+      'budget.get': { ok: true, budget: { limit: 5000, remaining: 312, resetAt: Date.UTC(2026, 10, 13, 14, 5) } }
+    }
+  },
   'issues-several-failed': {
     requests: { ...lists, 'repo.links': links([120, 98]), 'items.get': failed('rate_limited', 'API rate limit exceeded for user ID 1.') }
   },

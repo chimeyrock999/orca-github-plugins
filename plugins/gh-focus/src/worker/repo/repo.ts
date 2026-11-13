@@ -49,11 +49,13 @@ function isOldKey(key: string): boolean {
   return key.split('\n').length < 3
 }
 
-export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
+/** `changed` hears each new answer before the panels do, with the one they heard before. */
+export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps, changed?: (before: RepoAnswer | null, after: RepoAnswer) => void): RepoTracker {
   // One answer per focus: a newer workspace.changed supersedes a resolve still in flight.
   let current: Promise<RepoAnswer> | null = null
   let generation = 0
   let posted: string | null = null
+  let heard: RepoAnswer | null = null
   // A folder's repo does not change with focus, so a found repo is kept; errors are asked again.
   // Concurrent asks for one folder share the gh run.
   const repos = new Map<string, Promise<GhRepoAnswer>>()
@@ -141,6 +143,8 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
     const key = JSON.stringify(answer)
     if (key === posted) return
     posted = key
+    changed?.(heard, answer)
+    heard = answer
     orca.panels.post('repo.changed', answer)
   }
 
