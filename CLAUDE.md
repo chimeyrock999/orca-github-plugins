@@ -138,15 +138,15 @@ an hour. The newest tag is pinned to its commit and content hash; a listed versi
    https://orca.dev/plugins/chimeyrock999/orca-github-plugins.
 
 Listing images (`images/issue.png`, also the cover, and `images/pull.png`) are screenshots of Orca
-itself, in the dark theme, with the left sidebar collapsed and nothing private on screen (other
-projects, terminals). Size the window to about 16:10 (e.g. `osascript -e 'tell application "System
-Events" to tell process "Orca" to set size of front window to {1440, 900}'`), capture it without
-its shadow (`screencapture -o -w <file>.png`), then scale to 1600 px wide
-(`sips --resampleWidth 1600 <file>.png --out plugins/gh-focus/images/<name>.png`). The catalog
-wants PNG or JPEG, a cover of at least 800×500 and at most 1024 KB, screenshots of at least
-1280×800 and at most 1536 KB, six at most, 8 MB in all; `tests/manifest.test.ts` and
-`orca plugin validate` check them. Leave `theme` unset on screenshots: a themed one hides from
-users of the other theme.
+itself, in the dark theme, with the left sidebar collapsed. Capture the window without its shadow
+(`screencapture -o -w <file>.png`), crop it to 16:10 from the left edge and scale it to 1600×1000,
+then blur everything private: the folder path line under the repository name (it holds the home
+directory), tab titles, and any terminal or agent pane with its status line. Better still, close
+those before capturing and keep only an editor on a file of this repo. The catalog takes PNG,
+JPEG or WEBP; we keep PNG, which `tests/manifest.test.ts` checks: static, a 16:10 cover of at least
+800×500 and at most 1024 KB, screenshots of at least 1280×800 and at most 1536 KB, six at most,
+8 MB in all (`orca plugin validate` checks the limits too). Leave `theme` unset on screenshots: a
+themed one hides from users of the other theme.
 
 Fixes go `hotfix/*` → `main`, then are tagged the same way and merged back into `dev`. The topic is
 set once (`gh repo edit chimeyrock999/orca-github-plugins --add-topic orca-plugin`).
