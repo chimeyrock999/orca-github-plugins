@@ -7,35 +7,58 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
 
 - `plugins/gh-focus/`: the only plugin so far, **gh Focus** (id `gh-focus`), a `trusted-worker` with one
   components panel `gh-focus`. The folder and the panel id stay named after the id: the catalog
-  pins the folder as `source.path` (`src/manifest.test.ts` checks both).
-  - `src/worker.ts`: Node worker, wires the panel requests (`orca.panels.handle`) to the modules below.
-  - `src/gh.ts`: `runGh` and `GhError` codes; every GitHub call goes through it.
-  - `src/host-error.ts`: what a rejected Orca call means to the panel (`hostFailure`), shared by the
-    panel's `requestFailed` and the worker's host calls.
-  - `src/repo.ts` (+ `src/focus.ts`, `src/exec.ts`): the focused workspace's repo, `repo.get`, `repo.changed`.
-  - `src/lists.ts`: one page of runs (REST), the repo's labels and workflows.
-  - `src/linked.ts`: what Orca links to the workspace (`orca worktree show`'s `linkedItems`, read in
-    `src/exec.ts`), their state from GitHub in one GraphQL query, and the free agent Ask agent types into.
-  - `src/timeline.ts`: the timeline both share (GraphQL pages, cut to fit the message limit).
-  - `src/issues.ts`: one issue (GraphQL body and timeline) and its writes (gh issue commands).
-  - `src/pulls.ts`: one pull request (refs, merge state, review decision, checks, timeline with
-    reviews and the merge), its writes (`gh pr comment`, `edit`, `review`) and the branch's pull
-    request (`gh pr view`).
-  - `src/panel.tsx`, `src/views.tsx`, `src/store.ts`, `src/look.ts`: components panel (`"ui": "components"`),
-    no DOM, only the `orca` catalog; state in atoms; glyphs, tones and words.
-  - `src/thread-store.ts`, `src/thread-view.tsx`: an open issue or pull request (a thread), one per
-    tab, and the pieces both draw (posts, reactions, timeline, pickers).
-  - `src/linked-view.tsx`, `src/link-store.ts`: the Issues and Pull requests tabs with nothing open:
-    the linked list (nothing repo-wide), or how to link one (the command, Ask agent), and the
-    hand-offs to Orca's Tasks page and Checks tab.
-  - `src/issue-view.tsx`, `src/issue-store.ts`: the issue detail and state; `src/pull-view.tsx`,
-    `src/pull-store.ts`: a pull request and its review.
-  - `src/refs.ts`, `src/parts.tsx`: `#N` links, shared pieces.
-  - `src/runs.ts` (+ `src/logs.ts`, `src/workflow-inputs.ts`): one run, its logs, rerun, cancel, the
-    `run.watch` lease, and the Run workflow form; `src/run-store.ts`, `src/run-view.tsx`: their panel side.
-  - `src/protocol.ts`: the panel ↔ worker contract (`PluginRequests`, `PluginPanelEvents`).
-  - `src/*.test.ts(x)`, `src/panel.check.ts`: tests and render scenarios; `src/manifest.test.ts` checks
-    the listing rules (name, engines, metadata).
+  pins the folder as `source.path` (`tests/manifest.test.ts` checks both).
+- `src/` holds only code that runs in Orca, split by side, then by feature. The entries stay where the
+  manifest points.
+  - `src/worker.ts`: Node worker entry, wires the panel requests (`orca.panels.handle`) to `src/worker/`.
+  - `src/panel.tsx`: components panel entry (`"ui": "components"`); `src/panel.check.ts`: its render
+    scenarios, beside it.
+  - `src/shared/`: imported by both sides, so no `node:`, `orca/worker`, and `orca` (the panel
+    runtime) for its types only.
+    - `protocol.ts`: the panel ↔ worker contract (`PluginRequests`, `PluginPanelEvents`).
+    - `look.ts`: glyphs, tones and words; the worker uses it for the link command.
+    - `host-error.ts`: what a rejected Orca call means to the panel (`hostFailure`), used by the
+      panel's `requestFailed` and the worker's host calls.
+  - `src/worker/`: Node side only.
+    - `gh.ts`: `runGh` and `GhError` codes; every GitHub call goes through it. `exec.ts`: child
+      processes and the Orca CLI.
+    - `lists.ts`: one page of runs (REST), the repo's labels and workflows; `timeline.ts`: the
+      timeline issues and pull requests share (GraphQL pages, cut to fit the message limit).
+    - `linked/linked.ts`: what Orca links to the workspace (`orca worktree show`'s `linkedItems`,
+      read in `exec.ts`), their state from GitHub in one GraphQL query, and the free agent Ask agent
+      types into.
+    - `repo/` (`repo.ts`, `focus.ts`): the focused workspace's repo, `repo.get`, `repo.changed`.
+    - `issues/issues.ts`: one issue (GraphQL body and timeline) and its writes (gh issue commands).
+    - `pulls/pulls.ts`: one pull request (refs, merge state, review decision, checks, timeline with
+      reviews and the merge), its writes (`gh pr comment`, `edit`, `review`) and the branch's pull
+      request (`gh pr view`).
+    - `runs/` (`runs.ts`, `logs.ts`, `workflow-inputs.ts`): one run, its logs, rerun, cancel, the
+      `run.watch` lease, and the Run workflow form.
+  - `src/panel/`: panel side only; no DOM, no `node:`, only the `orca` catalog; state in atoms.
+    - `views.tsx`, `store.ts`, `parts.tsx`: the tabs, their atoms, shared pieces; `refs.ts`: `#N`
+      links.
+    - `linked/` (`linked-view.tsx`, `link-store.ts`): the Issues and Pull requests tabs with nothing
+      open: the linked list (nothing repo-wide), or how to link one (the command, Ask agent), and
+      the hand-offs to Orca's Tasks page and Checks tab.
+    - `thread/` (`thread-store.ts`, `thread-view.tsx`): an open issue or pull request (a thread), one
+      per tab, and the pieces both draw (posts, reactions, timeline, pickers).
+    - `issues/` (`issue-view.tsx`, `issue-store.ts`): the issue detail and state.
+    - `pulls/` (`pull-view.tsx`, `pull-store.ts`): a pull request and its review.
+    - `runs/` (`run-store.ts`, `run-view.tsx`): the panel side of runs.
+- `tests/` mirrors `src/`: the test of `src/<path>/<name>.ts` is `tests/<path>/<name>.test.ts(x)`
+  (`orca plugin test` finds it there). `tests/fixtures/` holds the canned answers (`fixtures.ts` for
+  the panel and the check scenarios, `worker-fixtures.ts` for the worker). `tests/manifest.test.ts`
+  checks the listing rules (name, engines, metadata); `tests/layout.test.ts` checks the import rules
+  below.
+- Where new files go: a new feature gets a folder on each side it touches (`src/worker/<feature>/`,
+  `src/panel/<feature>/`) and its tests at the same paths under `tests/`. Code both sides import goes
+  in `src/shared/`. Only the entries and the check scenarios sit directly in `src/`.
+- Import rules (`tests/layout.test.ts`): `src/shared/` never imports from `src/worker/` or
+  `src/panel/`, nor `orca` except `import type`; the panel (`src/panel/`, `src/panel.tsx`) never
+  imports Node built-ins (`node:fs` or `fs`), `orca/worker` or worker code; the worker
+  (`src/worker/`, `src/worker.ts`) never imports panel code; nothing in `src/` imports from
+  `tests/`, except `src/panel.check.ts` borrowing fixtures. It also checks that only the entries and
+  the check scenarios sit directly in `src/`, and that no test or fixture sits under it.
 - `.orca/types/` is generated by `orca plugin types .` and gitignored; read it for the real API
   (host methods, components and their props). Do not guess an API that is not in there.
 

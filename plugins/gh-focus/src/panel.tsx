@@ -16,13 +16,13 @@ import {
   Toolbar,
   type PanelContext
 } from 'orca'
-import { issue, issues } from './issue-store'
-import { findAgent } from './link-store'
-import { pull, pulls } from './pull-store'
-import { githubUrl, itemKey, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
-import { Problem } from './parts'
-import { DISPATCH, loadForm, loadRun, progress, tabShown } from './run-store'
-import { KindView } from './views'
+import { issue, issues } from './panel/issues/issue-store'
+import { findAgent } from './panel/linked/link-store'
+import { pull, pulls } from './panel/pulls/pull-store'
+import { githubUrl, itemKey, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './panel/store'
+import { Problem } from './panel/parts'
+import { DISPATCH, loadForm, loadRun, progress, tabShown } from './panel/runs/run-store'
+import { KindView } from './panel/views'
 
 /** Runs `step`, then lets the tab on screen ask Orca what it links to the workspace if it has not
  *  yet (each tab starts only when it shows); with nothing linked, a free agent is looked for. */

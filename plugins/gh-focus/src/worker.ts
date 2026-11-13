@@ -2,9 +2,9 @@
 // this file when it loads: no build step. A save restarts it and drops its in-memory state.
 import { existsSync } from 'node:fs'
 import type { OrcaWorkerApi } from 'orca/worker'
-import { currentBranch, terminalPath, workspaceLinks, type WorkspaceLinks } from './exec'
-import { runGh, toFailure, type Gh } from './gh'
-import { hostFailure } from './host-error'
+import { currentBranch, terminalPath, workspaceLinks, type WorkspaceLinks } from './worker/exec'
+import { runGh, toFailure, type Gh } from './worker/gh'
+import { hostFailure } from './shared/host-error'
 import {
   closeIssue,
   commentOn,
@@ -16,13 +16,13 @@ import {
   listAssignees,
   reopenIssue,
   setReaction
-} from './issues'
-import { agentName, freeAgent, linkedRefs, linkedRows, linkPrompt, type AgentRow } from './linked'
-import { listLabels, listRuns, listWorkflows, type RepoRef } from './lists'
-import { isRepoName, type Answer, type LinkedKind, type LinkedRef, type OrcaView } from './protocol'
-import { branchPull, commentOnPull, editPull, getPull, pullTimeline, reviewPull } from './pulls'
-import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './repo'
-import { cancelRun, dispatchWorkflow, getRun, rerunRun, reviewDeployments, runLogs, watchRun, workflowForm, type WatchDeps } from './runs'
+} from './worker/issues/issues'
+import { agentName, freeAgent, linkedRefs, linkedRows, linkPrompt, type AgentRow } from './worker/linked/linked'
+import { listLabels, listRuns, listWorkflows, type RepoRef } from './worker/lists'
+import { isRepoName, type Answer, type LinkedKind, type LinkedRef, type OrcaView } from './shared/protocol'
+import { branchPull, commentOnPull, editPull, getPull, pullTimeline, reviewPull } from './worker/pulls/pulls'
+import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './worker/repo/repo'
+import { cancelRun, dispatchWorkflow, getRun, rerunRun, reviewDeployments, runLogs, watchRun, workflowForm, type WatchDeps } from './worker/runs/runs'
 
 export type WorkerDeps = RepoDeps & {
   gh: Gh
