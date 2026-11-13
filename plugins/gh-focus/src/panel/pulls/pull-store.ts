@@ -1,7 +1,8 @@
 // The Pull requests tab: the pull requests linked to the focused workspace (or its branch's), each a
-// thread (src/panel/thread/thread-store.ts) with what only pull requests have, a review (approve, request changes
-// or comment). Orca's Tasks page lists, searches and filters a repo's pull requests, and its own pull
-// request views close, reopen and merge them.
+// thread (src/panel/thread/thread-store.ts) with what only pull requests have, a review (approve,
+// request changes or comment) and, where you may edit it, draft or ready for review. Orca's Tasks
+// page lists, searches and filters a repo's pull requests, and its own pull request views close,
+// reopen and merge them.
 import { atom, plugin, read, set, update } from 'orca'
 import type { PullDetail, ReviewEvent } from '../../shared/protocol'
 import { atRepo, makeThread, WRITE, type ThreadState } from '../thread/thread-store'
@@ -9,6 +10,8 @@ import { atRepo, makeThread, WRITE, type ThreadState } from '../thread/thread-st
 export type PullState = ThreadState<PullDetail> & {
   /** The review being written; its body is the comment box's text. */
   reviewing: ReviewEvent | null
+  /** Convert to draft was pressed and waits to be confirmed. */
+  toDraft: boolean
 }
 
 /** How long after an answer whose merge state GitHub had not worked out yet it is asked again. */
@@ -16,7 +19,7 @@ export const timing = { mergeRetryMs: 4_000 }
 // The pull request asked again already, so an answer that is still not worked out stays as it is.
 const retried = atom<number | null>(null)
 
-export const pulls = makeThread<PullDetail, Pick<PullState, 'reviewing'>>(
+export const pulls = makeThread<PullDetail, Pick<PullState, 'reviewing' | 'toDraft'>>(
   'pulls',
   {
     get: (number, at) => plugin.request('pull.get', { number, ...at }).then((a) => (a.ok ? { ok: true as const, detail: a.pull } : a)),
@@ -24,7 +27,7 @@ export const pulls = makeThread<PullDetail, Pick<PullState, 'reviewing'>>(
     comment: (number, body, at) => plugin.request('pull.comment', { number, body, ...at }, WRITE),
     edit: (input) => plugin.request('pull.edit', input, WRITE)
   },
-  () => ({ reviewing: null }),
+  () => ({ reviewing: null, toDraft: false }),
   // GitHub works the merge state out on the first ask, so the first answer often says unknown.
   (d, current) => {
     if (d.merge !== 'unknown' || (d.state !== 'open' && d.state !== 'draft') || read(retried) === d.number) return
@@ -63,4 +66,22 @@ export function submitReview(): Promise<boolean> | void {
   if (!reviewing || !d || !canReview(d, reviewing, draft)) return
   const input = { number, event: reviewing, body: draft, ...atRepo(read(pull)) }
   return pulls.write('review', () => plugin.request('pull.review', input, WRITE), (s) => ({ ...s, draft: '', reviewing: null }))
+}
+
+/** Whether the viewer can mark it ready or back to draft: GitHub lets anyone who may edit it (its
+ *  author, or a gh account with write access to the repo), while it is open. */
+export function canToggleDraft(d: PullDetail): boolean {
+  return d.canEdit && (d.state === 'open' || d.state === 'draft')
+}
+
+export const startDraft = () => update(pull, (s) => ({ ...s, toDraft: true }))
+export const cancelDraft = () => update(pull, (s) => ({ ...s, toDraft: false }))
+
+/** Marks the draft ready for review (`ready`), or, once confirmed, converts it back to draft. */
+export function setReady(ready: boolean): Promise<boolean> | void {
+  const { number } = read(pull)
+  const d = pulls.shown()
+  if (!d || !canToggleDraft(d)) return
+  const input = { number, ready, ...atRepo(read(pull)) }
+  return pulls.write(ready ? 'ready' : 'draft', () => plugin.request('pull.ready', input, WRITE), (s) => ({ ...s, toDraft: false }))
 }
