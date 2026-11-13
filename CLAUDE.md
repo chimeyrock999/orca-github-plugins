@@ -66,6 +66,10 @@ in the Orca repo.
 
 What the panel is for:
 
+- **Goal: small, no duplicates, focused on the work at hand.** You read and answer the issue and
+  pull request of the focused workspace beside the code, without leaving the terminal or editor
+  for another tab. A feature that Orca already has, or that pulls you away from the current work,
+  is left out or handed off; when in doubt, leave it out.
 - A side panel that follows the focused workspace: what you look at while you work, with short
   actions. It does not rebuild what Orca does better (diff review, merge queue, stacks, Projects).
 - It hands heavy work to Orca: `commands.run` with `view.tasks` or `sidebar.checks.toggle` (needs
