@@ -10,6 +10,8 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+## 0.1.0 - 2026-11-13
+
 The first release: a right-sidebar panel with the issue, pull request and Actions runs of the
 focused workspace, beside your work. Needs Orca 1.4.256 or later and `gh`
 logged in.
