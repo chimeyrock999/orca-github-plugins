@@ -81,6 +81,13 @@ test("Orca's own failures say what happened", () => {
   assert.match(problemOf({ code: 'action_failed' }).hint, /gh Focus/)
 })
 
+test('a timeout blames neither GitHub nor Orca: either may be the one that timed out', () => {
+  const problem = problemOf({ code: 'timeout' })
+  assert.equal(problem.title, 'No answer in time')
+  assert.ok(!/GitHub|Orca/.test(problem.title))
+  assert.match(problem.hint, /Press Retry/)
+})
+
 test("Orca's rate limit says how long to wait, or a moment; GitHub's keeps its words", () => {
   const orca = problemOf({ code: 'host_rate_limited', retryAfterMs: 12_000 })
   assert.equal(orca.title, 'Too many requests')

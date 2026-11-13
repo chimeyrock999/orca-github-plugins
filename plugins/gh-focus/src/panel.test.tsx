@@ -259,8 +259,9 @@ test('several workspaces match: pick one, it shows that repo, and Change workspa
       code: 'ambiguous_workspace' as const,
       message: '2 workspaces are on main and named main.',
       candidates: [
-        { id: 'w-app', name: 'main', path: '/code/app' },
-        { id: 'w-lib', name: 'main', path: '/code/lib' }
+        { id: 'w-app', name: 'main', path: '/code/app', project: 'app', branch: 'main' },
+        { id: 'w-lib', name: 'main', path: '/code/lib', project: 'lib', branch: 'main' },
+        { id: 'w-old', name: 'main', path: '/code/old-clone', project: null, branch: 'main' }
       ]
     }
   }
@@ -272,10 +273,41 @@ test('several workspaces match: pick one, it shows that repo, and Change workspa
   })
   const view = await mount(panel, { host: h })
   assert.ok(view.summary().some((l) => /Several workspaces match/.test(l)))
-  await view.press({ type: 'ListItem', text: /^app/ })
+  // Each choice names its project and branch, with the folder under it; no project: the folder name.
+  const items = view.findAll({ type: 'ListItem' })
+  assert.deepEqual(items.map((i) => [i.props?.title, i.props?.description]), [
+    ['app · main', '/code/app'],
+    ['lib · main', '/code/lib'],
+    ['old-clone', '/code/old-clone']
+  ])
+  await view.press({ type: 'ListItem', text: /^app · main/ })
   assert.deepEqual(picks, ['/code/app'])
   assert.ok(view.find({ text: 'octo/app' }))
   await view.press({ label: 'Change workspace' })
-  assert.ok(view.find({ type: 'ListItem', text: /lib/ }))
+  assert.ok(view.find({ type: 'ListItem', text: /^lib · main/ }))
+  await view.unmount()
+})
+
+test('choices that share a project and branch add their folder name; the others do not', async () => {
+  const candidates = [
+    { id: 'w-app', name: 'main', path: '/code/app', project: 'app', branch: 'main' },
+    { id: 'w-app2', name: 'main', path: '/code/app-2/', project: 'app', branch: 'main' },
+    { id: 'w-lib', name: 'main', path: '/code/lib', project: 'lib', branch: 'main' },
+    { id: 'w-dev', name: 'main', path: '/code/app-dev', project: 'app', branch: 'dev' },
+    { id: 'w-bare', name: 'main', path: '/code/bare', project: null, branch: 'main' },
+    { id: 'w-bare2', name: 'main', path: '/code/bare2', project: null, branch: 'main' }
+  ]
+  const h = host({
+    'repo.get': () => ({ ok: false as const, error: { code: 'ambiguous_workspace' as const, message: '6 workspaces match.', candidates } })
+  })
+  const view = await mount(panel, { host: h })
+  assert.deepEqual(view.findAll({ type: 'ListItem' }).map((i) => [i.props?.title, i.props?.description]), [
+    ['app · main (app)', '/code/app'],
+    ['app · main (app-2)', '/code/app-2/'],
+    ['lib · main', '/code/lib'],
+    ['app · dev', '/code/app-dev'],
+    ['bare', '/code/bare'],
+    ['bare2', '/code/bare2']
+  ])
   await view.unmount()
 })

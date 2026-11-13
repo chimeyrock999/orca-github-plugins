@@ -6,20 +6,20 @@ export type ErrorCode =
   | 'workspace_not_found'
   | 'ambiguous_workspace'
   | 'remote_workspace'
-  /** An Orca host call failed (workspace.readContext, workspace.list), or a panel request was
-   *  rejected without a code. */
+  /** An Orca call failed without a code: a host call (workspace.readContext, workspace.list) or a
+   *  panel request. One with a code reads as the codes below (src/host-error.ts). */
   | 'host_failed'
-  /** Panel only: the worker threw something that is not a gh failure, or Orca refused the request
-   *  as malformed. A bug in the plugin. */
+  /** The worker threw something that is not a gh failure, or Orca refused a call as malformed. A
+   *  bug in the plugin. */
   | 'action_failed'
-  /** Panel only: Orca has not allowed this for the plugin (capability_denied, consent_required,
+  /** Orca has not allowed this for the plugin (capability_denied, consent_required,
    *  not_permitted). */
   | 'not_allowed'
-  /** Panel only: Orca's own pace for panel requests, with `retryAfterMs` when Orca says how long. */
+  /** Orca's own pace for panel requests and host calls, with `retryAfterMs` when Orca says how long. */
   | 'host_rate_limited'
   /** Panel only: the answer is bigger than Orca passes to a panel. */
   | 'too_large'
-  /** Panel only: Orca could not reach the plugin's worker. */
+  /** Orca could not reach the plugin's worker, or does not offer a host method. */
   | 'unavailable'
   | 'not_a_repo'
   | 'gh_missing'
@@ -28,7 +28,7 @@ export type ErrorCode =
   | 'not_found'
   /** GitHub's rate limit. */
   | 'rate_limited'
-  /** gh did not answer within the worker's limit. */
+  /** gh did not answer within the worker's limit, or Orca timed out a host call or panel request. */
   | 'timeout'
   /** The panel stopped waiting (closed, or the request timed out). */
   | 'cancelled'
@@ -45,8 +45,10 @@ export type PanelError = {
   message: string
   /** The workspace folder, once one was found. */
   path?: string
-  /** The workspaces that fit the focused context equally well (`ambiguous_workspace`). */
-  candidates?: { id: string; name: string; path: string }[]
+  /** The workspaces that fit the focused context equally well (`ambiguous_workspace`), with the
+   *  repo's name in Orca (null when Orca does not say) and the branch, both for the label;
+   *  choices that share both add their folder name. */
+  candidates?: { id: string; name: string; path: string; project: string | null; branch: string }[]
   /** How long Orca asks the panel to wait (`host_rate_limited`). */
   retryAfterMs?: number
 }
@@ -343,9 +345,10 @@ declare module 'orca' {
     /** The GitHub repo (`owner/name`) of the focused workspace. */
     'repo.get': { output: RepoAnswer }
     /** Picks the folder for the focused branch and name when several workspaces share them
-     *  (`ambiguous_workspace`); kept in storage and used until it stops matching. */
+     *  (`ambiguous_workspace`); kept in storage for this branch, name and set of matching projects,
+     *  and used while that set stays the same and the folder is one of them. */
     'repo.pick': { input: { path: string }; output: RepoAnswer }
-    /** Forgets the pick for the focused branch and name. */
+    /** Forgets the pick for the focused branch, name and set of matching projects. */
     'repo.unpick': { output: RepoAnswer }
     /** The issues and pull requests Orca links to the focused workspace, in Orca's order; none when
      *  Orca's CLI does not say. With `branch` and no linked pull request of the focused repo, the one

@@ -95,9 +95,9 @@ export default defineCheck({
           code: 'ambiguous_workspace',
           message: '3 workspaces are on main and named main.',
           candidates: [
-            { id: 'w-app', name: 'main', path: '/code/app' },
-            { id: 'w-lib', name: 'main', path: '/code/lib' },
-            { id: 'w-docs', name: 'main', path: '/code/docs' }
+            { id: 'w-app', name: 'main', path: '/code/app', project: 'app', branch: 'main' },
+            { id: 'w-lib', name: 'main', path: '/code/lib', project: 'lib', branch: 'main' },
+            { id: 'w-docs', name: 'main', path: '/code/docs', project: null, branch: 'main' }
           ]
         }
       }
