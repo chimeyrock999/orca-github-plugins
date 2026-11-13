@@ -23,7 +23,7 @@ A right-sidebar panel that follows the focused workspace, with three tabs:
 
 ## Install
 
-From the first release on: [Open in Orca](https://orca.dev/plugins/chimeyrock999.gh-focus?catalog=community), or in Orca: Settings → Plugins, community catalog, **gh Focus**. Orca asks you to approve the permissions below; an update that adds one asks again.
+[Open in Orca](https://orca.dev/plugins/chimeyrock999.gh-focus?catalog=community), or in Orca: Settings → Plugins, community catalog, **gh Focus**. Orca asks you to approve the permissions below; an update that adds one asks again.
 
 ## Permissions
 

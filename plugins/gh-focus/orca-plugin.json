@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "gh-focus",
   "name": "gh Focus",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "For GitHub repos: the issue, pull request and Actions runs of the workspace you're in, beside your code. Read, comment, review and rerun without leaving the editor for the Tasks page. Uses the gh CLI; not affiliated with GitHub.",
   "author": {
     "name": "chimeyrock999",
@@ -12,8 +12,8 @@
   "license": "MIT",
   "icon": "images/icon.png",
   "cover": {
-    "path": "images/issue.png",
-    "alt": "gh Focus in Orca's right sidebar, showing the workspace's linked issue with its labels, milestone and description"
+    "path": "images/cover.png",
+    "alt": "gh Focus: your workspace's issue and PR, beside the code. The panel's issue and pull request, with an Actions run in progress"
   },
   "screenshots": [
     {
