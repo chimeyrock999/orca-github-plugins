@@ -314,10 +314,15 @@ test('reactions: addReaction or removeReaction on the node id', async () => {
   assert.equal(gh.calls.length, 3)
 })
 
-test('assignees: every page, sorted', async () => {
-  const gh = fakeGh([[{ login: 'olu' }, { login: 'ana' }], [{ login: 'kenji' }]])
-  assert.deepEqual(await listAssignees(gh, repo), { logins: ['ana', 'kenji', 'olu'] })
-  assert.deepEqual(gh.calls[0].args, ['api', '--paginate', '--slurp', 'repos/octo/app/assignees?per_page=100'])
+test('assignees: every page, a plain GET each, sorted', async () => {
+  const full = Array.from({ length: 100 }, (_, i) => ({ login: `user${String(i).padStart(3, '0')}` }))
+  const gh = fakeGh([{ login: 'olu' }, ...full.slice(1)], [{ login: 'ana' }])
+  const { logins } = await listAssignees(gh, repo)
+  assert.deepEqual([logins.length, logins[0], logins.at(-1)], [101, 'ana', 'user099'])
+  assert.deepEqual(gh.calls.map((c) => c.args), [
+    ['api', 'repos/octo/app/assignees?per_page=100'],
+    ['api', 'repos/octo/app/assignees?per_page=100&page=2']
+  ])
 })
 
 test('a timeline a little longer than a page: the tail adds what the head missed, and nothing is left', async () => {

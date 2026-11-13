@@ -67,6 +67,8 @@ function github() {
       version++
       return JSON.stringify({ id: 1, node_id: 'IC_1', html_url: 'https://github.com/octo/app/issues/8#issuecomment-1', body: 'Done.', user: { login: 'ana' }, created_at: '2026-11-13T07:00:00Z' })
     }
+    if (args[0] === 'pr') return { number: 21 }
+    if (args[0] === 'label') return [{ name: 'bug' }]
     if (args[1]?.endsWith('/jobs?filter=latest&per_page=100')) return jobsJson
     if (args[1]?.endsWith('/actions/runs/9')) return runJson
     return ''
@@ -145,6 +147,27 @@ test('the screens the panel shows cost fewer gh calls, and a write or Refresh st
   const after = await open()
   assert.equal(after.ok && after.issue.body, 'After the write.')
   assert.equal(await cost(list), 1)
+  // The Pull requests tab with no linked pull request asks gh for the branch's once.
+  const pulls = () => worker.request('repo.links', { branch: true })
+  assert.equal(await cost(pulls), 1)
+  assert.equal(await cost(pulls), 0)
+  // A run still going is read each time it opens (the run and its jobs).
+  assert.equal(await cost(() => worker.request('run.get', { id: 9 })), 2)
+  // Labels are kept across workspaces of the same repo.
+  assert.equal(await cost(() => worker.request('labels.list', {})), 1)
+  await focus('app')
+  assert.equal(await cost(() => worker.request('labels.list', {})), 0)
+  await worker.deactivate()
+})
+
+test("a run write drops the repo's items too: a pull request's checks change with it", async () => {
+  const hub = github()
+  const { worker } = await mount(hub.gh)
+  await worker.request('issue.get', { number: 8 })
+  await worker.request('run.rerun', { id: 9, failed: true })
+  const before = hub.calls.length
+  await worker.request('issue.get', { number: 8 })
+  assert.equal(hub.calls.length - before, 1)
   await worker.deactivate()
 })
 

@@ -182,7 +182,8 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
     return write().finally(drop)
   }
   const inItems = <T>(repo: RepoRef, write: () => Promise<T>) => written(() => reads.drop(tagOf('items', repo)), write)
-  const inRuns = <T>(repo: RepoRef, write: () => Promise<T>) => written(() => reads.drop(tagOf('runs', repo)), write)
+  // A run write changes the checks a pull request shows too.
+  const inRuns = <T>(repo: RepoRef, write: () => Promise<T>) => written(() => reads.drop(tagOf('runs', repo), tagOf('items', repo)), write)
 
   orca.panels.handle('repo.get', () => tracker.get())
   orca.panels.handle('repo.pick', ({ path }) => tracker.pick(path))

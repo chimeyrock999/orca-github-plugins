@@ -2,7 +2,7 @@
 // may do; writes through gh's own issue commands, which take label and login names. Comments are
 // posted, edited and deleted through the REST API, reactions through GraphQL by node id.
 import { GhError, type Gh } from '../gh'
-import { issueState, repoFlag, type RepoRef } from '../lists'
+import { everyPage, issueState, repoFlag, type RepoRef } from '../lists'
 import { PAGE_SIZE, REACTIONS, type CloseReason, type IssueDetail, type IssueEdit, type Reaction, type TimelineComment, type TimelineItem } from '../../shared/protocol'
 import {
   BODY_BYTES,
@@ -256,11 +256,6 @@ export async function setReaction(
 
 /** Logins that can be assigned in the repo, every page of them. */
 export async function listAssignees(gh: Gh, repo: RepoRef, signal?: AbortSignal): Promise<{ logins: string[] }> {
-  const pages = (await gh(['api', '--paginate', '--slurp', `repos/${repo.nameWithOwner}/assignees?per_page=100`], {
-    cwd: repo.path,
-    signal,
-    json: true
-  })) as { login: string }[][]
-  const all = Array.isArray(pages) ? pages.flatMap((p) => (Array.isArray(p) ? p.map((u) => u.login) : [])) : []
-  return { logins: all.sort((a, b) => a.localeCompare(b)) }
+  const users = await everyPage(gh, repo, `repos/${repo.nameWithOwner}/assignees`, (p) => (Array.isArray(p) ? (p as { login: string }[]) : undefined), signal)
+  return { logins: users.map((u) => u.login).sort((a, b) => a.localeCompare(b)) }
 }

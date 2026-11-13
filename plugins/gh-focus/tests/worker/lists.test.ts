@@ -147,15 +147,19 @@ test('workflow: a file name goes straight to its runs; a name is looked up first
   assert.equal(byId.calls.length, 1)
   assert.equal(pathOf(byId.calls[0].args), 'repos/octo/app/actions/workflows/9/runs')
 
-  // Every page of workflows is read, so the 101st is found too.
-  const byName = fakeGh([{ workflows: [{ id: 7, name: 'Release' }] }, { workflows: [{ id: 9, name: 'CI build' }] }], { total_count: 0, workflow_runs: [] })
+  // Every page of workflows is read, a plain GET each, so the 101st is found too.
+  const full = Array.from({ length: 100 }, (_, i) => ({ id: 100 + i, name: `Job ${i}` }))
+  const byName = fakeGh({ workflows: full }, { workflows: [{ id: 9, name: 'CI build' }] }, { total_count: 0, workflow_runs: [] })
   await listRuns(byName, repo, { query: 'Workflow:"ci build"', after: null })
-  assert.deepEqual(byName.calls[0].args, ['api', '--paginate', '--slurp', 'repos/octo/app/actions/workflows?per_page=100'])
-  assert.equal(pathOf(byName.calls[1].args), 'repos/octo/app/actions/workflows/9/runs')
+  assert.deepEqual(byName.calls.slice(0, 2).map((c) => c.args), [
+    ['api', 'repos/octo/app/actions/workflows?per_page=100'],
+    ['api', 'repos/octo/app/actions/workflows?per_page=100&page=2']
+  ])
+  assert.equal(pathOf(byName.calls[2].args), 'repos/octo/app/actions/workflows/9/runs')
 })
 
 test('workflow: an unknown name is not_found', async () => {
-  await assert.rejects(listRuns(fakeGh([{ workflows: [] }]), repo, { query: 'workflow:nope', after: null }), (e) => {
+  await assert.rejects(listRuns(fakeGh({ workflows: [] }), repo, { query: 'workflow:nope', after: null }), (e) => {
     return e instanceof GhError && e.code === 'not_found'
   })
 })
@@ -175,8 +179,8 @@ test('labels and workflows list their names', async () => {
   assert.deepEqual(await listLabels(labels, repo), { names: ['bug', 'enhancement'] })
   assert.equal(labels.calls[0].cwd, '/code/app')
   assert.deepEqual(labels.calls[0].args, ['label', 'list', '--json', 'name', '--limit', '500'])
-  const pages = [{ total_count: 2, workflows: [{ id: 1, name: 'CI', path: '.github/workflows/ci.yml' }] }, { workflows: [{ id: 2, name: 'Release' }] }]
-  assert.deepEqual(await listWorkflows(fakeGh(pages), repo), { workflows: [{ id: 1, name: 'CI' }, { id: 2, name: 'Release' }] })
+  const page = { total_count: 2, workflows: [{ id: 1, name: 'CI', path: '.github/workflows/ci.yml' }, { id: 2, name: 'Release' }] }
+  assert.deepEqual(await listWorkflows(fakeGh(page), repo), { workflows: [{ id: 1, name: 'CI' }, { id: 2, name: 'Release' }] })
 })
 
 test('runs: no filter reaches every run; a filter stops the pages at 1,000', async () => {

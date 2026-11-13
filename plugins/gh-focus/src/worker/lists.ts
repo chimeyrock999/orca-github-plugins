@@ -123,14 +123,22 @@ export async function listLabels(gh: Gh, repo: RepoRef, signal?: AbortSignal): P
   return { names: Array.isArray(out) ? out.map((l) => l.name).sort((a, b) => a.localeCompare(b)) : [] }
 }
 
+/** Every item of a REST list, 100 to a page, a page at a time: each page a plain GET, which can come
+ *  back 304 while nothing changed (`gh api --paginate` cannot). `items` reads a page's items. */
+export async function everyPage<T>(gh: Gh, repo: RepoRef, path: string, items: (page: unknown) => T[] | undefined, signal?: AbortSignal): Promise<T[]> {
+  const all: T[] = []
+  for (let page = 1; ; page++) {
+    const out = await gh(['api', `${path}?per_page=100${page > 1 ? `&page=${page}` : ''}`], { cwd: repo.path, signal, json: true })
+    const found = items(out)
+    if (!Array.isArray(found)) throw new GhError('gh_failed', `Unexpected gh output: ${JSON.stringify(out).slice(0, 200)}`)
+    all.push(...found)
+    if (found.length < 100) return all
+  }
+}
+
 /** The repo's workflows, every page of them. */
 export async function listWorkflows(gh: Gh, repo: RepoRef, signal?: AbortSignal): Promise<{ workflows: { id: number; name: string }[] }> {
-  const pages = (await gh(['api', '--paginate', '--slurp', `repos/${repo.nameWithOwner}/actions/workflows?per_page=100`], {
-    cwd: repo.path,
-    signal,
-    json: true
-  })) as { workflows?: { id: number; name: string }[] }[]
-  const all = Array.isArray(pages) ? pages.flatMap((p) => p?.workflows ?? []) : []
+  const all = await everyPage(gh, repo, `repos/${repo.nameWithOwner}/actions/workflows`, (p) => (p as { workflows?: { id: number; name: string }[] } | null)?.workflows, signal)
   return { workflows: all.map(({ id, name }) => ({ id, name })) }
 }
 

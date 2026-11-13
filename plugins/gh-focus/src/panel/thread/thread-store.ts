@@ -262,7 +262,11 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     return loadRows()
   }
 
-  const markStale = () => set(listStale, true)
+  // A write that changes the list changes what any workspace remembers of it too.
+  const markStale = () => {
+    set(listStale, true)
+    set(seen, {})
+  }
 
   function changeShown(change: (detail: D) => D): void {
     update(state, (s) => (s.answer?.ok ? { ...s, answer: { ...s.answer, detail: change(s.answer.detail) } } : s))
