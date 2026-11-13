@@ -2,18 +2,17 @@
 // no scenario reaches the real gh.
 import { defineCheck } from 'orca/testing'
 import type { Answer, PullDetail } from './protocol'
-import { commentItem, failed, issueDetail, issueRows, itemPage, pullDetail, pullRows, repoOk, runPage, runRows } from './fixtures'
+import { commentItem, failed, issueDetail, issueRows, itemPage, pullDetail, repoOk, runPage, runRows } from './fixtures'
 
 const lists = {
   'repo.get': repoOk,
   'issues.list': itemPage(issueRows(30), 72, 'p2', 5),
-  'pulls.list': itemPage(pullRows, 2, null, 1),
   'runs.list': runPage(runRows, 296, '2')
 }
 const empty = itemPage([], 0, null)
 // A workspace made from issue 120 opens on it, which is how these scenarios show an issue.
 const linked = { 'repo.links': { ok: true as const, issue: 120, pull: null } }
-// A workspace made from pull request 131 opens on it in the Pull requests tab.
+// The workspace's pull request (here 131) opens in the Pull requests tab.
 const linkedPull = { 'repo.links': { ok: true as const, issue: null, pull: 131 } }
 const onPulls = { persisted: { plugin: { tab: 'pulls' } } }
 const mergedAt = Date.UTC(2026, 10, 12, 8, 0)
@@ -47,7 +46,7 @@ export default defineCheck({
   'issue-long-timeline': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: longTimeline } } },
   'issue-read-only': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: issueDetail({ canEdit: false }) } } },
   'issue-not-found': { requests: { ...lists, ...linked, 'issue.get': failed('not_found', 'Could not resolve to an Issue with the number of 120.') } },
-  'pull-requests': { requests: lists, persisted: { plugin: { tab: 'pulls' } } },
+  'pull-none': { requests: { ...lists, 'repo.links': { ok: true, issue: null, pull: null } }, ...onPulls },
   'pull-detail': showPull(),
   'pull-own': showPull({ author: 'chimeyrock999', review: 'review_required', reviewers: ['ana', 'core'] }),
   'pull-ready': showPull({ merge: 'clean', review: 'approved', reviewers: [], checks: [{ name: 'CI / lint', state: 'pass', url: null, durationMs: 41_000 }], checksTotal: 1 }),
@@ -68,7 +67,7 @@ export default defineCheck({
   }),
   'pull-not-found': pullScenario(failed('not_found', 'Could not resolve to a PullRequest with the number of 131.')),
   actions: { requests: lists, persisted: { plugin: { tab: 'runs' } } },
-  'empty-repo': { requests: { 'repo.get': repoOk, 'issues.list': empty, 'pulls.list': empty, 'runs.list': empty } },
+  'empty-repo': { requests: { 'repo.get': repoOk, 'issues.list': empty, 'runs.list': empty } },
   'no-workspace': { requests: { 'repo.get': failed('no_workspace', 'No workspace is focused in Orca.') } },
   'not-a-github-repo': {
     requests: { 'repo.get': failed('not_a_repo', 'none of the git remotes configured for this repository point to a known GitHub host') }

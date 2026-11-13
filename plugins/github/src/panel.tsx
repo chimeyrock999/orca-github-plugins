@@ -17,7 +17,7 @@ import {
   type PanelContext
 } from 'orca'
 import { issue, issues, newIssue } from './issue-store'
-import { pull, pulls } from './pull-store'
+import { findPull, pull, pulls } from './pull-store'
 import { githubUrl, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
 import { Problem } from './parts'
 import { KindView } from './views'
@@ -27,7 +27,7 @@ import { KindView } from './views'
 async function thenStart(step: Promise<void> | void): Promise<void> {
   await step
   await issues.start()
-  await pulls.start()
+  await findPull()
 }
 
 /** Runs once before the first render; what it pushes to `subscriptions` ends with the panel. */
@@ -46,7 +46,11 @@ async function refreshAll(): Promise<void> {
   const picking = read(issue).picking ?? read(newIssue).picking ?? read(pull).picking
   if (picking) void loadChoices(picking.kind)
   if (read(tab) === 'issues' && read(lists.issues).open === String(read(issue).number)) await issues.load()
-  if (read(tab) === 'pulls' && read(lists.pulls).open === String(read(pull).number)) await pulls.load()
+  if (read(tab) !== 'pulls') return
+  // The one on screen loads again; with none, the branch may have one by now.
+  const shown = read(lists.pulls).open === String(read(pull).number)
+  await findPull(true)
+  if (shown) await pulls.load()
 }
 
 function openOnGitHub(): unknown {

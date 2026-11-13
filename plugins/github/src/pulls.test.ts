@@ -2,7 +2,7 @@
 // answers. The JSON follows what GitHub's GraphQL API answered for real pull requests.
 import { assert, test } from 'orca/testing'
 import { GhError, type Gh } from './gh'
-import { closePull, commentOnPull, editPull, getPull, pullTimeline, reopenPull, reviewPull } from './pulls'
+import { branchPull, commentOnPull, editPull, getPull, pullTimeline, reviewPull } from './pulls'
 import { COMMENT_BYTES } from './timeline'
 
 const repo = { nameWithOwner: 'octo/app', path: '/code/app' }
@@ -255,19 +255,15 @@ test('pull.timeline asks for the page after the cursor and drops the close by th
   assert.equal(page.next, null)
 })
 
-test('comment, edit, close and reopen go through gh pr', async () => {
-  const gh = fakeGh('https://github.com/octo/app/pull/131#issuecomment-1', '', '', '')
+test('comment and edit go through gh pr', async () => {
+  const gh = fakeGh('https://github.com/octo/app/pull/131#issuecomment-1', '')
   await commentOnPull(gh, repo, 131, 'Looks good.')
   await editPull(gh, repo, { number: 131, title: 'fix: stream export', addLabels: ['bug'], removeAssignees: ['kenji'] })
-  await closePull(gh, repo, { number: 131, comment: 'Superseded by #140.' })
-  await reopenPull(gh, repo, { number: 131 })
   assert.deepEqual(
     gh.calls.map((c) => c.args),
     [
       ['pr', 'comment', '131', '--body', 'Looks good.'],
-      ['pr', 'edit', '131', '--title', 'fix: stream export', '--add-label', 'bug', '--remove-assignee', 'kenji'],
-      ['pr', 'close', '131', '--comment', 'Superseded by #140.'],
-      ['pr', 'reopen', '131']
+      ['pr', 'edit', '131', '--title', 'fix: stream export', '--add-label', 'bug', '--remove-assignee', 'kenji']
     ]
   )
   assert.ok(gh.calls.every((c) => c.cwd === '/code/app' && c.timeoutMs === 60_000))
@@ -290,4 +286,12 @@ test('review: approve may be empty; request changes and comment need a body', as
   await assert.rejects(reviewPull(gh, repo, { number: 131, event: 'comment', body: '' }), isGhError('gh_failed'))
   await assert.rejects(reviewPull(gh, repo, { number: 131, event: 'merge' as never, body: 'x' }), isGhError('gh_failed'))
   assert.equal(gh.calls.length, 3)
+})
+
+test('branchPull: the pull request gh finds for the checked-out branch, else null', async () => {
+  const gh = fakeGh({ number: 21 }, new GhError('gh_failed', 'no pull requests found for branch "main"'), null)
+  assert.equal(await branchPull(gh, repo), 21)
+  assert.deepEqual(gh.calls[0], { args: ['pr', 'view', '--json', 'number'], cwd: '/code/app', timeoutMs: undefined })
+  assert.equal(await branchPull(gh, repo), null)
+  assert.equal(await branchPull(gh, repo), null)
 })

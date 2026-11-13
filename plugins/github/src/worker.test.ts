@@ -263,7 +263,7 @@ test('issues.list runs one gh search in the focused repo and answers its page', 
 
 test('a list asked with no repo answers the repo error and never runs gh', async () => {
   const worker = await mountWorker(listWorker(noGh), { host: hostFocused({ branch: 'main', displayName: 'out' }) })
-  const answer = await worker.request('pulls.list', { state: 'open', query: '', after: null })
+  const answer = await worker.request('issues.list', { state: 'open', query: '', after: null })
   assert.equal(answer.ok, false)
   if (answer.ok) return
   assert.equal(answer.error.code, 'gh_logged_out')
@@ -367,8 +367,6 @@ test('pull request requests run gh pr in the focused repo, and answer the repo e
   const worker = await mountWorker(listWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
   assert.deepEqual(await worker.request('pull.comment', { number: 13, body: 'Looks good.' }), { ok: true })
   assert.deepEqual(await worker.request('pull.review', { number: 13, event: 'approve', body: '' }), { ok: true })
-  assert.deepEqual(await worker.request('pull.close', { number: 13 }), { ok: true })
-  assert.deepEqual(await worker.request('pull.reopen', { number: 13, comment: 'Back on.' }), { ok: true })
   assert.deepEqual(await worker.request('pull.edit', { number: 13, addLabels: ['bug'] }), { ok: true })
   const missing = await worker.request('pull.get', { number: 13 })
   assert.equal(!missing.ok && missing.error.code, 'not_found')
@@ -377,8 +375,6 @@ test('pull request requests run gh pr in the focused repo, and answer the repo e
   assert.deepEqual(calls.map((c) => [c.cwd, c.args.slice(0, 2)]), [
     ['/work/spike', ['pr', 'comment']],
     ['/work/spike', ['pr', 'review']],
-    ['/work/spike', ['pr', 'close']],
-    ['/work/spike', ['pr', 'reopen']],
     ['/work/spike', ['pr', 'edit']],
     ['/work/spike', ['api', 'graphql']],
     ['/work/spike', ['api', 'graphql']]
@@ -413,4 +409,64 @@ test('repo.links answers what Orca links to the workspace, only for its own repo
   project = null
   assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: null, pull: null })
   await worker.deactivate()
+})
+
+test('repo.links: with no linked pull request, the branch pull request gh finds stands in', async () => {
+  let branch: unknown = { number: 21 }
+  const calls: { args: string[]; cwd?: string }[] = []
+  const gh: Gh = async (args, options) => {
+    calls.push({ args, cwd: options?.cwd })
+    if (branch instanceof Error) throw branch
+    return branch
+  }
+  let linked: { project: string | null; issue: number | null; pull: number | null } | null = { project: 'github:octo/app', issue: 4, pull: 13 }
+  const module = {
+    default: (orca: OrcaWorkerApi) =>
+      main.activateWith(orca, { gh, ghRepo: async (path) => repos[path], terminalPath: async () => null, exists: () => true, links: async () => linked })
+  }
+  const worker = await mountWorker(module, { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
+  // A linked pull request wins, and gh is not asked.
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: 4, pull: 13 })
+  assert.equal(calls.length, 0)
+  linked = { project: 'github:octo/app', issue: 4, pull: null }
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: 4, pull: 21 })
+  assert.deepEqual(calls[0], { args: ['pr', 'view', '--json', 'number'], cwd: '/work/spike' })
+  // Orca's CLI says nothing: gh still finds the branch's.
+  linked = null
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: null, pull: 21 })
+  // No pull request for the branch, or gh failing, is none, not an error.
+  branch = new GhError('gh_failed', 'no pull requests found for branch "feature/spike"')
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: null, pull: null })
+  branch = { message: 'odd' }
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: null, pull: null })
+  await worker.deactivate()
+})
+
+test('orca.show runs the Tasks page or the Checks tab of Orca, and a refusal is an answer', async () => {
+  const host = mockHost({
+    results: {
+      'workspace.readContext': { branch: 'feature/spike', displayName: 'Spike', terminals: [] },
+      'workspace.list': { workspaces, truncated: false },
+      'commands.run': { ran: true }
+    }
+  })
+  const worker = await mountWorker(listWorker(noGh), { host })
+  assert.deepEqual(await worker.request('orca.show', { view: 'tasks' }), { ok: true })
+  assert.deepEqual(await worker.request('orca.show', { view: 'checks' }), { ok: true })
+  assert.deepEqual(host.callsOf('commands.run'), [{ action: 'view.tasks' }, { action: 'sidebar.checks.toggle' }])
+  const odd = await worker.request('orca.show', { view: 'board' as never })
+  assert.equal(!odd.ok && odd.error.code, 'gh_failed')
+  await worker.deactivate()
+
+  const refusing = mockHost({
+    results: {
+      'workspace.readContext': { branch: 'feature/spike', displayName: 'Spike', terminals: [] },
+      'workspace.list': { workspaces, truncated: false },
+      'commands.run': () => Promise.reject(hostError('unavailable', 'Not the desktop app'))
+    }
+  })
+  const web = await mountWorker(listWorker(noGh), { host: refusing })
+  const answer = await web.request('orca.show', { view: 'tasks' })
+  assert.deepEqual(answer, { ok: false, error: { code: 'host_failed', message: 'Not the desktop app' } })
+  await web.deactivate()
 })

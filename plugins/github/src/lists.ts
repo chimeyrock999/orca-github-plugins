@@ -1,5 +1,6 @@
-// One page of each tab's list, fetched with gh in the repo's folder. Issues and pull requests go
-// through GitHub's search, which pages by cursor and counts open and closed in the same call;
+// One page of a tab's list, fetched with gh in the repo's folder. Issues go through GitHub's
+// search, which pages by cursor and counts open and closed in the same call (the Pull requests tab
+// has no list: it shows the workspace's pull request);
 // runs go through the REST runs API, which pages by number and has no word search.
 import { GhError, type Gh } from './gh'
 import {
@@ -12,7 +13,6 @@ import {
   type ItemPage,
   type ItemSort,
   type Page,
-  type PullRow,
   type PullState,
   type RunListInput,
   type RunRow,
@@ -26,15 +26,11 @@ function quoted(value: string): string {
   return /\s/.test(value) ? `"${value.replace(/"/g, '')}"` : value
 }
 
-const DRAFT: Record<string, string> = { draft: 'draft:true', ready: 'draft:false' }
-
-function filterWords(kind: 'issue' | 'pr', filters: ItemFilters = {}): string[] {
+function filterWords(filters: ItemFilters = {}): string[] {
   const words: string[] = []
   if (filters.author?.trim()) words.push(`author:${quoted(filters.author.trim())}`)
   if (filters.label?.trim()) words.push(`label:${quoted(filters.label.trim())}`)
   if (filters.assignee?.trim()) words.push(`assignee:${quoted(filters.assignee.trim())}`)
-  if (kind === 'pr' && filters.review === 'me') words.push('review-requested:@me')
-  if (kind === 'pr' && filters.draft && DRAFT[filters.draft]) words.push(DRAFT[filters.draft])
   return words
 }
 
@@ -51,7 +47,7 @@ export function itemSearch(
 ): string {
   const order = sort ? [`sort:${sort}`] : []
   const states = state === 'all' ? [] : [`is:${state}`]
-  return [`repo:${repo.nameWithOwner}`, `is:${kind}`, ...states, ...filterWords(kind, filters), ...order, words.trim()]
+  return [`repo:${repo.nameWithOwner}`, `is:${kind}`, ...states, ...filterWords(filters), ...order, words.trim()]
     .filter(Boolean)
     .join(' ')
 }
@@ -65,7 +61,6 @@ const ITEM_QUERY = `query($q: String!, $openQ: String!, $closedQ: String!, $firs
     nodes {
       __typename
       ... on Issue { ${ITEM_FIELDS} stateReason }
-      ... on PullRequest { ${ITEM_FIELDS} isDraft merged mergedAt headRefName }
     }
   }
   open: search(query: $openQ, type: ISSUE, first: 0) @include(if: $withCounts) { issueCount }
@@ -83,10 +78,6 @@ type ItemNode = {
   author: { login: string } | null
   labels?: { nodes: { name: string }[] }
   stateReason?: string | null
-  isDraft?: boolean
-  merged?: boolean
-  mergedAt?: string | null
-  headRefName?: string
 }
 
 type SearchData = {
@@ -171,14 +162,6 @@ function itemFields(node: ItemNode) {
 export async function listIssues(gh: Gh, repo: RepoRef, input: ItemListInput, signal?: AbortSignal): Promise<ItemPage<IssueRow>> {
   const { data, nodes } = await searchItems(gh, repo, 'issue', input, signal)
   return itemPage(data, nodes.map((n): IssueRow => ({ ...itemFields(n), state: issueState(n) })))
-}
-
-export async function listPulls(gh: Gh, repo: RepoRef, input: ItemListInput, signal?: AbortSignal): Promise<ItemPage<PullRow>> {
-  const { data, nodes } = await searchItems(gh, repo, 'pr', input, signal)
-  return itemPage(
-    data,
-    nodes.map((n): PullRow => ({ ...itemFields(n), state: pullState(n), branch: n.headRefName ?? '', mergedAt: time(n.mergedAt) }))
-  )
 }
 
 /** Run search qualifiers the REST runs API takes as parameters; `workflow:` picks the endpoint. */

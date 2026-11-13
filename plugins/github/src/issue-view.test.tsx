@@ -54,17 +54,6 @@ test('the list: All shows both states, Assignee filters, New issue opens the for
   await view.unmount()
 })
 
-test('pull requests get All and Assignee too', async () => {
-  const h = host({ 'pulls.list': (input: ItemListInput) => itemPage([], 0, null, input.state === 'all' ? 0 : 1) })
-  const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'pulls' } } })
-  await view.press({ type: 'Button', text: 'All' })
-  await view.press({ label: 'Filter' })
-  await view.type({ label: 'Assignee' }, 'kenji', { submit: true })
-  assert.deepEqual(h.last('pulls.list'), { state: 'all', query: '', after: null, filters: { assignee: 'kenji' }, sort: 'created-desc', withCounts: true })
-  assert.equal(view.find({ label: 'New issue' }), null)
-  await view.unmount()
-})
-
 test('a row opens the issue: state, labels, assignees, milestone, body and timeline', async () => {
   const h = host()
   const view = await openIssue120(h)
@@ -89,7 +78,7 @@ test('a row opens the issue: state, labels, assignees, milestone, body and timel
 })
 
 test('a mention of an issue or pull request here opens it in its tab; another repo opens on GitHub', async () => {
-  const h = host({ 'pulls.list': itemPage([], 0, null), 'pull.get': () => ({ ok: true, pull: pullDetail() }) })
+  const h = host({ 'repo.links': { ok: true, issue: null, pull: null }, 'pull.get': () => ({ ok: true, pull: pullDetail() }) })
   const view = await openIssue120(h)
   await view.press({ type: 'ListItem', text: /docs: note the 10k export limit/ })
   assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/docs/pull/412' })
@@ -100,7 +89,8 @@ test('a mention of an issue or pull request here opens it in its tab; another re
   await view.press({ type: 'ListItem', text: /fix: stream CSV export past 10k rows/ })
   assert.deepEqual(h.last('pull.get'), { number: 131 })
   assert.equal(view.find({ type: 'Tabs' })?.props.value, 'pulls')
-  assert.ok(view.find({ text: '← Back to pull requests' }))
+  // The branch has no pull request of its own, so Back leaves this one for none.
+  assert.ok(view.find({ type: 'Button', text: '← Back' }))
   // The Issues tab still holds its issue.
   await view.select({ type: 'Tabs' }, 'issues')
   assert.ok(view.find({ text: '← Back to issues' }))
@@ -431,7 +421,7 @@ test('a workspace made from an issue opens on that issue, once; Back and tab swi
 })
 
 test('the linked issue waits for the Issues tab', async () => {
-  const h = host({ 'repo.links': { ok: true, issue: 4, pull: 13 }, 'pulls.list': itemPage([], 0, null) })
+  const h = host({ 'repo.links': { ok: true, issue: 4, pull: 13 }, 'pull.get': failed('not_found', 'gone') })
   const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'pulls' } } })
   assert.equal(h.last('issue.get'), undefined)
   await view.select({ type: 'Tabs' }, 'issues')

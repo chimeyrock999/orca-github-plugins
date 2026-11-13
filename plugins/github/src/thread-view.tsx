@@ -26,7 +26,7 @@ import {
 import { issues } from './issue-store'
 import { count, EMOJI, pullLook, reactionTip, reviewLook, sourceLook, stateWords, type Look } from './look'
 import { Glyph } from './parts'
-import { pulls } from './pull-store'
+import { findPull, focused, handOff, pulls } from './pull-store'
 import { REACTIONS, type ReactionGroup, type ThreadDetail, type TimelineComment, type TimelineItem, type TimelineMention, type TimelineReview } from './protocol'
 import { hasImage, linkRefs } from './refs'
 import { choices, repo, selectTab } from './store'
@@ -193,7 +193,8 @@ function CommentItem({ t, c, s }: { t: AnyThread; c: TimelineComment; s: ThreadS
 function openHere(type: 'issue' | 'pull', number: number): Promise<void> {
   const t = type === 'issue' ? issues : pulls
   void selectTab(t.kind)
-  return t.open(number)
+  // The Pull requests tab also learns the workspace's own, for Back.
+  return t.open(number).then(() => (type === 'pull' ? findPull() : undefined))
 }
 
 function Mention({ item }: { item: TimelineMention }) {
@@ -246,6 +247,25 @@ function EventLine({ look, actor, words, at }: { look: Look; actor: string | nul
   )
 }
 
+/** A review's comments on the diff: Orca's Checks tab shows and answers them for the workspace's own
+ *  pull request; any other opens on GitHub. */
+function DiffComments({ t, r }: { t: AnyThread; r: TimelineReview }) {
+  const own = t.kind === 'pulls' && read(t.state).number === focused()?.number
+  return (
+    <Row gap="xs" align="center" wrap>
+      <Text size="xs" muted>
+        {`${count(r.comments)} comment${r.comments === 1 ? '' : 's'} on the diff`}
+      </Text>
+      {own && (
+        <Button size="xs" variant="outline" icon="activity" tooltip="Orca's Checks tab answers review threads beside the code" onPress={() => handOff('checks')}>
+          Open in Checks
+        </Button>
+      )}
+      <Link onPress={() => shell.openExternal(r.url)}>View on GitHub</Link>
+    </Row>
+  )
+}
+
 /** A review: a box when it says something (a body, or comments on the diff), else one line. */
 function ReviewItem({ t, r }: { t: AnyThread; r: TimelineReview }) {
   const { words, look } = reviewLook(r.state)
@@ -260,12 +280,7 @@ function ReviewItem({ t, r }: { t: AnyThread; r: TimelineReview }) {
   )
   return (
     <Post t={t} head={head} body={r.body} url={r.url} cut={r.truncated} subject={r.id} reactions={r.reactions} empty={null}>
-      {r.comments > 0 && (
-        <Text size="xs" muted>
-          {`${count(r.comments)} comment${r.comments === 1 ? '' : 's'} on the diff · `}
-          <Link onPress={() => shell.openExternal(r.url)}>View on GitHub</Link>
-        </Text>
-      )}
+      {r.comments > 0 && <DiffComments t={t} r={r} />}
     </Post>
   )
 }

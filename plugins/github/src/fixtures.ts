@@ -1,5 +1,5 @@
 // Sample answers the panel tests and check scenarios stand in for the worker with.
-import type { Answer, Check, IssueDetail, IssueRow, ItemPage, Page, PullDetail, PullRow, RepoAnswer, RunRow, TimelineComment, TimelineItem, TimelineReview } from './protocol'
+import type { Answer, Check, IssueDetail, IssueRow, ItemPage, Page, PullDetail, RepoAnswer, RunRow, TimelineComment, TimelineItem, TimelineReview } from './protocol'
 
 const now = Date.UTC(2026, 10, 12, 9, 0)
 const hour = 3_600_000
@@ -36,11 +36,6 @@ export function issueRows(count: number, first = 120): IssueRow[] {
     closedAt: null
   }))
 }
-
-export const pullRows: PullRow[] = [
-  { number: 124, title: 'Fix token refresh loop', url: 'https://github.com/octo/app/pull/124', state: 'open', author: 'mai-t', labels: ['bug'], branch: 'fix/token-refresh', createdAt: now - hour, closedAt: null, mergedAt: null },
-  { number: 123, title: 'Stream CSV export', url: 'https://github.com/octo/app/pull/123', state: 'draft', author: 'ana', labels: [], branch: 'feature/stream-csv', createdAt: now - 20 * hour, closedAt: null, mergedAt: null }
-]
 
 export const runRows: RunRow[] = [
   { id: 9001, runNumber: 296, workflow: 'CI', title: 'Fix token refresh loop', url: 'https://github.com/octo/app/actions/runs/9001', state: 'running', event: 'pull_request', branch: 'fix/token-refresh', sha: 'e057cbe1d2', actor: 'mai-t', pullNumber: 124, startedAt: now - 120_000, durationMs: null },

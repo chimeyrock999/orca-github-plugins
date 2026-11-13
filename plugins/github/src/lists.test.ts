@@ -1,7 +1,7 @@
 // The list fetchers over a fake gh: the gh arguments they build and the rows they map.
 import { assert, test } from 'orca/testing'
 import { GhError, type Gh } from './gh'
-import { itemSearch, listIssues, listLabels, listPulls, listRuns, listWorkflows, parseRunQuery } from './lists'
+import { itemSearch, listIssues, listLabels, listRuns, listWorkflows, parseRunQuery } from './lists'
 
 const repo = { nameWithOwner: 'octo/app', path: '/code/app' }
 
@@ -56,16 +56,6 @@ test('itemSearch: all leaves the state out, assignee is a qualifier quoted like 
     itemSearch(repo, 'issue', 'all', 'csv', { assignee: '@me', label: 'needs review' }),
     'repo:octo/app is:issue label:"needs review" assignee:@me sort:created-desc csv'
   )
-})
-
-test('itemSearch: pull requests take review requested from me and draft or ready; issues take neither', () => {
-  assert.equal(
-    itemSearch(repo, 'pr', 'open', '', { review: 'me', draft: 'draft' }),
-    'repo:octo/app is:pr is:open review-requested:@me draft:true sort:created-desc'
-  )
-  assert.equal(itemSearch(repo, 'pr', 'open', '', { draft: 'ready' }), 'repo:octo/app is:pr is:open draft:false sort:created-desc')
-  assert.equal(itemSearch(repo, 'pr', 'open', '', { review: '', draft: 'maybe' }), 'repo:octo/app is:pr is:open sort:created-desc')
-  assert.equal(itemSearch(repo, 'issue', 'open', '', { review: 'me', draft: 'draft' }), 'repo:octo/app is:issue is:open sort:created-desc')
 })
 
 test('issues: all still counts open and closed apart', async () => {
@@ -132,28 +122,6 @@ test('closed issues: done or not planned by state reason; a deleted author is nu
   assert.equal(page.rows[0].author, null)
   assert.equal(page.rows[0].closedAt, Date.parse('2026-11-13T00:00:00Z'))
   assert.equal(page.total, 5)
-})
-
-test('pull requests: open, draft, merged and closed, with the branch', async () => {
-  const pr = { ...issueNode, __typename: 'PullRequest', headRefName: 'fix/token', isDraft: false, merged: false, mergedAt: null }
-  const gh = fakeGh(
-    searchAnswer([
-      { ...pr, number: 1 },
-      { ...pr, number: 2, isDraft: true },
-      { ...pr, number: 3, state: 'MERGED', merged: true, mergedAt: '2026-11-13T00:00:00Z', closedAt: '2026-11-13T00:00:00Z' },
-      { ...pr, number: 4, state: 'CLOSED', closedAt: '2026-11-13T00:00:00Z' },
-      issueNode
-    ])
-  )
-  const page = await listPulls(gh, repo, { state: 'open', query: '', after: null })
-  assert.equal(field(gh.calls[0].args, 'q'), 'repo:octo/app is:pr is:open sort:created-desc')
-  assert.deepEqual(page.rows.map((r) => [r.number, r.state, r.branch]), [
-    [1, 'open', 'fix/token'],
-    [2, 'draft', 'fix/token'],
-    [3, 'merged', 'fix/token'],
-    [4, 'closed', 'fix/token']
-  ])
-  assert.equal(page.rows[2].mergedAt, Date.parse('2026-11-13T00:00:00Z'))
 })
 
 test('a GraphQL answer without data is gh_failed', async () => {

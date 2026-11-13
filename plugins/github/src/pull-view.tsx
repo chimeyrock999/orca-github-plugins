@@ -7,6 +7,7 @@ import {
   Callout,
   Code,
   Collapsible,
+  EmptyState,
   IconButton,
   List,
   ListItem,
@@ -27,11 +28,13 @@ import { checkLook, checkSummary, count, decisionLook, duration, mergeLook, pull
 import { Glyph, Problem } from './parts'
 import type { Check, PullDetail, ReviewEvent } from './protocol'
 import {
-  askState,
+  backToFocus,
   canReview,
   cancelReview,
-  cancelState,
-  confirmState,
+  dismissHandOff,
+  focused,
+  handOff,
+  handOffError,
   ownPull,
   pull,
   pulls,
@@ -40,6 +43,7 @@ import {
   submitReview,
   type PullState
 } from './pull-store'
+import { lists, repo } from './store'
 import { Byline, EditTitle, LabelsAndAssignees, MetaLine, Post, Timeline } from './thread-view'
 
 /** A state's glyph and its words. */
@@ -160,65 +164,27 @@ function ReviewBox({ d, s }: { d: PullDetail; s: PullState }) {
   )
 }
 
-function StateBox({ d, s }: { d: PullDetail; s: PullState }) {
-  const close = s.confirming === 'close'
-  const withComment = s.draft.trim() ? ' with comment' : ''
-  return (
-    <Callout tone={close ? 'warning' : 'neutral'} title={`${close ? 'Close' : 'Reopen'} pull request #${d.number}${withComment}?`}>
-      <Stack gap="sm">
-        <Text size="sm">{close ? 'The branch stays. You can reopen it later.' : 'It opens again with its branch as it is now.'}</Text>
-        <Row gap="xs" align="center">
-          <Button size="sm" variant="solid" disabled={!!s.busy} onPress={confirmState}>
-            {close ? 'Close pull request' : 'Reopen pull request'}
-          </Button>
-          <Button size="sm" variant="ghost" onPress={cancelState}>
-            Cancel
-          </Button>
-          {(s.busy === 'close' || s.busy === 'reopen') && <Spinner label={close ? 'Closing' : 'Reopening'} labelHidden />}
-        </Row>
-      </Stack>
-    </Callout>
-  )
-}
-
 function Composer({ d, s }: { d: PullDetail; s: PullState }) {
   const typed = !!s.draft.trim()
   const open = d.state === 'open' || d.state === 'draft'
-  const asking = !!s.reviewing || !!s.confirming
-  const state =
-    !d.canEdit || d.state === 'merged' ? (
-      <Box />
-    ) : open ? (
-      <Button size="sm" variant="outline" disabled={!!s.busy || asking} onPress={() => askState('close')}>
-        {typed ? 'Close with comment…' : 'Close…'}
-      </Button>
-    ) : (
-      <Button size="sm" variant="outline" disabled={!!s.busy || asking} onPress={() => askState('reopen')}>
-        {typed ? 'Reopen with comment…' : 'Reopen…'}
-      </Button>
-    )
+  const reviewing = !!s.reviewing
   return (
     <Stack gap="sm">
-      {/* While a review or a close is asked, the text belongs to it: Enter sends nothing alone. */}
-      <Textarea label="Comment" labelHidden placeholder="Leave a comment (Markdown)" rows={4} value={s.draft} disabled={!!s.busy} onChange={pulls.setDraft} onSubmit={() => (asking ? undefined : pulls.sendComment())} />
-      <Row justify="between" align="center" wrap>
-        {state}
-        <Row gap="xs" align="center">
-          {s.busy === 'comment' && <Spinner label="Sending" labelHidden />}
-          {open && (
-            <Button size="sm" variant="outline" disabled={!!s.busy || asking} onPress={startReview}>
-              Review…
-            </Button>
-          )}
-          <Button size="sm" variant="solid" disabled={!typed || !!s.busy || asking} onPress={pulls.sendComment}>
-            Comment
+      {/* While a review is written, the text is its body: Enter sends nothing alone. */}
+      <Textarea label="Comment" labelHidden placeholder="Leave a comment (Markdown)" rows={4} value={s.draft} disabled={!!s.busy} onChange={pulls.setDraft} onSubmit={() => (reviewing ? undefined : pulls.sendComment())} />
+      <Row justify="end" align="center" gap="xs">
+        {s.busy === 'comment' && <Spinner label="Sending" labelHidden />}
+        {open && (
+          <Button size="sm" variant="outline" disabled={!!s.busy || reviewing} onPress={startReview}>
+            Review…
           </Button>
-        </Row>
+        )}
+        <Button size="sm" variant="solid" disabled={!typed || !!s.busy || reviewing} onPress={pulls.sendComment}>
+          Comment
+        </Button>
       </Row>
-      {/* A reload may find it merged or closed meanwhile; then the box no longer fits. */}
-      {s.reviewing && open && <ReviewBox d={d} s={s} />}
-      {s.confirming === 'close' && open && <StateBox d={d} s={s} />}
-      {s.confirming === 'reopen' && d.state === 'closed' && <StateBox d={d} s={s} />}
+      {/* A reload may find it merged or closed meanwhile; then the review no longer fits. */}
+      {reviewing && open && <ReviewBox d={d} s={s} />}
     </Stack>
   )
 }
@@ -265,20 +231,65 @@ function Detail({ d, s }: { d: PullDetail; s: PullState }) {
   )
 }
 
+function HandOffProblem() {
+  const error = read(handOffError)
+  return error ? <Problem error={error} onRetry={dismissHandOff} retryLabel="Dismiss" /> : null
+}
+
+/** Tasks: Orca's own page lists, searches and filters the repo's pull requests. */
+function TasksButton() {
+  return (
+    <Button size="sm" variant="outline" icon="layers" tooltip="Orca's Tasks page: every pull request of the repo" onPress={() => handOff('tasks')}>
+      Tasks
+    </Button>
+  )
+}
+
+/** No pull request open: still looking for the workspace's, or it has none. */
+function NoPull() {
+  const f = focused()
+  const r = read(repo)
+  if (!f) return <Skeleton lines={6} label="Finding this workspace's pull request" />
+  return (
+    <Stack gap="md">
+      <EmptyState
+        icon="branch"
+        title="No pull request for this branch"
+        description="Open one from Orca or GitHub, then Refresh. Orca's Tasks page lists the repo's pull requests."
+      />
+      <Row gap="xs" justify="center">
+        <TasksButton />
+        <Button size="sm" variant="outline" icon="open-external" onPress={() => (r?.ok ? shell.openExternal(`${r.url}/pulls`) : undefined)}>
+          Open on GitHub
+        </Button>
+      </Row>
+      <HandOffProblem />
+    </Stack>
+  )
+}
+
 export function PullView() {
   const s = read(pull)
   const d = s.answer?.ok ? s.answer.detail : null
+  const own = focused()?.number ?? null
   return (
     <Box grow minHeight={0} gap="sm">
       <Row justify="between" align="center">
-        <Button size="sm" variant="outline" onPress={pulls.backToList}>
-          ← Back to pull requests
-        </Button>
+        <Row gap="xs">
+          {/* A pull request opened from a mention leads back to the workspace's own. */}
+          {s.number !== own && (
+            <Button size="sm" variant="outline" onPress={backToFocus}>
+              {own ? `← Back to #${own}` : '← Back'}
+            </Button>
+          )}
+          <TasksButton />
+        </Row>
         <Toolbar label="Pull request" gap="xs">
           {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={pulls.startEdit} />}
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
         </Toolbar>
       </Row>
+      <HandOffProblem />
       {s.answer === null ? (
         <Skeleton lines={8} label={`Loading pull request ${s.number}`} />
       ) : !s.answer.ok ? (
@@ -288,4 +299,11 @@ export function PullView() {
       )}
     </Box>
   )
+}
+
+/** The Pull requests tab: the workspace's pull request (or one opened from a mention), or why there
+ *  is none. */
+export function PullsTab() {
+  const open = read(lists.pulls).open
+  return open ? <PullView /> : <NoPull />
 }

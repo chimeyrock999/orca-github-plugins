@@ -76,7 +76,7 @@ function ask(kind: Kind, s: ListState): Promise<Answer<ListPage>> {
   const answer =
     kind === 'runs'
       ? plugin.request('runs.list', { query: s.query, after, filters: s.filters })
-      : plugin.request(kind === 'issues' ? 'issues.list' : 'pulls.list', {
+      : plugin.request('issues.list', {
           state: s.state,
           query: s.query,
           after,
@@ -87,8 +87,10 @@ function ask(kind: Kind, s: ListState): Promise<Answer<ListPage>> {
   return (answer as Promise<Answer<ListPage>>).catch(requestFailed)
 }
 
-/** Asks for the page the list's cursors point at, dropping it if a newer load started. */
+/** Asks for the page the list's cursors point at, dropping it if a newer load started. The Pull
+ *  requests tab has no list: it shows the workspace's pull request, and Orca's Tasks page the rest. */
 export async function load(kind: Kind): Promise<void> {
+  if (kind === 'pulls') return
   const mine = ++loads[kind]
   const list = lists[kind]
   update(list, (s) => ({ ...s, answer: null }))

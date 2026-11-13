@@ -103,9 +103,7 @@ export type RunRow = {
 
 /** Search orders GitHub offers for issues and pull requests. */
 export type ItemSort = 'created-desc' | 'created-asc' | 'updated-desc' | 'comments-desc'
-/** `review: 'me'` keeps pull requests whose review is asked of the viewer; `draft` is `draft` or
- *  `ready`. Issues take neither. */
-export type ItemFilters = { author?: string; label?: string; assignee?: string; review?: string; draft?: string }
+export type ItemFilters = { author?: string; label?: string; assignee?: string }
 
 /** Issues and pull requests: `state` picks the list (`all` is both), `open` and `closed` count both. */
 export type ItemListInput = {
@@ -263,6 +261,9 @@ export type PullDetail = ThreadDetail & {
   checksTotal: number
 }
 
+/** Orca's own views the panel hands off to. */
+export type OrcaView = 'tasks' | 'checks'
+
 /** The review `gh pr review` submits. */
 export type ReviewEvent = 'approve' | 'request_changes' | 'comment'
 
@@ -289,12 +290,11 @@ declare module 'orca' {
     /** Forgets the pick for the focused branch and name. */
     'repo.unpick': { output: RepoAnswer }
     /** The issue and pull request Orca links to the focused workspace (one made from them), when
-     *  they are of its repo; null when there is none or Orca's CLI does not say. */
+     *  they are of its repo; null when there is none or Orca's CLI does not say. With no linked
+     *  pull request, `pull` is the one gh finds for the workspace's branch. */
     'repo.links': { output: Answer<{ issue: number | null; pull: number | null }> }
     /** One page of the focused repo's issues, newest first. */
     'issues.list': { input: ItemListInput; output: Answer<ItemPage<IssueRow>> }
-    /** One page of the focused repo's pull requests, newest first. */
-    'pulls.list': { input: ItemListInput; output: Answer<ItemPage<PullRow>> }
     /** One page of the focused repo's workflow runs, newest first. */
     'runs.list': { input: RunListInput; output: Answer<Page<RunRow>> }
     /** The focused repo's label names, for the label filter. */
@@ -319,11 +319,10 @@ declare module 'orca' {
     'pull.timeline': { input: { number: number; after: string }; output: Answer<{ items: TimelineItem[]; next: string | null }> }
     'pull.comment': { input: { number: number; body: string }; output: Done }
     'pull.edit': { input: IssueEdit; output: Done }
-    /** Closes or reopens, posting `comment` first when there is one. */
-    'pull.close': { input: { number: number; comment?: string }; output: Done }
-    'pull.reopen': { input: { number: number; comment?: string }; output: Done }
     /** Approve, request changes (with a body) or comment (with a body). */
     'pull.review': { input: { number: number; event: ReviewEvent; body: string }; output: Done }
+    /** Shows one of Orca's own views: its Tasks page, or the Checks tab of the right sidebar. */
+    'orca.show': { input: { view: OrcaView }; output: Done }
     /** Logins that can be assigned in the focused repo. */
     'assignees.list': { output: Answer<{ logins: string[] }> }
     /** The focused repo's workflows, for the workflow filter. */

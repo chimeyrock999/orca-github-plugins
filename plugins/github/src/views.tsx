@@ -21,13 +21,12 @@ import {
   Toolbar,
   type KeyValueItem
 } from 'orca'
-import { count, duration, issueLook, itemEvent, pageLine, pullLook, runCause, runLook, type Look } from './look'
+import { count, duration, issueLook, itemEvent, pageLine, runCause, runLook, type Look } from './look'
 import { Glyph, Problem } from './parts'
 import { NewIssueView } from './issue-forms'
 import { openIssue, startNewIssue } from './issue-store'
 import { IssueView } from './issue-view'
-import { pulls } from './pull-store'
-import { PullView } from './pull-view'
+import { PullsTab } from './pull-view'
 import { PAGE_SIZE, type IssueRow, type ItemSort, type PullRow, type RunRow } from './protocol'
 import {
   back,
@@ -86,15 +85,12 @@ function RunMeta({ row }: { row: RunRow }) {
 }
 
 function lookOf(kind: Kind, row: IssueRow | PullRow | RunRow): Look {
-  if (kind === 'runs') return runLook(row as RunRow)
-  return kind === 'pulls' ? pullLook(row as PullRow) : issueLook(row as IssueRow)
+  return kind === 'runs' ? runLook(row as RunRow) : issueLook(row as IssueRow)
 }
 
-/** Issues and pull requests open by number in their own view; a run opens its short detail. */
+/** An issue opens by number in its own view; a run opens its short detail. */
 function openOf(kind: Kind, row: IssueRow | PullRow | RunRow): unknown {
-  if (kind === 'issues') return openIssue((row as IssueRow).number)
-  if (kind === 'pulls') return pulls.open((row as PullRow).number)
-  return openRow(kind, rowKey(row))
+  return kind === 'issues' ? openIssue((row as IssueRow).number) : openRow(kind, rowKey(row))
 }
 
 function RowItem({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow }) {
@@ -245,12 +241,6 @@ function Strip({ kind, s }: { kind: Kind; s: ListState }) {
         <>
           <Typed kind={kind} s={s} name="author" label="Author" placeholder="login" />
           <Typed kind={kind} s={s} name="assignee" label="Assignee" placeholder="login or @me" />
-          {kind === 'pulls' && (
-            <>
-              <Choice kind={kind} s={s} name="review" label="Review" options={[{ value: 'me', label: 'Requested from me' }]} />
-              <Choice kind={kind} s={s} name="draft" label="Draft" options={[{ value: 'draft', label: 'Draft' }, { value: 'ready', label: 'Ready' }]} />
-            </>
-          )}
           <Choice kind={kind} s={s} name="label" label="Label" options={asOptions(c.labels)} />
         </>
       )}
@@ -361,9 +351,10 @@ function RunDetail({ run }: { run: RunRow }) {
 
 export function KindView({ kind }: { kind: Kind }) {
   const s = read(lists[kind])
-  // Issues and pull requests open by number, so they show whether or not they are on the page.
+  // The Pull requests tab has no list: the workspace's pull request, or why there is none.
+  if (kind === 'pulls') return <PullsTab />
+  // An issue opens by number, so it shows whether or not it is on the page.
   if (kind === 'issues' && s.open) return s.open === 'new' ? <NewIssueView /> : <IssueView />
-  if (kind === 'pulls' && s.open) return <PullView />
   const row = s.open && s.answer?.ok ? s.answer.rows.find((r) => rowKey(r) === s.open) : undefined
   return row ? <RunDetail run={row as RunRow} /> : <ListView kind={kind} s={s} />
 }

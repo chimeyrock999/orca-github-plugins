@@ -13,13 +13,15 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
   - `src/timeline.ts`: the timeline both share (GraphQL pages, cut to fit the message limit).
   - `src/issues.ts`: one issue (GraphQL body and timeline) and its writes (gh issue commands).
   - `src/pulls.ts`: one pull request (refs, merge state, review decision, checks, timeline with
-    reviews and the merge) and its writes (gh pr commands, including `gh pr review`).
+    reviews and the merge), its writes (`gh pr comment`, `edit`, `review`) and the branch's pull
+    request (`gh pr view`).
   - `src/panel.tsx`, `src/views.tsx`, `src/store.ts`, `src/look.ts`: components panel (`"ui": "components"`),
     no DOM, only the `orca` catalog; state in atoms; glyphs, tones and words.
   - `src/thread-store.ts`, `src/thread-view.tsx`: an open issue or pull request (a thread), one per
     tab, and the pieces both draw (posts, reactions, timeline, pickers).
   - `src/issue-view.tsx`, `src/issue-forms.tsx`, `src/issue-store.ts`: the issue detail, its forms
-    and state; `src/pull-view.tsx`, `src/pull-store.ts`: the pull request detail, review, close.
+    and state; `src/pull-view.tsx`, `src/pull-store.ts`: the workspace's pull request (no list),
+    its review, and the hand-offs to Orca's Tasks page and Checks tab.
   - `src/refs.ts`, `src/parts.tsx`: `#N` links, shared pieces.
   - `src/protocol.ts`: the panel ↔ worker contract (`PluginRequests`, `PluginPanelEvents`).
   - `src/*.test.ts(x)`, `src/panel.check.ts`: tests and render scenarios.

@@ -112,8 +112,14 @@ export function pickerOps(change: PickerOps['change'], apply: () => unknown): Pi
 
 export type Thread<D extends ThreadDetail, X extends object = object> = ReturnType<typeof makeThread<D, X>>
 
-/** One kind of thread, open in its own tab: `extra` adds the state only that kind has. */
-export function makeThread<D extends ThreadDetail, X extends object = object>(kind: ThreadKind, requests: ThreadRequests<D>, extra: () => X) {
+/** One kind of thread, open in its own tab: `extra` adds the state only that kind has, and `loaded`
+ *  hears each detail that lands, with a check that its view is still on screen. */
+export function makeThread<D extends ThreadDetail, X extends object = object>(
+  kind: ThreadKind,
+  requests: ThreadRequests<D>,
+  extra: () => X,
+  loaded?: (detail: D, current: () => boolean) => void
+) {
   type S = ThreadState<D> & X
   const fresh = (number: number): S => ({
     number,
@@ -155,7 +161,9 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(ki
     const mine = ++loads
     const view = here()
     const answer = await requests.get(read(state).number).catch(requestFailed)
-    if (mine === loads && view === here()) update(state, (s) => ({ ...s, answer }))
+    if (mine !== loads || view !== here()) return
+    update(state, (s) => ({ ...s, answer }))
+    if (answer.ok) loaded?.(answer.detail, () => mine === loads && view === here())
   }
 
   /** Opens a thread by number, from the list, a mention or a new issue. */

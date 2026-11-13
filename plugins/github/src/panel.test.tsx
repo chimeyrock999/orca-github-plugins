@@ -5,7 +5,7 @@ import * as panel from './panel'
 import { KindView } from './views'
 import { read } from 'orca'
 import { choices, setRepo } from './store'
-import { failed, issueRows, itemPage, pullRows, repoOk, runPage, runRows } from './fixtures'
+import { failed, issueRows, itemPage, repoOk, runPage, runRows } from './fixtures'
 import type { ItemListInput, RunListInput } from './protocol'
 
 function host(overrides: Record<string, unknown> = {}) {
@@ -20,7 +20,6 @@ function host(overrides: Record<string, unknown> = {}) {
       'issues.list': log('issues.list', (input: ItemListInput) =>
         input.after === 'p2' ? itemPage(issueRows(12, 90), 42, null) : itemPage(issueRows(30), 42, 'p2', 5)
       ),
-      'pulls.list': log('pulls.list', () => itemPage(pullRows, 2, null, 1)),
       'runs.list': log('runs.list', (input: RunListInput) => (input.query ? runPage([runRows[2]]) : runPage(runRows))),
       ...overrides
     }
@@ -108,7 +107,8 @@ test('the tab persists across panel runs', async () => {
   const h = host()
   const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'pulls' } } })
   assert.deepEqual(view.summary().filter((l) => l.startsWith('Tabs')), ['Tabs "GitHub": "Pull requests" selected'])
-  assert.deepEqual(h.asked.map((a) => a.name), ['repo.get', 'pulls.list'])
+  // The Pull requests tab has no list to load; it looks for the workspace's pull request.
+  assert.deepEqual(h.asked.map((a) => a.name), ['repo.get'])
   await view.unmount()
 })
 

@@ -1,5 +1,6 @@
 // One pull request: its body, checks and timeline (comments, reviews, mentions, closes, reopens and
-// the merge) through GraphQL, as for an issue; writes through gh's pr commands. Comments are edited
+// the merge) through GraphQL, as for an issue; writes through gh's pr commands. Closing, reopening
+// and merging are left to Orca's own pull request views. Comments are edited
 // and deleted, and reactions set, by the same requests as an issue's.
 import { GhError, type Gh } from './gh'
 import { commentOn, editIssue, needText, run } from './issues'
@@ -315,15 +316,16 @@ export async function pullTimeline(
 export const commentOnPull = (gh: Gh, repo: RepoRef, number: number, body: string, signal?: AbortSignal) => commentOn(gh, repo, number, body, signal, 'pr')
 export const editPull = (gh: Gh, repo: RepoRef, input: IssueEdit, signal?: AbortSignal) => editIssue(gh, repo, input, signal, 'pr')
 
-async function closeOrReopen(gh: Gh, repo: RepoRef, verb: 'close' | 'reopen', input: { number: number; comment?: string }, signal?: AbortSignal): Promise<object> {
-  const args = ['pr', verb, String(input.number)]
-  if (input.comment?.trim()) args.push('--comment', input.comment)
-  await run(gh, repo, args, signal)
-  return {}
+/** The pull request of the branch checked out in the repo's folder, as gh finds it (the latest
+ *  one, open or not, fork heads too), or null when there is none or gh cannot tell. */
+export async function branchPull(gh: Gh, repo: RepoRef, signal?: AbortSignal): Promise<number | null> {
+  try {
+    const out = (await gh(['pr', 'view', '--json', 'number'], { cwd: repo.path, signal, json: true })) as { number?: number } | null
+    return typeof out?.number === 'number' ? out.number : null
+  } catch {
+    return null
+  }
 }
-
-export const closePull = (gh: Gh, repo: RepoRef, input: { number: number; comment?: string }, signal?: AbortSignal) => closeOrReopen(gh, repo, 'close', input, signal)
-export const reopenPull = (gh: Gh, repo: RepoRef, input: { number: number; comment?: string }, signal?: AbortSignal) => closeOrReopen(gh, repo, 'reopen', input, signal)
 
 const REVIEW_FLAGS: Record<ReviewEvent, string> = { approve: '--approve', request_changes: '--request-changes', comment: '--comment' }
 

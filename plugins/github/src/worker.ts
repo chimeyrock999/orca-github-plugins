@@ -17,9 +17,9 @@ import {
   reopenIssue,
   setReaction
 } from './issues'
-import { listIssues, listLabels, listPulls, listRuns, listWorkflows, type RepoRef } from './lists'
-import type { Answer } from './protocol'
-import { closePull, commentOnPull, editPull, getPull, pullTimeline, reopenPull, reviewPull } from './pulls'
+import { listIssues, listLabels, listRuns, listWorkflows, type RepoRef } from './lists'
+import type { Answer, OrcaView } from './protocol'
+import { branchPull, commentOnPull, editPull, getPull, pullTimeline, reviewPull } from './pulls'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './repo'
 
 export type WorkerDeps = RepoDeps & { gh: Gh; links?: (path: string) => Promise<WorkspaceLinks | null> }
@@ -33,11 +33,28 @@ const defaultDeps: WorkerDeps = {
   links: (path) => workspaceLinks(path)
 }
 
-/** The issue and pull request Orca links to the focused workspace, when they are of its repo. */
-async function repoLinks(deps: WorkerDeps, repo: RepoRef): Promise<{ issue: number | null; pull: number | null }> {
+/** The issue and pull request Orca links to the focused workspace, when they are of its repo. Orca
+ *  links a pull request only when the workspace was made from it or it was made in Orca, so with
+ *  none the branch's pull request (one opened with gh or on GitHub) stands in. */
+async function repoLinks(deps: WorkerDeps, repo: RepoRef, signal?: AbortSignal): Promise<{ issue: number | null; pull: number | null }> {
   const links = await deps.links?.(repo.path)
   const ours = links?.project?.toLowerCase() === `github:${repo.nameWithOwner}`.toLowerCase()
-  return ours && links ? { issue: links.issue, pull: links.pull } : { issue: null, pull: null }
+  const linked = ours && links ? { issue: links.issue, pull: links.pull } : { issue: null, pull: null }
+  return linked.pull ? linked : { ...linked, pull: await branchPull(deps.gh, repo, signal) }
+}
+
+const ORCA_ACTIONS: Record<OrcaView, 'view.tasks' | 'sidebar.checks.toggle'> = { tasks: 'view.tasks', checks: 'sidebar.checks.toggle' }
+
+/** Shows one of Orca's own views; a refusal (not the desktop app, no consent) is an answer. */
+async function showView(orca: OrcaWorkerApi, view: OrcaView): Promise<Answer<Record<never, never>>> {
+  const action = ORCA_ACTIONS[view]
+  if (!action) return { ok: false, error: { code: 'gh_failed', message: `Orca has no ${String(view)} view to show.` } }
+  try {
+    await orca.host.call('commands.run', { action })
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: { code: 'host_failed', message: String((error as { message?: unknown })?.message ?? error) } }
+  }
 }
 
 /** One page from `fetch` for the focused repo, or why there is none. */
@@ -60,9 +77,9 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   orca.panels.handle('repo.get', () => tracker.get())
   orca.panels.handle('repo.pick', ({ path }) => tracker.pick(path))
   orca.panels.handle('repo.unpick', () => tracker.unpick())
-  orca.panels.handle('repo.links', () => inRepo(tracker, (repo) => repoLinks(deps, repo)))
+  orca.panels.handle('repo.links', (_, { signal }) => inRepo(tracker, (repo) => repoLinks(deps, repo, signal)))
+  orca.panels.handle('orca.show', ({ view }) => showView(orca, view))
   orca.panels.handle('issues.list', (input, { signal }) => inRepo(tracker, (repo) => listIssues(deps.gh, repo, input, signal)))
-  orca.panels.handle('pulls.list', (input, { signal }) => inRepo(tracker, (repo) => listPulls(deps.gh, repo, input, signal)))
   orca.panels.handle('runs.list', (input, { signal }) => inRepo(tracker, (repo) => listRuns(deps.gh, repo, input, signal)))
   orca.panels.handle('labels.list', (_, { signal }) => inRepo(tracker, (repo) => listLabels(deps.gh, repo, signal)))
   orca.panels.handle('workflows.list', (_, { signal }) => inRepo(tracker, (repo) => listWorkflows(deps.gh, repo, signal)))
@@ -84,8 +101,6 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   orca.panels.handle('pull.timeline', ({ number, after }, { signal }) => inRepo(tracker, (repo) => pullTimeline(deps.gh, repo, number, after, signal)))
   orca.panels.handle('pull.comment', ({ number, body }, { signal }) => inRepo(tracker, (repo) => commentOnPull(deps.gh, repo, number, body, signal)))
   orca.panels.handle('pull.edit', (input, { signal }) => inRepo(tracker, (repo) => editPull(deps.gh, repo, input, signal)))
-  orca.panels.handle('pull.close', (input, { signal }) => inRepo(tracker, (repo) => closePull(deps.gh, repo, input, signal)))
-  orca.panels.handle('pull.reopen', (input, { signal }) => inRepo(tracker, (repo) => reopenPull(deps.gh, repo, input, signal)))
   orca.panels.handle('pull.review', (input, { signal }) => inRepo(tracker, (repo) => reviewPull(deps.gh, repo, input, signal)))
   orca.panels.handle('reaction.set', (input, { signal }) => inRepo(tracker, (repo) => setReaction(deps.gh, repo, input, signal)))
 }
