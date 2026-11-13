@@ -20,7 +20,7 @@ function host(overrides: Record<string, unknown> = {}, detail: (number: number) 
     // The workspace's branch has pull request 124.
     'repo.links': links([], [124]),
     'items.get': ({ items }: { items: Parameters<typeof linkedRows>[0] }) => linkedRows(items, 'pulls'),
-    'agent.find': { ok: true, agent: { name: 'Claude Code', terminalId: 't1' } },
+    'agent.find': { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null },
     'agent.ask': { ok: true, agent: 'Claude Code' },
     // The pull request asked for, so each number opens its own.
     'pull.get': ({ number }: { number: number }) => ({ ok: true, pull: { ...detail(number), number, url: `https://github.com/octo/app/pull/${number}` } }),
@@ -228,19 +228,62 @@ test('Ask agent types the link prompt into the agent; the person presses Enter t
   assert.ok(view.find({ type: 'Button', text: 'Ask Claude Code to link' }))
   await view.unmount()
 
-  // No agent free by the time it is asked: the button goes, the command stays, and it says why.
-  const busy = await openPull(host({ 'repo.links': links(), 'agent.ask': failed('no_agent', 'No agent in this workspace is waiting for input.') }))
+  // No agent free by the time it is asked: it says why, and asks again what the agent is doing.
+  let found: unknown = { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null }
+  const busy = await openPull(host({ 'repo.links': links(), 'agent.find': () => found, 'agent.ask': () => {
+    found = { ok: true, agent: null, busy: { name: 'Claude Code', state: 'working' } }
+    return failed('no_agent', 'No agent in this workspace is waiting for input.')
+  } }))
   await busy.press({ type: 'Button', text: 'Ask Claude Code to link' })
   assert.ok(says(busy, /No agent free/))
-  assert.equal(busy.find({ type: 'Button', text: 'Ask Claude Code to link' }), null)
-  assert.ok(busy.find({ text: /No agent is free in this workspace to ask/ }))
+  assert.ok(busy.find({ text: /Claude Code is working\. Ask it once it stops/ }))
+  assert.equal(busy.find({ type: 'Button', text: 'Ask Claude Code to link' })?.props.disabled, true)
   await busy.unmount()
 
-  // None free from the start: no button.
-  const none = await openPull(host({ 'repo.links': links(), 'agent.find': { ok: true, agent: null } }))
+  // No agent in the workspace at all: no button.
+  const none = await openPull(host({ 'repo.links': links(), 'agent.find': { ok: true, agent: null, busy: null } }))
   assert.equal(none.find({ type: 'Button', text: /^Ask / }), null)
-  assert.ok(none.find({ text: /No agent is free in this workspace to ask/ }))
+  assert.ok(none.find({ text: /No agent runs in this workspace/ }))
   await none.unmount()
+})
+
+test('a busy agent is named, and Ask comes by itself once it stops, without Refresh', async () => {
+  let found: unknown = { ok: true, agent: null, busy: { name: 'Claude Code', state: 'working' } }
+  const h = host({ 'repo.links': links(), 'agent.find': () => found })
+  const view = await openPull(h)
+  // Working: named, and the button waits, disabled.
+  assert.ok(view.find({ text: /Claude Code is working\. Ask it once it stops/ }))
+  assert.equal(view.find({ type: 'Button', text: 'Ask Claude Code to link' })?.props.disabled, true)
+  assert.equal(view.find({ text: /No agent/ }), null)
+  // Blocked on a question: it says so.
+  found = { ok: true, agent: null, busy: { name: 'Claude Code', state: 'blocked' } }
+  await view.post('agent.changed', {})
+  assert.ok(view.find({ text: /Claude Code is waiting on a question/ }))
+  // It stops: the worker says an agent changed, the panel asks again, and Ask is offered.
+  found = { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null }
+  await view.post('agent.changed', {})
+  assert.equal(view.find({ type: 'Button', text: 'Ask Claude Code to link' })?.props.disabled, false)
+  assert.equal(h.count('agent.find'), 3)
+  await view.unmount()
+})
+
+test('once asked, the agent starting work keeps the callout; nothing is looked for again', async () => {
+  const h = host({ 'repo.links': links() })
+  const view = await openPull(h)
+  await view.press({ type: 'Button', text: 'Ask Claude Code to link' })
+  assert.ok(says(view, /Typed into Claude Code/))
+  await view.post('agent.changed', {})
+  assert.ok(says(view, /Typed into Claude Code/))
+  assert.equal(h.count('agent.find'), 1)
+  await view.unmount()
+})
+
+test('an agent change while a pull request is open asks for nothing', async () => {
+  const h = host()
+  const view = await openPull(h)
+  await view.post('agent.changed', {})
+  assert.equal(h.count('agent.find'), 0)
+  await view.unmount()
 })
 
 test('a tab not on screen while the focus went elsewhere and back still shows the workspace pull request', async () => {

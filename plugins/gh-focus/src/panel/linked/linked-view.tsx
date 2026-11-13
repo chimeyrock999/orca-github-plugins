@@ -138,9 +138,23 @@ function HowToLink({ kind }: { kind: LinkedKind }) {
             </Button>
           </Row>
         </>
+      ) : a.busy ? (
+        // Never typed into while it works or waits on a question; the button comes once it stops.
+        <>
+          <Text size="xs" muted>
+            {a.busy.state === 'blocked'
+              ? `${a.busy.name} is waiting on a question. Answer it, then ask, or run the command in a terminal.`
+              : `${a.busy.name} is working. Ask it once it stops, or run the command in a terminal.`}
+          </Text>
+          <Row>
+            <Button size="sm" variant="outline" icon="agent" disabled>
+              {`Ask ${a.busy.name} to link`}
+            </Button>
+          </Row>
+        </>
       ) : (
         <Text size="xs" muted>
-          No agent is free in this workspace to ask. Run the command in a terminal of the workspace.
+          No agent runs in this workspace. Run the command in a terminal of the workspace.
         </Text>
       )}
       {a?.error && <Problem error={a.error} onRetry={showCommand} retryLabel="Dismiss" />}

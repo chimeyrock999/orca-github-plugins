@@ -17,7 +17,7 @@ function host(overrides: Record<string, unknown> = {}) {
     requests: {
       'repo.get': log('repo.get', () => repoOk),
       'repo.links': log('repo.links', () => links()),
-      'agent.find': log('agent.find', () => ({ ok: true, agent: { name: 'Claude Code', terminalId: 't1' } })),
+      'agent.find': log('agent.find', () => ({ ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null })),
       'runs.list': log('runs.list', (input: RunListInput) =>
         input.query ? runPage([runRows[2]]) : input.after === '2' ? runPage([runRows[2]], 33, null) : runPage(runRows, 33, '2')
       ),

@@ -2,7 +2,7 @@
 // reads their state, and the agent that is asked to link one.
 import { assert, test } from 'orca/testing'
 import { GhError, type Gh } from '../../../src/worker/gh'
-import { freeAgent, linkedQuery, linkedRefs, linkedRows, linkPrompt, type AgentRow } from '../../../src/worker/linked/linked'
+import { busyAgent, freeAgent, linkedQuery, linkedRefs, linkedRows, linkPrompt, type AgentRow } from '../../../src/worker/linked/linked'
 import { LINKED_LIMIT, type LinkedRef } from '../../../src/shared/protocol'
 
 const repo = { nameWithOwner: 'octo/app', path: '/code/app' }
@@ -145,6 +145,13 @@ test('freeAgent: one waiting or done with a terminal, the one that stopped last;
   assert.equal(freeAgent([agent('working', 1), agent('blocked', 2)]), null)
   assert.equal(freeAgent([agent('done', 3, null)]), null)
   assert.equal(freeAgent([]), null)
+})
+
+test('busyAgent: one working or blocked with a terminal, the one that changed last', () => {
+  const agent = (state: string, at: number, terminalId: string | null = `t${at}`): AgentRow => ({ terminalId, title: `Agent ${at}`, agent: 'claude', state, stateStartedAt: at })
+  assert.equal(busyAgent([agent('working', 3), agent('blocked', 7), agent('done', 9)])?.terminalId, 't7')
+  assert.equal(busyAgent([agent('done', 3), agent('waiting', 2)]), null)
+  assert.equal(busyAgent([agent('working', 3, null)]), null)
 })
 
 test('the prompt asks for the link with the command for this repo and kind', () => {

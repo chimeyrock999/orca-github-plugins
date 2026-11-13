@@ -437,7 +437,7 @@ test('agent.find names a free agent; agent.ask types the link prompt into its te
       main.activateWith(orca, { gh: noGh, ghRepo: async (path) => repos[path], terminalPath: async (id) => folders[id] ?? null, exists: () => true })
   }
   const worker = await mountWorker(module, { host })
-  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Claude Code', terminalId: 't-free' } })
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Claude Code', terminalId: 't-free' }, busy: null })
   // Not even when the panel names it.
   const elsewhere = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-elsewhere' })
   assert.equal(!elsewhere.ok && elsewhere.error.code, 'no_agent')
@@ -456,7 +456,8 @@ test('agent.find names a free agent; agent.ask types the link prompt into its te
   const busy = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-busy' })
   assert.equal(!busy.ok && busy.error.code, 'no_agent')
   agents = agents.slice(0, 3)
-  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null })
+  // None free: the busy one of this workspace is named, so the panel can say why.
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: { name: 'Codex', state: 'working' } })
   const gone = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-free' })
   assert.equal(!gone.ok && gone.error.code, 'no_agent')
   assert.equal(host.callsOf('terminal.sendText').length, 2)
@@ -475,6 +476,39 @@ test('agent.find names a free agent; agent.ask types the link prompt into its te
   const answer = await denied.request('agent.find')
   assert.equal(!answer.ok && answer.error.code, 'not_allowed')
   await denied.deactivate()
+})
+
+test('an agent of the panel\'s workspace changing state tells the panels; one elsewhere does not', async () => {
+  const folders: Record<string, string> = { 't-here': '/work/spike/', 't-there': '/code/app' }
+  const looked: string[] = []
+  const host = mockHost({
+    results: {
+      'workspace.readContext': { branch: 'feature/spike', displayName: 'Spike', terminals: [] },
+      'workspace.list': { workspaces, truncated: false }
+    }
+  })
+  const module = {
+    default: (orca: OrcaWorkerApi) =>
+      main.activateWith(orca, {
+        gh: noGh,
+        ghRepo: async (path) => repos[path],
+        terminalPath: async (id) => (looked.push(id), folders[id] ?? null),
+        exists: () => true
+      })
+  }
+  const worker = await mountWorker(module, { host })
+  const changed = () => worker.posts.filter((p) => p.event === 'agent.changed').length
+  const status = (terminalId: string | undefined, state: 'working' | 'done') =>
+    worker.emit('agent.status.changed', { workspaceId: null, paneKey: 'p', ...(terminalId ? { terminalId } : {}), state, receivedAt: 1 })
+  await status('t-here', 'working')
+  await status('t-here', 'done')
+  assert.equal(changed(), 2)
+  await status('t-there', 'done')
+  await status(undefined, 'done')
+  assert.equal(changed(), 2)
+  // A terminal's folder is looked up once.
+  assert.deepEqual(looked.filter((id) => id === 't-here'), ['t-here'])
+  await worker.deactivate()
 })
 
 test('orca.show runs the Tasks page or the Checks tab of Orca, and a refusal is an answer', async () => {

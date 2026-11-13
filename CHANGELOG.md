@@ -10,6 +10,14 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+### Fixed
+
+**Issues and pull requests**
+
+- Link one names the workspace's agent while it works or waits on a question (was "No agent is
+  free"), and offers Ask agent by itself once it stops, without Refresh. Updating asks you to approve
+  gh Focus again: it now listens to Orca's agent status.
+
 ## 0.1.2 - 2026-11-13
 
 ### Changed
