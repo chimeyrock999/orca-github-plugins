@@ -50,7 +50,12 @@ const NAMES: Record<Kind, { plural: string; empty: string }> = {
   runs: { plural: 'runs', empty: 'No workflow runs' }
 }
 
-export function Problem({ error, onRetry }: { error: PanelError; onRetry?: () => unknown }) {
+/** The last folder of a path: what tells root clones on the same branch apart. */
+function folderName(path: string): string {
+  return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
+}
+
+export function Problem({ error, onRetry, onPick }: { error: PanelError; onRetry?: () => unknown; onPick?: (path: string) => unknown }) {
   const problem = problemOf(error.code)
   return (
     <Callout tone={problem.tone} title={problem.title} icon="warning">
@@ -59,11 +64,13 @@ export function Problem({ error, onRetry }: { error: PanelError; onRetry?: () =>
         <Text size="xs" muted>
           {error.message}
         </Text>
-        {error.candidates?.map((c) => (
-          <Text key={c.id} size="xs" muted truncate>
-            {c.path}
-          </Text>
-        ))}
+        {error.candidates && onPick && (
+          <List label="Workspaces">
+            {error.candidates.map((c) => (
+              <ListItem key={c.id} icon="folder" title={folderName(c.path)} description={c.path} onPress={() => onPick(c.path)} />
+            ))}
+          </List>
+        )}
         {onRetry && (
           <Row>
             <Button size="sm" variant="outline" icon="refresh" onPress={onRetry}>
@@ -173,11 +180,11 @@ function Counts({ kind, s }: { kind: Kind; s: ListState }) {
           </Button>
           {counts ? (
             <Badge>{count(counts[state] ?? 0)}</Badge>
-          ) : (
+          ) : s.answer === null ? (
             <Box width={28}>
               <Skeleton shape="text" lines={1} label={`Loading the ${state} count`} />
             </Box>
-          )}
+          ) : null}
         </Row>
       ))}
     </Row>

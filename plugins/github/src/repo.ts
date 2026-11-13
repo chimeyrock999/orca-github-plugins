@@ -2,7 +2,7 @@
 // The tracker follows workspace.changed and tells open panels when the answer changes.
 import type { OrcaWorkerApi } from 'orca/worker'
 import { toFailure, type Gh } from './gh'
-import { resolveFocus, type FocusContext, type FocusDeps } from './focus'
+import { resolveFocus, stripRef, type FocusContext, type FocusDeps } from './focus'
 import type { Answer, RepoAnswer } from './protocol'
 
 export type GhRepoAnswer = Answer<{ nameWithOwner: string; url: string }>
@@ -29,6 +29,17 @@ export type RepoTracker = {
   /** The answer for the newest focus. An error is asked again, as it may be gone (a login, a
    *  remote added, a new workspace). */
   get(): Promise<RepoAnswer>
+  /** Stores `path` as the pick for the focused branch and name, then answers for the focus. */
+  pick(path: string): Promise<RepoAnswer>
+  /** Forgets the pick for the focused branch and name, then answers for the focus. */
+  unpick(): Promise<RepoAnswer>
+}
+
+/** Picks live in the plugin's storage under this key: `{ "<branch>\n<name>": "<folder>" }`. */
+const PICKS = 'picks'
+
+function pickKey(context: FocusContext): string {
+  return `${stripRef(context.branch)}\n${context.displayName}`
 }
 
 export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
@@ -51,8 +62,17 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
     return answer
   }
 
+  async function picks(): Promise<Record<string, string>> {
+    const stored = await orca.storage.get(PICKS)
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? (stored as Record<string, string>) : {}
+  }
+
   const focusDeps: FocusDeps = {
     exists: deps.exists,
+    picked: async (context) => {
+      const path = (await picks())[pickKey(context)]
+      return typeof path === 'string' ? path : null
+    },
     terminalPath: async (id) => {
       const known = terminals.get(id)
       if (known) return known
@@ -110,10 +130,30 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
 
   orca.events.on('workspace.changed', ({ context }) => settle(Promise.resolve(context)))
 
+  /** Changes the stored pick for the focused branch and name, then resolves the focus again. */
+  async function repick(path: string | null): Promise<RepoAnswer> {
+    let context: FocusContext | null
+    try {
+      context = await orca.host.call('workspace.readContext')
+    } catch (error) {
+      return hostFailed(error)
+    }
+    if (context) {
+      const all = await picks()
+      if (path) all[pickKey(context)] = path
+      else delete all[pickKey(context)]
+      await orca.storage.set(PICKS, all)
+    }
+    void settle(Promise.resolve(context))
+    return latest()
+  }
+
   return {
     async get() {
       if (!current || !(await latest()).ok) void settle(orca.host.call('workspace.readContext'))
       return latest()
-    }
+    },
+    pick: (path) => repick(path),
+    unpick: () => repick(null)
   }
 }

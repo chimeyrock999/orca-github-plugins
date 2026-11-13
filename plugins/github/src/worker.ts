@@ -31,6 +31,8 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   const tracker = trackRepo(orca, deps)
 
   orca.panels.handle('repo.get', () => tracker.get())
+  orca.panels.handle('repo.pick', ({ path }) => tracker.pick(path))
+  orca.panels.handle('repo.unpick', () => tracker.unpick())
   orca.panels.handle('issues.list', (input, { signal }) => inRepo(tracker, (repo) => listIssues(deps.gh, repo, input, signal)))
   orca.panels.handle('pulls.list', (input, { signal }) => inRepo(tracker, (repo) => listPulls(deps.gh, repo, input, signal)))
   orca.panels.handle('runs.list', (input, { signal }) => inRepo(tracker, (repo) => listRuns(deps.gh, repo, input, signal)))

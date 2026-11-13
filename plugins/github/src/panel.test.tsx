@@ -260,3 +260,37 @@ test('labels of the old repo that answer after a repo change are dropped', async
   assert.deepEqual(read(choices).labels, null)
   await view.unmount()
 })
+
+test('several workspaces match: pick one, it shows that repo, and Change workspace forgets it', async () => {
+  const ambiguous = {
+    ok: false as const,
+    error: {
+      code: 'ambiguous_workspace' as const,
+      message: '2 workspaces are on main and named main.',
+      candidates: [
+        { id: 'w-app', name: 'main', path: '/code/app' },
+        { id: 'w-lib', name: 'main', path: '/code/lib' }
+      ]
+    }
+  }
+  const picks: string[] = []
+  const h = host({
+    'repo.get': () => ambiguous,
+    'repo.pick': ({ path }: { path: string }) => (picks.push(path), { ...repoOk, resolvedBy: 'picked' as const }),
+    'repo.unpick': () => ambiguous
+  })
+  const view = await mount(panel, { host: h })
+  assert.ok(view.summary().some((l) => /Several workspaces match/.test(l)))
+  await view.press({ type: 'ListItem', text: /^app/ })
+  assert.deepEqual(picks, ['/code/app'])
+  assert.ok(view.find({ text: 'octo/app' }))
+  await view.press({ label: 'Change workspace' })
+  assert.ok(view.find({ type: 'ListItem', text: /lib/ }))
+  await view.unmount()
+})
+
+test('a failed first page shows no count placeholders', async () => {
+  const view = await mount(panel, { host: host({ 'issues.list': () => failed('rate_limited', 'API rate limit exceeded.') }) })
+  assert.equal(view.findAll({ type: 'Skeleton' }).length, 0)
+  await view.unmount()
+})

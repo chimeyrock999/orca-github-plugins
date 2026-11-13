@@ -16,7 +16,7 @@ import {
   Toolbar,
   type PanelContext
 } from 'orca'
-import { githubUrl, refresh, repo, requestFailed, selectTab, setRepo, tab, type Kind } from './store'
+import { githubUrl, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
 import { KindView, Problem } from './views'
 
 /** Runs once before the first render; what it pushes to `subscriptions` ends with the panel. */
@@ -43,7 +43,7 @@ export default function Panel() {
     return (
       <Stack gap="md">
         <Heading level={3}>GitHub</Heading>
-        <Problem error={r.error} onRetry={refresh} />
+        <Problem error={r.error} onRetry={refresh} onPick={pickRepo} />
       </Stack>
     )
   }
@@ -59,6 +59,9 @@ export default function Panel() {
           </Text>
         </Stack>
         <Toolbar label="Repository" gap="xs">
+          {r.resolvedBy === 'picked' && (
+            <IconButton icon="folder" label="Change workspace" variant="ghost" onPress={unpickRepo} />
+          )}
           <IconButton icon="refresh" label="Refresh" variant="ghost" onPress={refresh} />
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" onPress={openOnGitHub} />
         </Toolbar>

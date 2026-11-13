@@ -287,3 +287,49 @@ test('runs.list with plain words answers bad_query without running gh', async ()
   assert.equal(!answer.ok && answer.error.code, 'bad_query')
   await worker.deactivate()
 })
+
+test('repo.pick settles an ambiguous focus, keeps the pick in storage, and repo.unpick forgets it', async () => {
+  const host = mockHost({
+    results: {
+      'workspace.readContext': { branch: 'main', displayName: 'main', terminals: [] },
+      'workspace.list': { workspaces, truncated: false }
+    }
+  })
+  const worker = await mountWorker(repoWorker(), { host })
+  const first = await worker.request('repo.get')
+  assert.equal(!first.ok && first.error.code, 'ambiguous_workspace')
+
+  const picked = await worker.request('repo.pick', { path: '/code/app' })
+  assert.equal(picked.ok && picked.resolvedBy, 'picked')
+  assert.equal(picked.ok && picked.nameWithOwner, 'octo/app')
+  assert.deepEqual(host.data().storage, { picks: { 'main\nmain': '/code/app' } })
+  // The same focus later still resolves by the pick.
+  await worker.emit('workspace.changed', { context: { branch: 'main', displayName: 'main', terminals: [] } })
+  assert.equal(((await worker.request('repo.get')) as { resolvedBy?: string }).resolvedBy, 'picked')
+
+  const forgot = await worker.request('repo.unpick')
+  assert.equal(!forgot.ok && forgot.error.code, 'ambiguous_workspace')
+  assert.deepEqual(host.data().storage, { picks: {} })
+  await worker.deactivate()
+})
+
+test('a pick stored by an earlier run is used, and a stale one is ignored', async () => {
+  const focused = { branch: 'main', displayName: 'main', terminals: [] }
+  const host = mockHost({
+    storage: { picks: { 'main\nmain': '/code/app' } },
+    results: { 'workspace.readContext': focused, 'workspace.list': { workspaces, truncated: false } }
+  })
+  const worker = await mountWorker(repoWorker(), { host })
+  const answer = await worker.request('repo.get')
+  assert.equal(answer.ok && answer.path, '/code/app')
+  await worker.deactivate()
+
+  const stale = mockHost({
+    storage: { picks: { 'main\nmain': '/code/gone' } },
+    results: { 'workspace.readContext': focused, 'workspace.list': { workspaces, truncated: false } }
+  })
+  const again = await mountWorker(repoWorker(), { host: stale })
+  const ambiguous = await again.request('repo.get')
+  assert.equal(!ambiguous.ok && ambiguous.error.code, 'ambiguous_workspace')
+  await again.deactivate()
+})

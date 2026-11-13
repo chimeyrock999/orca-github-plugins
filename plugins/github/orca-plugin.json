@@ -28,6 +28,9 @@
   },
   "capabilities": [
     {
+      "kind": "storage:own"
+    },
+    {
       "kind": "workspace:read"
     }
   ]

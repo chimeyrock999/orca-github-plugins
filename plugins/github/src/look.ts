@@ -71,7 +71,11 @@ export type Problem = { title: string; hint: string; tone: Tone }
 const PROBLEMS: Record<ErrorCode, Problem> = {
   no_workspace: { title: 'No workspace focused', hint: 'Focus a workspace in Orca to see its GitHub issues, pull requests and runs.', tone: 'neutral' },
   workspace_not_found: { title: 'Workspace not found', hint: 'Orca did not list the focused workspace. Press Retry.', tone: 'warning' },
-  ambiguous_workspace: { title: 'Several workspaces match', hint: 'Open a terminal in the workspace so the panel can tell which one it is.', tone: 'warning' },
+  ambiguous_workspace: {
+    title: 'Several workspaces match',
+    hint: 'Pick the one you are in; the panel remembers it for this branch and name. A terminal open in it also tells.',
+    tone: 'warning'
+  },
   remote_workspace: { title: 'Workspace is on another machine', hint: 'The panel runs gh on this machine only.', tone: 'warning' },
   host_failed: { title: 'Orca did not answer', hint: 'Press Retry.', tone: 'warning' },
   not_a_repo: { title: 'Not a GitHub repository', hint: 'This folder has no remote on a GitHub host that gh knows.', tone: 'warning' },

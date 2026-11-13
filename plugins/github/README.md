@@ -8,16 +8,16 @@ Tabs Issues | Pull requests | Actions, each with its own search, filters, order,
 
 ## Files
 
-- `src/protocol.ts`: the requests `repo.get`, `issues.list`, `pulls.list`, `runs.list`, `labels.list`, `workflows.list` and the event `repo.changed`. Every answer is `Answer<T>`: `{ ok: true, ... }` or `{ ok: false, error: { code, message } }`, since a thrown code would reach the panel only as `action_failed`.
+- `src/protocol.ts`: the requests `repo.get`, `repo.pick`, `repo.unpick`, `issues.list`, `pulls.list`, `runs.list`, `labels.list`, `workflows.list` and the event `repo.changed`. Every answer is `Answer<T>`: `{ ok: true, ... }` or `{ ok: false, error: { code, message } }`, since a thrown code would reach the panel only as `action_failed`.
 - `src/gh.ts`: `runGh(args, { cwd, signal, json })` runs `gh` and throws a `GhError` whose `code` the panel can explain. Handlers take it injected, so tests never call real GitHub.
-- `src/exec.ts`: `run` (child processes, with the user's PATH first) and `terminalPath` (the folder a terminal runs in, from the Orca CLI).
-- `src/focus.ts`: finds the focused workspace's folder. `workspace.readContext` gives only a branch and a name, so it matches them against `workspace.list`, and when that is not one workspace (root clones are named after their branch, so every repo on `main` looks alike) it asks which folder a focused terminal runs in.
+- `src/exec.ts`: `run` (child processes, with the user's PATH first) and `terminalPath` (the folder a terminal runs in, from the Orca CLI). The CLI is looked for in the macOS app bundle, then as `orca` on PATH; on Linux and Windows only PATH is tried, so without `orca` on PATH a terminal never breaks a tie and the panel asks for a pick instead.
+- `src/focus.ts`: finds the focused workspace's folder. `workspace.readContext` gives only a branch and a name, so it matches them against `workspace.list`, and when that is not one workspace (root clones are named after their branch, so every repo on `main` looks alike) it uses the folder the person picked for that branch and name (kept in storage under `picks`, used while it still matches, forgotten with Change workspace), then asks which folder a focused terminal runs in. With neither, the panel lists the candidates to pick from.
 - `src/repo.ts`: `gh repo view --json nameWithOwner,url` in that folder, and the tracker behind `repo.get`: it follows `workspace.changed`, keeps a found repo per folder, asks again after an error, and posts `repo.changed` to open panels when the answer changes.
 - `src/lists.ts`: one page per request. Issues and pull requests go through GitHub's GraphQL search (`repo:o/r is:issue is:open author:… label:… sort:created-desc <words>`), which pages by cursor and, when asked, counts open and closed in the same call. Runs go through the REST `actions/runs` API, paged by number; it has no word search, so the runs search takes qualifiers only: `branch:`, `status:`, `actor:`, `event:`, `workflow:` (an id, a file name, or a workflow name looked up first; quote a name with spaces). Also the repo's label names and workflows, for the filters.
 - `src/look.ts`: glyph, tone and words for each state and error code.
 - `src/store.ts`: the panel's atoms and actions: the selected tab, and per tab the search, open/closed, filters, order, counts, a stack of page cursors and the open row.
 - `src/views.tsx`, `src/panel.tsx`: the components.
-- `src/panel.check.ts`: `orca plugin check` scenarios, with the worker stubbed: no workspace, not a GitHub repo, gh logged out, empty repo, rate limited, and each tab with rows.
+- `src/panel.check.ts`: `orca plugin check` scenarios, with the worker stubbed: no workspace, several workspaces to pick from, not a GitHub repo, gh logged out, empty repo, rate limited, and each tab with rows.
 
 Error codes: `no_workspace`, `workspace_not_found`, `ambiguous_workspace` (with `candidates`), `remote_workspace`, `host_failed`, `not_a_repo`, `gh_missing`, `gh_logged_out`, `not_found`, `rate_limited`, `timeout`, `cancelled`, `bad_query`, `gh_failed`.
 

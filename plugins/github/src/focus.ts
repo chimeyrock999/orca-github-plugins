@@ -23,6 +23,8 @@ export type FocusDeps = {
   /** The workspace folder a terminal runs in, or null when that cannot be told. */
   terminalPath: (terminalId: string) => Promise<string | null>
   exists: (path: string) => boolean
+  /** The folder the person picked for this branch and name, when the context fits several. */
+  picked?: (context: FocusContext) => Promise<string | null>
 }
 
 export type FocusResult =
@@ -69,7 +71,14 @@ export async function resolveFocus(
   let found: { workspace: WorkspaceEntry; resolvedBy: ResolvedBy } | null = null
   if (matches.length === 1) {
     found = { workspace: matches[0], resolvedBy: 'context' }
-  } else {
+  }
+  if (!found && matches.length > 1 && deps.picked) {
+    // A pick only counts while it is still one of the matches: a removed clone is not chosen.
+    const path = await deps.picked(context)
+    const workspace = path ? matches.find((w) => samePath(w.path, path)) : undefined
+    if (workspace) found = { workspace, resolvedBy: 'picked' }
+  }
+  if (!found) {
     // A terminal only picks among the matches when there are some; with none it may name any.
     const workspace = await byTerminal(context, matches.length > 1 ? matches : workspaces, deps.terminalPath)
     if (workspace) found = { workspace, resolvedBy: 'terminal' }

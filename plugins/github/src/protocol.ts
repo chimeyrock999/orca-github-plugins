@@ -35,8 +35,9 @@ export type PanelError = {
  *  as `action_failed`, so every request answers `{ ok: false, error }` instead. */
 export type Answer<T> = ({ ok: true } & T) | { ok: false; error: PanelError }
 
-/** How the focused workspace was found: its branch and name alone, or one of its terminals. */
-export type ResolvedBy = 'context' | 'terminal'
+/** How the focused workspace was found: its branch and name alone, the person's pick among
+ *  workspaces that share them, or one of its terminals. */
+export type ResolvedBy = 'context' | 'picked' | 'terminal'
 
 export type RepoAnswer = Answer<{ nameWithOwner: string; url: string; path: string; resolvedBy: ResolvedBy }>
 
@@ -126,6 +127,11 @@ declare module 'orca' {
   interface PluginRequests {
     /** The GitHub repo (`owner/name`) of the focused workspace. */
     'repo.get': { output: RepoAnswer }
+    /** Picks the folder for the focused branch and name when several workspaces share them
+     *  (`ambiguous_workspace`); kept in storage and used until it stops matching. */
+    'repo.pick': { input: { path: string }; output: RepoAnswer }
+    /** Forgets the pick for the focused branch and name. */
+    'repo.unpick': { output: RepoAnswer }
     /** One page of the focused repo's issues, newest first. */
     'issues.list': { input: ItemListInput; output: Answer<ItemPage<IssueRow>> }
     /** One page of the focused repo's pull requests, newest first. */
