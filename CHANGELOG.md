@@ -10,6 +10,13 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+## 0.1.1 - 2026-11-13
+
+### Fixed
+
+- Listed in Orca's community catalog: a root `orca-catalog.json` points the indexer at
+  `plugins/gh-focus`, which it does not search for on its own (0.1.0 was not listed).
+
 ## 0.1.0 - 2026-11-13
 
 The first release: a right-sidebar panel with the issue, pull request and Actions runs of the
