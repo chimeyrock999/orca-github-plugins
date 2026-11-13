@@ -1,6 +1,6 @@
 // resolveFocus matches the focused workspace's context to a workspace.list entry.
 import { assert, test } from 'orca/testing'
-import { resolveFocus, type FocusDeps, type WorkspaceEntry } from './focus'
+import { pickKey, resolveFocus, type FocusDeps, type WorkspaceEntry } from './focus'
 
 const app: WorkspaceEntry = { id: 'w-app', kind: 'worktree', name: 'main', project: 'app', path: '/code/app', branch: 'main', hostId: null }
 const lib: WorkspaceEntry = { id: 'w-lib', kind: 'worktree', name: 'main', project: 'lib', path: '/code/lib', branch: 'main', hostId: null }
@@ -52,14 +52,16 @@ test('two repos on main: a focused terminal breaks the tie', async () => {
   assert.deepEqual(d.asked, ['t1', 't2'])
 })
 
-test('two repos on main and no terminal answer: ambiguous, with the candidates', async () => {
-  const result = await resolveFocus({ branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }, [app, lib, spike], deps())
+test('two repos on main and no terminal answer: ambiguous, with the candidates and their project and branch', async () => {
+  const bare: WorkspaceEntry = { id: 'w-bare', kind: 'folder', name: 'main', path: '/code/bare', branch: 'refs/heads/main', hostId: null }
+  const result = await resolveFocus({ branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }, [app, lib, spike, bare], deps())
   assert.equal(result.ok, false)
   if (result.ok) return
   assert.equal(result.error.code, 'ambiguous_workspace')
   assert.deepEqual(result.error.candidates, [
-    { id: 'w-app', name: 'main', path: '/code/app' },
-    { id: 'w-lib', name: 'main', path: '/code/lib' }
+    { id: 'w-app', name: 'main', path: '/code/app', project: 'app', branch: 'main' },
+    { id: 'w-lib', name: 'main', path: '/code/lib', project: 'lib', branch: 'main' },
+    { id: 'w-bare', name: 'main', path: '/code/bare', project: null, branch: 'main' }
   ])
 })
 
@@ -126,4 +128,21 @@ test('a pick is not asked for when the context fits one workspace', async () => 
   const result = await resolveFocus({ branch: 'feature/spike', displayName: 'Spike: run gh', terminals: [] }, [app, lib, spike], d)
   assert.equal(result.ok && result.resolvedBy, 'context')
   assert.equal(asked, 0)
+})
+
+test('a stored pick is asked for with the matches, so the key can name their projects', async () => {
+  let seen: WorkspaceEntry[] = []
+  const d = { ...deps(), picked: async (_: unknown, matches: WorkspaceEntry[]) => ((seen = matches), '/code/lib') }
+  await resolveFocus({ branch: 'main', displayName: 'main', terminals: [] }, [app, lib, spike], d)
+  assert.deepEqual(seen, [app, lib])
+})
+
+test('the pick key holds the branch, the name and the sorted distinct projects of the matches', () => {
+  const context = { branch: 'refs/heads/main', displayName: 'main', terminals: [] }
+  const appClone: WorkspaceEntry = { ...app, id: 'w-app2', path: '/code/app2' }
+  assert.equal(pickKey(context, [lib, app, appClone]), 'main\nmain\napp,lib')
+  // Orca's project id is preferred over the repo name, which two repos may share.
+  assert.equal(pickKey(context, [{ ...app, projectId: 'p-1' }, { ...lib, projectId: 'p-2', project: 'app' }]), 'main\nmain\np-1,p-2')
+  // A workspace without a project still counts, as an empty name.
+  assert.equal(pickKey(context, [app, { ...lib, project: null }]), 'main\nmain\n,app')
 })

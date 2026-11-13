@@ -3,7 +3,7 @@ import { Button, Callout, List, ListItem, Row, Stack, Text } from 'orca'
 import { problemOf, type Look } from './look'
 import type { PanelError } from './protocol'
 
-/** The last folder of a path: what tells root clones on the same branch apart. */
+/** The last folder of a path: the label of a choice whose project Orca does not name. */
 function folderName(path: string): string {
   return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
 }
@@ -31,7 +31,13 @@ export function Problem({
         {error.candidates && onPick && (
           <List label="Workspaces">
             {error.candidates.map((c) => (
-              <ListItem key={c.id} icon="folder" title={folderName(c.path)} description={c.path} onPress={() => onPick(c.path)} />
+              <ListItem
+                key={c.id}
+                icon="folder"
+                title={c.project ? `${c.project} · ${c.branch}` : folderName(c.path)}
+                description={c.path}
+                onPress={() => onPick(c.path)}
+              />
             ))}
           </List>
         )}

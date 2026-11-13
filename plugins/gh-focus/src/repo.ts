@@ -2,10 +2,12 @@
 // The tracker follows workspace.changed and tells open panels when the answer changes.
 import type { OrcaWorkerApi } from 'orca/worker'
 import { toFailure, type Gh } from './gh'
-import { resolveFocus, stripRef, type FocusContext, type FocusDeps } from './focus'
+import { matchesOf, pickKey, resolveFocus, type FocusContext, type FocusDeps, type WorkspaceEntry } from './focus'
 import type { Answer, RepoAnswer } from './protocol'
 
 export type GhRepoAnswer = Answer<{ nameWithOwner: string; url: string }>
+
+type WorkspaceList = { workspaces: WorkspaceEntry[]; truncated: boolean }
 
 /** `owner/name` and web URL of the repo gh picks for the folder, by gh's own remote rules. */
 export async function ghRepo(path: string, gh: Gh): Promise<GhRepoAnswer> {
@@ -29,17 +31,21 @@ export type RepoTracker = {
   /** The answer for the newest focus. An error is asked again, as it may be gone (a login, a
    *  remote added, a new workspace). */
   get(): Promise<RepoAnswer>
-  /** Stores `path` as the pick for the focused branch and name, then answers for the focus. */
+  /** Stores `path` as the pick for the focused branch, name and matching projects, then answers
+   *  for the focus. */
   pick(path: string): Promise<RepoAnswer>
-  /** Forgets the pick for the focused branch and name, then answers for the focus. */
+  /** Forgets the pick for the focused branch, name and matching projects, then answers for the
+   *  focus. */
   unpick(): Promise<RepoAnswer>
 }
 
-/** Picks live in the plugin's storage under this key: `{ "<branch>\n<name>": "<folder>" }`. */
+/** Picks live in the plugin's storage under this key: `{ "<branch>\n<name>\n<projects>": "<folder>" }`
+ *  (see `pickKey`). */
 const PICKS = 'picks'
 
-function pickKey(context: FocusContext): string {
-  return `${stripRef(context.branch)}\n${context.displayName}`
+/** A key from before the projects were part of it (`<branch>\n<name>`): shared by clones of any repo. */
+function isOldKey(key: string): boolean {
+  return key.split('\n').length < 3
 }
 
 export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
@@ -62,15 +68,32 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
     return answer
   }
 
+  // Reads and writes of the picks run one after another, so dropping old keys while a pick is
+  // being stored cannot write the older picks back over it.
+  let picksQueue: Promise<unknown> = Promise.resolve()
+  function withPicks<T>(work: () => Promise<T>): Promise<T> {
+    const run = picksQueue.then(work, work)
+    picksQueue = run.catch(() => undefined)
+    return run
+  }
+
+  /** The stored picks; picks under an old key are dropped and storage written back. A failed
+   *  write back only leaves them for the next read. Call inside withPicks. */
   async function picks(): Promise<Record<string, string>> {
     const stored = await orca.storage.get(PICKS)
-    return stored && typeof stored === 'object' && !Array.isArray(stored) ? (stored as Record<string, string>) : {}
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
+    const all = { ...(stored as Record<string, string>) }
+    const old = Object.keys(all).filter(isOldKey)
+    if (old.length === 0) return all
+    for (const key of old) delete all[key]
+    await orca.storage.set(PICKS, all).catch(() => undefined)
+    return all
   }
 
   const focusDeps: FocusDeps = {
     exists: deps.exists,
-    picked: async (context) => {
-      const path = (await picks())[pickKey(context)]
+    picked: async (context, matches) => {
+      const path = (await withPicks(picks))[pickKey(context, matches)]
       return typeof path === 'string' ? path : null
     },
     terminalPath: async (id) => {
@@ -86,9 +109,11 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
     return { ok: false, error: { code: 'host_failed', message: String((error as Error)?.message ?? error) } }
   }
 
-  async function resolve(context: FocusContext | null): Promise<RepoAnswer> {
+  /** `listed`: the workspace.list answer repick already read, so the pick it stored is read
+   *  under the same key. */
+  async function resolve(context: FocusContext | null, listed?: WorkspaceList): Promise<RepoAnswer> {
     try {
-      const { workspaces, truncated } = await orca.host.call('workspace.list')
+      const { workspaces, truncated } = listed ?? (await orca.host.call('workspace.list'))
       const focus = await resolveFocus(context, workspaces, focusDeps)
       if (!focus.ok) {
         if (truncated && focus.error.code === 'workspace_not_found') {
@@ -106,9 +131,9 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
   }
 
   // Resolves one focus; panels hear the answer when it differs from the last one they heard.
-  async function settle(context: Promise<FocusContext | null>): Promise<void> {
+  async function settle(context: Promise<FocusContext | null>, listed?: WorkspaceList): Promise<void> {
     const mine = ++generation
-    current = context.then(resolve, hostFailed)
+    current = context.then((c) => resolve(c, listed), hostFailed)
     const answer = await current
     if (mine !== generation) return
     const key = JSON.stringify(answer)
@@ -130,21 +155,27 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
 
   orca.events.on('workspace.changed', ({ context }) => settle(Promise.resolve(context)))
 
-  /** Changes the stored pick for the focused branch and name, then resolves the focus again. */
+  /** Changes the stored pick for the focused branch, name and matching projects (the same key
+   *  resolveFocus reads), then resolves the focus again. */
   async function repick(path: string | null): Promise<RepoAnswer> {
     let context: FocusContext | null
+    let listed: WorkspaceList | undefined
     try {
       context = await orca.host.call('workspace.readContext')
+      if (context) listed = await orca.host.call('workspace.list')
     } catch (error) {
       return hostFailed(error)
     }
-    if (context) {
-      const all = await picks()
-      if (path) all[pickKey(context)] = path
-      else delete all[pickKey(context)]
-      await orca.storage.set(PICKS, all)
+    if (context && listed) {
+      const key = pickKey(context, matchesOf(context, listed.workspaces))
+      await withPicks(async () => {
+        const all = await picks()
+        if (path) all[key] = path
+        else delete all[key]
+        await orca.storage.set(PICKS, all)
+      })
     }
-    void settle(Promise.resolve(context))
+    void settle(Promise.resolve(context), listed)
     return latest()
   }
 

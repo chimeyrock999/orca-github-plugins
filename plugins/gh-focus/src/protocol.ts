@@ -43,8 +43,9 @@ export type PanelError = {
   message: string
   /** The workspace folder, once one was found. */
   path?: string
-  /** The workspaces that fit the focused context equally well (`ambiguous_workspace`). */
-  candidates?: { id: string; name: string; path: string }[]
+  /** The workspaces that fit the focused context equally well (`ambiguous_workspace`), with the
+   *  repo's name in Orca (null when Orca does not say) and the branch, both for the label. */
+  candidates?: { id: string; name: string; path: string; project: string | null; branch: string }[]
   /** How long Orca asks the panel to wait (`host_rate_limited`). */
   retryAfterMs?: number
 }
@@ -359,9 +360,10 @@ declare module 'orca' {
     /** The GitHub repo (`owner/name`) of the focused workspace. */
     'repo.get': { output: RepoAnswer }
     /** Picks the folder for the focused branch and name when several workspaces share them
-     *  (`ambiguous_workspace`); kept in storage and used until it stops matching. */
+     *  (`ambiguous_workspace`); kept in storage for this branch, name and set of matching projects,
+     *  and used while that set stays the same and the folder is one of them. */
     'repo.pick': { input: { path: string }; output: RepoAnswer }
-    /** Forgets the pick for the focused branch and name. */
+    /** Forgets the pick for the focused branch, name and set of matching projects. */
     'repo.unpick': { output: RepoAnswer }
     /** The issue and pull request Orca links to the focused workspace (one made from them), when
      *  they are of its repo; null when there is none or Orca's CLI does not say. With `branch` and
