@@ -4,49 +4,7 @@ import { assert, hostError, mockHost, mountWorker, test } from 'orca/testing'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { GhError, type Gh } from './gh'
 import * as main from './worker'
-import type { GhRepoAnswer } from './repo'
-
-const noGh: Gh = async () => {
-  throw new Error('no gh call expected')
-}
-
-const workspaces = [
-  { id: 'w-app', kind: 'worktree', name: 'main', project: 'app', path: '/code/app', branch: 'main', hostId: null },
-  { id: 'w-lib', kind: 'worktree', name: 'main', project: 'lib', path: '/code/lib', branch: 'main', hostId: null },
-  { id: 'w-spike', kind: 'worktree', name: 'Spike', project: 'app', path: '/work/spike', branch: 'feature/spike', hostId: 'local' },
-  { id: 'w-gl', kind: 'folder', name: 'gl', project: 'gl', path: '/code/gl', branch: 'main', hostId: null },
-  { id: 'w-out', kind: 'worktree', name: 'out', project: 'out', path: '/code/out', branch: 'main', hostId: null }
-]
-const repos: Record<string, GhRepoAnswer> = {
-  '/code/app': { ok: true, nameWithOwner: 'octo/app', url: 'https://github.com/octo/app' },
-  '/work/spike': { ok: true, nameWithOwner: 'octo/app', url: 'https://github.com/octo/app' },
-  '/code/gl': { ok: false, error: { code: 'not_a_repo', message: 'none of the git remotes point to a known GitHub host' } },
-  '/code/out': { ok: false, error: { code: 'gh_logged_out', message: 'gh auth login' } }
-}
-
-function repoWorker(gh: string[] = []) {
-  return {
-    default: (orca: OrcaWorkerApi) =>
-      main.activateWith(orca, {
-        gh: noGh,
-        ghRepo: async (path) => {
-          gh.push(path)
-          return repos[path]
-        },
-        terminalPath: async () => null,
-        exists: () => true
-      })
-  }
-}
-
-function hostFocused(context: { branch: string; displayName: string } | null) {
-  return mockHost({
-    results: {
-      'workspace.readContext': context && { ...context, terminals: [] },
-      'workspace.list': { workspaces, truncated: false }
-    }
-  })
-}
+import { hostFocused, noGh, repos, repoWorker, workspaces } from './worker-fixtures'
 
 test('repo.get answers the focused workspace repo and its path', async () => {
   const worker = await mountWorker(repoWorker(), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
@@ -334,52 +292,6 @@ test('runs.list with plain words answers bad_query without running gh', async ()
   const answer = await worker.request('runs.list', { query: 'flaky test', after: null })
   assert.equal(!answer.ok && answer.error.code, 'bad_query')
   await worker.deactivate()
-})
-
-test('repo.pick settles an ambiguous focus, keeps the pick in storage, and repo.unpick forgets it', async () => {
-  const host = mockHost({
-    results: {
-      'workspace.readContext': { branch: 'main', displayName: 'main', terminals: [] },
-      'workspace.list': { workspaces, truncated: false }
-    }
-  })
-  const worker = await mountWorker(repoWorker(), { host })
-  const first = await worker.request('repo.get')
-  assert.equal(!first.ok && first.error.code, 'ambiguous_workspace')
-
-  const picked = await worker.request('repo.pick', { path: '/code/app' })
-  assert.equal(picked.ok && picked.resolvedBy, 'picked')
-  assert.equal(picked.ok && picked.nameWithOwner, 'octo/app')
-  assert.deepEqual(host.data().storage, { picks: { 'main\nmain': '/code/app' } })
-  // The same focus later still resolves by the pick.
-  await worker.emit('workspace.changed', { context: { branch: 'main', displayName: 'main', terminals: [] } })
-  assert.equal(((await worker.request('repo.get')) as { resolvedBy?: string }).resolvedBy, 'picked')
-
-  const forgot = await worker.request('repo.unpick')
-  assert.equal(!forgot.ok && forgot.error.code, 'ambiguous_workspace')
-  assert.deepEqual(host.data().storage, { picks: {} })
-  await worker.deactivate()
-})
-
-test('a pick stored by an earlier run is used, and a stale one is ignored', async () => {
-  const focused = { branch: 'main', displayName: 'main', terminals: [] }
-  const host = mockHost({
-    storage: { picks: { 'main\nmain': '/code/app' } },
-    results: { 'workspace.readContext': focused, 'workspace.list': { workspaces, truncated: false } }
-  })
-  const worker = await mountWorker(repoWorker(), { host })
-  const answer = await worker.request('repo.get')
-  assert.equal(answer.ok && answer.path, '/code/app')
-  await worker.deactivate()
-
-  const stale = mockHost({
-    storage: { picks: { 'main\nmain': '/code/gone' } },
-    results: { 'workspace.readContext': focused, 'workspace.list': { workspaces, truncated: false } }
-  })
-  const again = await mountWorker(repoWorker(), { host: stale })
-  const ambiguous = await again.request('repo.get')
-  assert.equal(!ambiguous.ok && ambiguous.error.code, 'ambiguous_workspace')
-  await again.deactivate()
 })
 
 test('issue requests run gh in the focused repo, and answer the repo error without one', async () => {
