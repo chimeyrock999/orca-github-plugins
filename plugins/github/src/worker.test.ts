@@ -357,3 +357,25 @@ test('issue requests run gh in the focused repo, and answer the repo error witho
   assert.equal(!answer.ok && answer.error.code, 'gh_logged_out')
   await out.deactivate()
 })
+
+test('repo.links answers what Orca links to the workspace, only for its own repo', async () => {
+  let project: string | null = 'github:Octo/App'
+  const module = {
+    default: (orca: OrcaWorkerApi) =>
+      main.activateWith(orca, {
+        gh: noGh,
+        ghRepo: async (path) => repos[path],
+        terminalPath: async () => null,
+        exists: () => true,
+        links: async (path) => (path === '/work/spike' ? { project, issue: 4, pull: 13 } : null)
+      })
+  }
+  const worker = await mountWorker(module, { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: 4, pull: 13 })
+  // A link Orca keeps for another repo (a workspace of a fork, say) is not this repo's issue 4.
+  project = 'github:octo/fork'
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: null, pull: null })
+  project = null
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: null, pull: null })
+  await worker.deactivate()
+})

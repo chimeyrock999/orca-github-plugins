@@ -46,18 +46,45 @@ export function parseTerminalShow(stdout: string): string | null {
   }
 }
 
-/** The folder a terminal runs in. The Orca CLI's JSON is not part of the plugin contract, so any
- *  failure is null and the caller falls back. */
-export async function terminalPath(terminalId: string, runner: Run = run): Promise<string | null> {
-  if (!TERMINAL_HANDLE.test(terminalId)) return null
+/** What the Orca CLI printed for `args`, from the first CLI found; null when none ran. */
+async function orcaCli(args: string[], runner: Run): Promise<string | null> {
   for (const cli of ORCA_CLIS) {
     try {
-      const result = await runner(cli, ['terminal', 'show', `--terminal=${terminalId}`, '--json'], { timeoutMs: 5_000 })
-      return parseTerminalShow(result.stdout)
+      return (await runner(cli, args, { timeoutMs: 5_000 })).stdout
     } catch (error) {
       if ((error as { code?: unknown }).code === 'ENOENT') continue
       return null
     }
   }
   return null
+}
+
+/** The folder a terminal runs in. The Orca CLI's JSON is not part of the plugin contract, so any
+ *  failure is null and the caller falls back. */
+export async function terminalPath(terminalId: string, runner: Run = run): Promise<string | null> {
+  if (!TERMINAL_HANDLE.test(terminalId)) return null
+  const stdout = await orcaCli(['terminal', 'show', `--terminal=${terminalId}`, '--json'], runner)
+  return stdout === null ? null : parseTerminalShow(stdout)
+}
+
+/** The GitHub issue and pull request Orca links to a workspace, and its project (`github:o/r`). */
+export type WorkspaceLinks = { project: string | null; issue: number | null; pull: number | null }
+
+/** The links in `orca worktree show --json`; null for any other shape. */
+export function parseWorktreeShow(stdout: string): WorkspaceLinks | null {
+  try {
+    const w = JSON.parse(stdout)?.result?.worktree
+    if (!w || typeof w !== 'object') return null
+    const number = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null)
+    return { project: typeof w.projectId === 'string' ? w.projectId : null, issue: number(w.linkedIssue), pull: number(w.linkedPR) }
+  } catch {
+    return null
+  }
+}
+
+/** What Orca links to the workspace in `path` (a workspace made from an issue or pull request).
+ *  Like terminalPath, any failure is null: the panel then just shows the list. */
+export async function workspaceLinks(path: string, runner: Run = run): Promise<WorkspaceLinks | null> {
+  const stdout = await orcaCli(['worktree', 'show', `--worktree=path:${path}`, '--json'], runner)
+  return stdout === null ? null : parseWorktreeShow(stdout)
 }

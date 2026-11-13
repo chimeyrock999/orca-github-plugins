@@ -2,7 +2,7 @@
 // this file when it loads: no build step. A save restarts it and drops its in-memory state.
 import { existsSync } from 'node:fs'
 import type { OrcaWorkerApi } from 'orca/worker'
-import { terminalPath } from './exec'
+import { terminalPath, workspaceLinks, type WorkspaceLinks } from './exec'
 import { runGh, toFailure, type Gh } from './gh'
 import {
   closeIssue,
@@ -21,10 +21,23 @@ import { listIssues, listLabels, listPulls, listRuns, listWorkflows, type RepoRe
 import type { Answer } from './protocol'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './repo'
 
-export type WorkerDeps = RepoDeps & { gh: Gh }
+export type WorkerDeps = RepoDeps & { gh: Gh; links?: (path: string) => Promise<WorkspaceLinks | null> }
 
 const gh: Gh = (args, options) => runGh(args, options)
-const defaultDeps: WorkerDeps = { gh, ghRepo: (path) => ghRepo(path, gh), terminalPath: (id) => terminalPath(id), exists: existsSync }
+const defaultDeps: WorkerDeps = {
+  gh,
+  ghRepo: (path) => ghRepo(path, gh),
+  terminalPath: (id) => terminalPath(id),
+  exists: existsSync,
+  links: (path) => workspaceLinks(path)
+}
+
+/** The issue and pull request Orca links to the focused workspace, when they are of its repo. */
+async function repoLinks(deps: WorkerDeps, repo: RepoRef): Promise<{ issue: number | null; pull: number | null }> {
+  const links = await deps.links?.(repo.path)
+  const ours = links?.project?.toLowerCase() === `github:${repo.nameWithOwner}`.toLowerCase()
+  return ours && links ? { issue: links.issue, pull: links.pull } : { issue: null, pull: null }
+}
 
 /** One page from `fetch` for the focused repo, or why there is none. */
 async function inRepo<T extends object>(
@@ -46,6 +59,7 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   orca.panels.handle('repo.get', () => tracker.get())
   orca.panels.handle('repo.pick', ({ path }) => tracker.pick(path))
   orca.panels.handle('repo.unpick', () => tracker.unpick())
+  orca.panels.handle('repo.links', () => inRepo(tracker, (repo) => repoLinks(deps, repo)))
   orca.panels.handle('issues.list', (input, { signal }) => inRepo(tracker, (repo) => listIssues(deps.gh, repo, input, signal)))
   orca.panels.handle('pulls.list', (input, { signal }) => inRepo(tracker, (repo) => listPulls(deps.gh, repo, input, signal)))
   orca.panels.handle('runs.list', (input, { signal }) => inRepo(tracker, (repo) => listRuns(deps.gh, repo, input, signal)))

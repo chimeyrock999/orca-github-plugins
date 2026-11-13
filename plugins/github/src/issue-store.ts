@@ -43,7 +43,7 @@ const blankIssue = (): NewIssue => ({ title: '', body: '', labels: [], assignees
 
 export const issue = atom<IssueState>(fresh(0))
 /** The issue open on screen, kept per workspace so the panel shows it again when it opens. */
-export const lastIssue = atom<{ repo: string; number: number } | null>('openIssue', null, { persist: 'workspace' })
+export const lastIssue = atom<{ repo: string; path: string; number: number } | null>('openIssue', null, { persist: 'workspace' })
 export const newIssue = atom<NewIssue>(blankIssue())
 
 // Opening another issue, the form or the list makes answers for the one before stale.
@@ -70,7 +70,7 @@ export async function loadIssue(): Promise<void> {
 /** Opens an issue by number, from the list, a mention or a new issue. */
 export function openIssue(number: number): Promise<void> {
   const r = read(repo)
-  set(lastIssue, r?.ok ? { repo: r.nameWithOwner, number } : null)
+  set(lastIssue, r?.ok ? { repo: r.nameWithOwner, path: r.path, number } : null)
   views++
   update(lists.issues, (s) => ({ ...s, open: String(number) }))
   set(issue, fresh(number))
@@ -320,12 +320,26 @@ export async function react(subjectId: string, content: Reaction): Promise<void>
 
 // The new issue form.
 
-/** Opens the issue a past run left open, if it is of this repo and nothing else is open. */
-export function restoreIssue(): Promise<void> | void {
-  const last = read(lastIssue)
+/** The workspace (repo and folder) the Issues tab last started in, for this panel run. */
+const startedIn = atom<string | null>(null)
+
+/** The first time the Issues tab shows for a workspace: the issue Orca links to the workspace (one
+ *  made from an issue), else the issue a past run left open, else the list. Once per workspace, so
+ *  Back and tab switches stay where the person went. */
+export async function startIssues(): Promise<void> {
   const r = read(repo)
-  if (!last || !r?.ok || last.repo !== r.nameWithOwner || read(tab) !== 'issues' || read(lists.issues).open) return
-  return openIssue(last.number)
+  if (!r?.ok || read(tab) !== 'issues') return
+  const workspace = `${r.nameWithOwner}\n${r.path}`
+  if (read(startedIn) === workspace) return
+  set(startedIn, workspace)
+  if (read(lists.issues).open) return
+  const links = await plugin.request('repo.links').catch(() => null)
+  // The person may have opened something, or moved to another workspace, meanwhile.
+  if (read(startedIn) !== workspace || read(lists.issues).open || read(tab) !== 'issues') return
+  if (links?.ok && links.issue) return openIssue(links.issue)
+  const last = read(lastIssue)
+  // Another clone of the repo is another workspace, with its own issue.
+  if (last && last.repo === r.nameWithOwner && last.path === r.path) return openIssue(last.number)
 }
 
 export function startNewIssue(): void {

@@ -226,6 +226,9 @@ declare module 'orca' {
     'repo.pick': { input: { path: string }; output: RepoAnswer }
     /** Forgets the pick for the focused branch and name. */
     'repo.unpick': { output: RepoAnswer }
+    /** The issue and pull request Orca links to the focused workspace (one made from them), when
+     *  they are of its repo; null when there is none or Orca's CLI does not say. */
+    'repo.links': { output: Answer<{ issue: number | null; pull: number | null }> }
     /** One page of the focused repo's issues, newest first. */
     'issues.list': { input: ItemListInput; output: Answer<ItemPage<IssueRow>> }
     /** One page of the focused repo's pull requests, newest first. */

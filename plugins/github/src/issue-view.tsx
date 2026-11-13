@@ -8,6 +8,8 @@ import {
   IconButton,
   Input,
   Link,
+  List,
+  ListItem,
   Markdown,
   RadioGroup,
   read,
@@ -118,23 +120,26 @@ function Post({ head, tools, body, url, cut, subject, reactions }: {
   subject: string
   reactions: ReactionGroup[]
 }) {
+  // Reactions sit under the box, as on GitHub, not inside it.
   return (
-    <Box border radius="md">
-      <Box direction="row" justify="between" align="center" gap="xs" paddingX="sm" paddingY="xs" background="muted">
-        <Text size="sm">{head}</Text>
-        {tools}
+    <Stack gap="xs">
+      <Box border radius="md">
+        <Box direction="row" justify="between" align="center" gap="xs" paddingX="sm" paddingY="xs" background="muted">
+          <Text size="sm">{head}</Text>
+          {tools}
+        </Box>
+        <Box padding="sm" gap="sm">
+          {body.trim() ? <Markdown content={linkRefs(body, repoUrl())} /> : <Text size="sm" muted>No description provided.</Text>}
+          {cut && <Cut url={url} />}
+          {hasImage(body) && (
+            <Text size="xs" muted>
+              Images show on GitHub only.
+            </Text>
+          )}
+        </Box>
       </Box>
-      <Box padding="sm" gap="sm">
-        {body.trim() ? <Markdown content={linkRefs(body, repoUrl())} /> : <Text size="sm" muted>No description provided.</Text>}
-        {cut && <Cut url={url} />}
-        {hasImage(body) && (
-          <Text size="xs" muted>
-            Images show on GitHub only.
-          </Text>
-        )}
-        <Reactions subject={subject} groups={reactions} />
-      </Box>
-    </Box>
+      <Reactions subject={subject} groups={reactions} />
+    </Stack>
   )
 }
 
@@ -202,31 +207,58 @@ function Mention({ item }: { item: TimelineMention }) {
   const own = r?.ok && item.source.repo.toLowerCase() === r.nameWithOwner.toLowerCase()
   // Issues of this repo open here; pull requests and other repos open on GitHub.
   const go = () => (own && item.source.type === 'issue' ? openIssue(item.source.number) : shell.openExternal(item.source.url))
+  // One row, the whole of it pressable: what links here first, who and when under it.
   return (
-    <Box paddingX="sm" gap="xs">
-      <Text size="sm">
-        <Text size="sm" weight="semibold">
-          {item.actor ?? 'ghost'}
-        </Text>
-        <Text size="sm" muted>
-          {' mentioned this '}
+    <ListItem icon="link" onPress={go}>
+      <Stack gap="none">
+        <Box direction="row" gap="xs" align="center">
+          <Glyph look={sourceLook(item.source)} />
+          <Box grow minWidth={0}>
+            <Text size="sm" weight="medium" truncate>
+              {item.source.title}
+            </Text>
+          </Box>
+          <Text size="sm" muted>
+            {own ? `#${item.source.number}` : `${item.source.repo}#${item.source.number}`}
+          </Text>
+        </Box>
+        <Text size="xs" muted>
+          {`${item.actor ?? 'ghost'} mentioned this · `}
           <RelativeTime at={item.createdAt} />
         </Text>
-      </Text>
-      <Row gap="xs" align="center">
-        <Glyph look={sourceLook(item.source)} />
-        <Link onPress={go}>{item.source.title}</Link>
-        <Text size="sm" muted>
-          {own ? `#${item.source.number}` : `${item.source.repo}#${item.source.number}`}
-        </Text>
-      </Row>
-    </Box>
+      </Stack>
+    </ListItem>
+  )
+}
+
+/** The timeline in order; mentions next to each other share one list. */
+function Timeline({ items, s }: { items: TimelineItem[]; s: IssueState }) {
+  const runs: TimelineItem[][] = []
+  for (const item of items) {
+    const last = runs.at(-1)
+    if (item.kind === 'mention' && last?.[0].kind === 'mention') last.push(item)
+    else runs.push([item])
+  }
+  return (
+    <>
+      {runs.map((run) =>
+        run[0].kind === 'mention' ? (
+          <List key={run[0].id} label="Mentioned in">
+            {run.map((item) => (
+              <Mention key={item.id} item={item as TimelineMention} />
+            ))}
+          </List>
+        ) : (
+          <Item key={run[0].id} item={run[0]} s={s} />
+        )
+      )}
+    </>
   )
 }
 
 function Item({ item, s }: { item: TimelineItem; s: IssueState }) {
   if (item.kind === 'comment') return <CommentItem c={item} s={s} />
-  if (item.kind === 'mention') return <Mention item={item} />
+  if (item.kind === 'mention') return <List label="Mentioned in"><Mention item={item} /></List>
   const { words, look } = stateWords(item)
   return (
     <Box direction="row" gap="sm" align="center" paddingX="sm">
@@ -366,9 +398,7 @@ function Detail({ d, s }: { d: IssueDetail; s: IssueState }) {
       <Meta d={d} s={s} />
       {!s.editing && <Post head={opened} body={d.body} url={d.url} cut={d.truncated} subject={d.id} reactions={d.reactions} />}
       <Separator />
-      {d.head.map((item) => (
-        <Item key={item.id} item={item} s={s} />
-      ))}
+      <Timeline items={d.head} s={s} />
       {hidden > 0 && (
         <Row gap="xs" align="center">
           <Button size="sm" variant="outline" disabled={!!s.busy} onPress={loadMore}>
@@ -377,9 +407,7 @@ function Detail({ d, s }: { d: IssueDetail; s: IssueState }) {
           {s.busy === 'more' && <Spinner label="Loading more" labelHidden />}
         </Row>
       )}
-      {d.tail.map((item) => (
-        <Item key={item.id} item={item} s={s} />
-      ))}
+      <Timeline items={d.tail} s={s} />
       {s.error && <Problem error={s.error} onRetry={dismissError} retryLabel="Dismiss" />}
       <Composer d={d} s={s} />
     </Box>

@@ -11,7 +11,7 @@ const lists = {
 }
 const empty = itemPage([], 0, null)
 // An issue left open by an earlier run opens again, which is how these scenarios show one.
-const openIssue = { workspace: { openIssue: { repo: 'octo/app', number: 120 } } }
+const openIssue = { workspace: { openIssue: { repo: 'octo/app', path: '/code/app', number: 120 } } }
 const longTimeline = issueDetail({
   head: Array.from({ length: 3 }, (_, i) => commentItem(i + 1)),
   tail: [commentItem(40, { body: 'Shipped in 1.9.', reactions: [{ content: 'ROCKET', count: 3, viewerHasReacted: true, users: ['ana', 'olu'] }] })],

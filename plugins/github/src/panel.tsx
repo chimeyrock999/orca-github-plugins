@@ -16,26 +16,29 @@ import {
   Toolbar,
   type PanelContext
 } from 'orca'
-import { issue, loadIssue, newIssue, restoreIssue } from './issue-store'
+import { issue, loadIssue, newIssue, startIssues } from './issue-store'
 import { githubUrl, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
 import { Problem } from './parts'
 import { KindView } from './views'
 
+/** Runs `step`, then lets the Issues tab start on the workspace's issue if it has not yet. */
+async function thenIssues(step: Promise<void> | void): Promise<void> {
+  await step
+  await startIssues()
+}
+
 /** Runs once before the first render; what it pushes to `subscriptions` ends with the panel. */
 export function setup(ctx: PanelContext): void {
-  ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void setRepo(answer)))
+  ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void thenIssues(setRepo(answer))))
   void plugin.request('repo.get').then(
-    (answer) => {
-      void setRepo(answer)
-      return restoreIssue()
-    },
+    (answer) => thenIssues(setRepo(answer)),
     (error: unknown) => setRepo(requestFailed(error))
   )
 }
 
 /** Refresh: the repo and the list, and the issue on screen. */
 async function refreshAll(): Promise<void> {
-  await refresh()
+  await thenIssues(refresh())
   // Refresh drops the label and assignee choices; an open picker asks for its own again.
   const picking = read(issue).picking ?? read(newIssue).picking
   if (picking) void loadChoices(picking.kind)
@@ -58,7 +61,7 @@ export default function Panel() {
     return (
       <Stack gap="md">
         <Heading level={3}>GitHub</Heading>
-        <Problem error={r.error} onRetry={refresh} onPick={pickRepo} />
+        <Problem error={r.error} onRetry={refreshAll} onPick={(path) => thenIssues(pickRepo(path))} />
       </Stack>
     )
   }
@@ -75,13 +78,13 @@ export default function Panel() {
         </Stack>
         <Toolbar label="Repository" gap="xs">
           {r.resolvedBy === 'picked' && (
-            <IconButton icon="folder" label="Change workspace" variant="ghost" onPress={unpickRepo} />
+            <IconButton icon="folder" label="Change workspace" variant="ghost" onPress={() => thenIssues(unpickRepo())} />
           )}
           <IconButton icon="refresh" label="Refresh" variant="ghost" onPress={refreshAll} />
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" onPress={openOnGitHub} />
         </Toolbar>
       </Row>
-      <Tabs label="GitHub" value={read(tab)} onChange={(value) => selectTab(value as Kind)}>
+      <Tabs label="GitHub" value={read(tab)} onChange={(value) => thenIssues(selectTab(value as Kind))}>
         <Tab value="issues" label="Issues" icon="bug" />
         <Tab value="pulls" label="Pull requests" icon="branch" />
         <Tab value="runs" label="Actions" icon="play" />
