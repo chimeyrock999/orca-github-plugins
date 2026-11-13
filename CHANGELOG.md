@@ -14,6 +14,8 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 - **Issues and pull requests**: Open in Checks, beside a review's comments on the diff, says that
   Orca's Checks tab opens a comment's file at its line.
+- **Issues and pull requests**: an open issue or pull request has Back on the left and Orca Tasks →
+  (was ← Back to Orca Tasks) on the right of its top row, and Edit and Open on GitHub beside its title.
 
 ## 0.1.0 - 2026-11-13
 

@@ -1,31 +1,12 @@
 // One pull request as GitHub shows it: title, state, base ← head, its review decision, merge state
 // and checks in one line each (Orca's words), reviewers, labels and assignees, the body, the timeline
 // of comments, reviews and events, and a box to comment or review.
-import {
-  Box,
-  Button,
-  Callout,
-  Code,
-  IconButton,
-  Link,
-  RadioGroup,
-  read,
-  RelativeTime,
-  Row,
-  Separator,
-  shell,
-  Skeleton,
-  Spinner,
-  Stack,
-  Text,
-  Textarea,
-  Toolbar
-} from 'orca'
+import { Box, Button, Callout, Code, Link, RadioGroup, read, RelativeTime, Row, Separator, shell, Skeleton, Spinner, Stack, Text, Textarea } from 'orca'
 import { checkSummary, checksLook, count, decisionLook, mergeLook, pullLook, type Look } from '../../shared/look'
 import { Glyph, Problem } from '../parts'
 import type { PullDetail, ReviewEvent } from '../../shared/protocol'
 import { backFrom, handOff } from '../linked/link-store'
-import { backLabel, HandOffProblem, LinkedView, TasksButton } from '../linked/linked-view'
+import { backLabel, HandOffProblem, LinkedView, ThreadTop } from '../linked/linked-view'
 import {
   canReview,
   cancelReview,
@@ -39,7 +20,7 @@ import {
   type PullState
 } from './pull-store'
 import { lists } from '../store'
-import { Byline, EditTitle, LabelsAndAssignees, MetaLine, Post, Timeline } from '../thread/thread-view'
+import { Byline, LabelsAndAssignees, MetaLine, Post, Timeline, TitleRow } from '../thread/thread-view'
 
 /** A state's glyph and its words. */
 function Status({ look }: { look: Look }) {
@@ -169,13 +150,7 @@ function Detail({ d, s }: { d: PullDetail; s: PullState }) {
   const look = pullLook(d)
   return (
     <Box grow minHeight={0} scroll="y" gap="md">
-      {s.editing ? (
-        <EditTitle t={pulls} d={d} s={s} />
-      ) : (
-        <Text size="md" weight="semibold">
-          {d.title}
-        </Text>
-      )}
+      <TitleRow t={pulls} d={d} s={s} label="Pull request" />
       <Row gap="xs" align="center" wrap>
         <Glyph look={look} />
         <Text size="sm" tone={look.tone}>
@@ -208,28 +183,11 @@ function Detail({ d, s }: { d: PullDetail; s: PullState }) {
 
 export function PullView() {
   const s = read(pull)
-  const d = s.answer?.ok ? s.answer.detail : null
   // A pull request opened from a mention or the list leads back to the workspace's own, or the list.
   const back = backLabel(pulls)
   return (
     <Box grow minHeight={0} gap="sm">
-      <Row justify="between" align="center" wrap>
-        <TasksButton kind="pulls" back />
-        {/* Kept whole, so the two buttons do not stack; narrower still, they wrap under Tasks. */}
-        <Box shrink={false}>
-          <Toolbar label="Pull request" gap="xs">
-            {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={pulls.startEdit} />}
-            <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
-          </Toolbar>
-        </Box>
-      </Row>
-      {back && (
-        <Row>
-          <Button size="sm" variant="outline" onPress={() => backFrom(pulls)}>
-            {back}
-          </Button>
-        </Row>
-      )}
+      <ThreadTop kind="pulls" back={back} onBack={() => backFrom(pulls)} />
       <HandOffProblem />
       {s.answer === null ? (
         <Skeleton lines={8} label={`Loading pull request ${s.number}`} />

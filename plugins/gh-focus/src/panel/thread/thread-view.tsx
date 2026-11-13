@@ -458,7 +458,31 @@ export function LabelsAndAssignees({ t, d, s }: { t: AnyThread; d: ThreadDetail;
   )
 }
 
-export function EditTitle({ t, d, s }: { t: AnyThread; d: ThreadDetail; s: ThreadState<ThreadDetail> }) {
+/** The title, or its editor, with Edit (where GitHub allows it, not while editing) and Open on GitHub
+ *  beside it; the two are kept whole, so they do not stack under each other in a narrow sidebar. */
+export function TitleRow({ t, d, s, label }: { t: AnyThread; d: ThreadDetail; s: ThreadState<ThreadDetail>; label: string }) {
+  return (
+    <Box direction="row" gap="xs" align="start">
+      <Box grow minWidth={0}>
+        {s.editing ? (
+          <EditTitle t={t} d={d} s={s} />
+        ) : (
+          <Text size="md" weight="semibold">
+            {d.title}
+          </Text>
+        )}
+      </Box>
+      <Box shrink={false}>
+        <Toolbar label={label} gap="xs">
+          {d.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={t.startEdit} />}
+          <IconButton icon="open-external" label="Open on GitHub" variant="ghost" onPress={() => shell.openExternal(d.url)} />
+        </Toolbar>
+      </Box>
+    </Box>
+  )
+}
+
+function EditTitle({ t, d, s }: { t: AnyThread; d: ThreadDetail; s: ThreadState<ThreadDetail> }) {
   const editing = s.editing!
   return (
     <Stack gap="sm">

@@ -19,12 +19,27 @@ export function HandOffProblem() {
 }
 
 /** Tasks: Orca's own page lists, searches and filters the repo's issues and pull requests. At the
- *  top of a tab it reads as the way back to them (`back`). */
-export function TasksButton({ kind, back = false }: { kind: LinkedKind; back?: boolean }) {
+ *  top right of a tab it reads as the way out to it (`top`). */
+export function TasksButton({ kind, top = false }: { kind: LinkedKind; top?: boolean }) {
   return (
-    <Button size="sm" variant="outline" icon={back ? undefined : 'layers'} tooltip={`Orca's Tasks page: every ${NOUN[kind].one} of the repo`} onPress={() => handOff('tasks')}>
-      {back ? '← Back to Orca Tasks' : 'Tasks'}
+    <Button size="sm" variant="outline" icon={top ? undefined : 'layers'} tooltip={`Orca's Tasks page: every ${NOUN[kind].one} of the repo`} onPress={() => handOff('tasks')}>
+      {top ? 'Orca Tasks →' : 'Tasks'}
     </Button>
+  )
+}
+
+/** The top of an open issue or pull request: Back (when there is one) on the left, Orca Tasks on the
+ *  right; a narrow sidebar wraps them onto two lines. */
+export function ThreadTop({ kind, back, onBack }: { kind: LinkedKind; back: string | null; onBack: () => unknown }) {
+  return (
+    <Row justify={back ? 'between' : 'end'} align="center" wrap>
+      {back && (
+        <Button size="sm" variant="outline" onPress={onBack}>
+          {back}
+        </Button>
+      )}
+      <TasksButton kind={kind} top />
+    </Row>
   )
 }
 
@@ -60,8 +75,8 @@ function LinkedList({ t, l }: { t: AnyThread; l: LinkedState }) {
   const noun = n === 1 ? NOUN[t.kind].one : NOUN[t.kind].many
   return (
     <Box grow minHeight={0} gap="sm">
-      <Row>
-        <TasksButton kind={t.kind} back />
+      <Row justify="end">
+        <TasksButton kind={t.kind} top />
       </Row>
       <Text size="sm" weight="semibold">{`${n} linked ${noun}`}</Text>
       <HandOffProblem />

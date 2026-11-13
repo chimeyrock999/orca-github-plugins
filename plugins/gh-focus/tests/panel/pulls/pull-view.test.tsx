@@ -72,8 +72,8 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
   assert.equal(h.count('items.get'), 0)
   assert.ok(view.find({ type: 'Text', text: 'fix: stream CSV export past 10k rows' }))
   // Its own pull request: no Back, and Tasks for the rest of the repo's.
-  assert.equal(view.find({ type: 'Button', text: /^← Back(?! to Orca Tasks)/ }), null)
-  assert.ok(view.find({ type: 'Button', text: '← Back to Orca Tasks' }))
+  assert.equal(view.find({ type: 'Button', text: /^← Back/ }), null)
+  assert.ok(view.find({ type: 'Button', text: 'Orca Tasks →' }))
   assert.deepEqual(view.findAll({ type: 'Code' }).map((c) => c.text), ['dev', 'kenji:stream-export'])
   assert.ok(view.find({ text: 'Changes requested' }))
   // Mergeable, but a check fails: Orca's words.
@@ -107,14 +107,14 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
 test('Tasks hands off to the Orca Tasks page; when Orca will not, it says why', async () => {
   const h = host()
   const view = await openPull(h)
-  await view.press({ type: 'Button', text: '← Back to Orca Tasks' })
+  await view.press({ type: 'Button', text: 'Orca Tasks →' })
   assert.deepEqual(h.last('orca.show'), { view: 'tasks' })
   assert.ok(!says(view, /Orca did not answer/))
   await view.unmount()
 
   // The worker answers a refused commands.run with Orca's code.
   const refused = await openPull(host({ 'orca.show': () => failed('unavailable', 'Not the desktop app') }))
-  await refused.press({ type: 'Button', text: '← Back to Orca Tasks' })
+  await refused.press({ type: 'Button', text: 'Orca Tasks →' })
   assert.ok(says(refused, /Not available in Orca/))
   assert.ok(!says(refused, /Orca did not answer/))
   await refused.press({ type: 'Button', text: 'Dismiss' })
@@ -174,24 +174,26 @@ test('another pull request opened from a mention leads back to the workspace one
   assert.equal(view.find({ type: 'Button', text: 'Open in Checks' }), null)
   await view.press({ type: 'Link', text: '1 failing · 1 pending · 4 passed' })
   assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/app/pull/131/checks' })
-  // ← Back to Orca Tasks heads it with Edit and Open on GitHub beside it; Back has a row of its own below.
-  const tasks = view.find({ type: 'Button', text: '← Back to Orca Tasks' })
+  // Back and Orca Tasks share the top row; Edit and Open on GitHub sit beside the title.
+  const tasks = view.find({ type: 'Button', text: 'Orca Tasks →' })
   const back = view.find({ type: 'Button', text: '← Back to #124' })
   assert.ok(tasks && back)
-  const row = rowOf(tasks.path)
-  const inRow = (label: string) => view.findAll({ type: 'IconButton', label }).some((b) => b.path.startsWith(`${row}/`))
-  assert.ok(inRow('Open on GitHub'))
-  assert.ok(inRow('Edit title and body'))
-  // In a narrow sidebar Edit and Open on GitHub keep their row instead of stacking under each other.
+  assert.equal(rowOf(back.path), rowOf(tasks.path))
+  assert.ok(before(back.path, tasks.path))
+  assert.equal(view.findAll({ type: 'Row' }).find((r) => r.path === rowOf(tasks.path))?.props.justify, 'between')
   const bar = view.findAll({ type: 'Toolbar' }).find((b) => b.props.label === 'Pull request')
-  assert.equal(view.findAll({ type: 'Box' }).find((b) => b.path === rowOf(bar!.path))?.props.shrink, false)
-  // Narrower still, they move under Back to Orca Tasks rather than push it past the edge.
-  assert.equal(view.findAll({ type: 'Row' }).find((r) => r.path === row)?.props.wrap, true)
-  assert.ok(!back.path.startsWith(`${row}/`))
-  assert.ok(before(tasks.path, back.path))
+  assert.ok(bar)
+  const holder = rowOf(bar.path)
+  assert.equal(view.findAll({ type: 'Box' }).find((b) => b.path === holder)?.props.shrink, false)
+  const title = view.findAll({ type: 'Text' }).find((t) => t.path.startsWith(`${rowOf(holder)}/`) && !t.path.startsWith(`${holder}/`))
+  assert.equal(title?.text, 'fix: stream CSV export past 10k rows')
+  assert.ok(title && before(title.path, bar.path))
+  const inBar = (label: string) => view.findAll({ type: 'IconButton', label }).some((b) => b.path.startsWith(`${bar.path}/`))
+  assert.ok(inBar('Open on GitHub'))
+  assert.ok(inBar('Edit title and body'))
   await view.press({ type: 'Button', text: '← Back to #124' })
   assert.deepEqual(h.last('pull.get'), { number: 124 })
-  assert.equal(view.find({ type: 'Button', text: /^← Back(?! to Orca Tasks)/ }), null)
+  assert.equal(view.find({ type: 'Button', text: /^← Back/ }), null)
   await view.unmount()
 })
 
