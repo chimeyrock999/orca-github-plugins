@@ -73,7 +73,7 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
   assert.ok(view.find({ type: 'Text', text: 'fix: stream CSV export past 10k rows' }))
   // Its own pull request: no Back, and Tasks for the rest of the repo's.
   assert.equal(view.find({ type: 'Button', text: /^← Back/ }), null)
-  assert.ok(view.find({ type: 'Button', text: 'Tasks' }))
+  assert.ok(view.find({ type: 'Button', text: '← Tasks' }))
   assert.deepEqual(view.findAll({ type: 'Code' }).map((c) => c.text), ['dev', 'kenji:stream-export'])
   assert.ok(view.find({ text: 'Changes requested' }))
   // Mergeable, but a check fails: Orca's words.
@@ -102,14 +102,14 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
 test('Tasks hands off to the Orca Tasks page; when Orca will not, it says why', async () => {
   const h = host()
   const view = await openPull(h)
-  await view.press({ type: 'Button', text: 'Tasks' })
+  await view.press({ type: 'Button', text: '← Tasks' })
   assert.deepEqual(h.last('orca.show'), { view: 'tasks' })
   assert.ok(!says(view, /Orca did not answer/))
   await view.unmount()
 
   // The worker answers a refused commands.run with Orca's code.
   const refused = await openPull(host({ 'orca.show': () => failed('unavailable', 'Not the desktop app') }))
-  await refused.press({ type: 'Button', text: 'Tasks' })
+  await refused.press({ type: 'Button', text: '← Tasks' })
   assert.ok(says(refused, /Not available in Orca/))
   assert.ok(!says(refused, /Orca did not answer/))
   await refused.press({ type: 'Button', text: 'Dismiss' })

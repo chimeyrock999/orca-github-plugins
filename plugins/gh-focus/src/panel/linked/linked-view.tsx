@@ -18,11 +18,12 @@ export function HandOffProblem() {
   return error ? <Problem error={error} onRetry={dismissHandOff} retryLabel="Dismiss" /> : null
 }
 
-/** Tasks: Orca's own page lists, searches and filters the repo's issues and pull requests. */
-export function TasksButton({ kind }: { kind: LinkedKind }) {
+/** Tasks: Orca's own page lists, searches and filters the repo's issues and pull requests. At the
+ *  top of a tab it reads as the way back to them (`back`). */
+export function TasksButton({ kind, back = false }: { kind: LinkedKind; back?: boolean }) {
   return (
     <Button size="sm" variant="outline" icon="layers" tooltip={`Orca's Tasks page: every ${NOUN[kind].one} of the repo`} onPress={() => handOff('tasks')}>
-      Tasks
+      {back ? '← Tasks' : 'Tasks'}
     </Button>
   )
 }
@@ -58,10 +59,10 @@ function LinkedList({ t, l }: { t: AnyThread; l: LinkedState }) {
   const noun = n === 1 ? NOUN[t.kind].one : NOUN[t.kind].many
   return (
     <Box grow minHeight={0} gap="sm">
-      <Row justify="between" align="center">
-        <Text size="sm" weight="semibold">{`${n} linked ${noun}`}</Text>
-        <TasksButton kind={t.kind} />
+      <Row>
+        <TasksButton kind={t.kind} back />
       </Row>
+      <Text size="sm" weight="semibold">{`${n} linked ${noun}`}</Text>
       <HandOffProblem />
       <Box grow minHeight={0} scroll="y">
         {l.rows === null ? (

@@ -130,19 +130,19 @@ export function IssueView() {
   return (
     <Box grow minHeight={0} gap="sm">
       <Row justify="between" align="center">
-        <Row gap="xs">
-          {back && (
-            <Button size="sm" variant="outline" onPress={() => backFrom(issues)}>
-              {back}
-            </Button>
-          )}
-          <TasksButton kind="issues" />
-        </Row>
+        <TasksButton kind="issues" back />
         <Toolbar label="Issue" gap="xs">
           {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={issues.startEdit} />}
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
         </Toolbar>
       </Row>
+      {back && (
+        <Row>
+          <Button size="sm" variant="outline" onPress={() => backFrom(issues)}>
+            {back}
+          </Button>
+        </Row>
+      )}
       <HandOffProblem />
       {s.answer === null ? (
         <Skeleton lines={8} label={`Loading issue ${s.number}`} />

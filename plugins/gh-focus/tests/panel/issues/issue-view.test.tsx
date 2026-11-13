@@ -86,6 +86,22 @@ test('a mention of an issue or pull request here opens it in its tab; another re
   await view.unmount()
 })
 
+test('← Tasks heads the issue with Edit and Open on GitHub beside it; Back has a row of its own below', async () => {
+  const view = await openIssue120(host({ 'pull.get': () => ({ ok: true, pull: pullDetail() }) }))
+  await view.press({ type: 'ListItem', text: /Excel export truncates long cells/ })
+  const tasks = view.find({ type: 'Button', text: '← Tasks' })
+  const back = view.find({ type: 'Button', text: '← Back to linked issues' })
+  assert.ok(tasks && back)
+  const row = tasks.path.slice(0, tasks.path.lastIndexOf('/'))
+  // The panel's header has an Open on GitHub of its own (the repo); the issue's sits in this row.
+  const inRow = (label: string) => view.findAll({ type: 'IconButton', label }).some((b) => b.path.startsWith(`${row}/`))
+  assert.ok(inRow('Open on GitHub'))
+  assert.ok(inRow('Edit title and body'))
+  assert.ok(!back.path.startsWith(`${row}/`))
+  assert.ok(back.path > row)
+  await view.unmount()
+})
+
 test('comments only show edit and delete where GitHub allows them', async () => {
   const view = await openIssue120()
   assert.equal(view.findAll({ label: 'Edit comment' }).length, 1)
@@ -361,7 +377,7 @@ test('a workspace with one linked issue opens on it, with no Back; tab switches 
   assert.deepEqual(h.last('repo.links'), {})
   assert.equal(h.last('items.get'), undefined)
   assert.equal(view.find({ text: /← Back/ }), null)
-  assert.ok(view.find({ type: 'Button', text: 'Tasks' }))
+  assert.ok(view.find({ type: 'Button', text: '← Tasks' }))
   await view.select({ type: 'Tabs' }, 'pulls')
   await view.select({ type: 'Tabs' }, 'issues')
   assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, 1)
@@ -385,6 +401,12 @@ test('several linked issues make a list, newest activity first, and none opens b
   assert.deepEqual(h.last('items.get'), { kind: 'issues', items: [ref(118), ref('octo/sdk#45'), ref(120)] })
   assert.equal(h.last('issue.get'), undefined)
   assert.ok(view.find({ text: '3 linked issues' }))
+  // ← Tasks on a row of its own above the count.
+  const tasks = view.find({ type: 'Button', text: '← Tasks' })
+  const count = view.find({ type: 'Text', text: '3 linked issues' })
+  assert.ok(tasks && count)
+  assert.ok(!count.path.startsWith(`${tasks.path.slice(0, tasks.path.lastIndexOf('/'))}/`))
+  assert.ok(count.path > tasks.path)
   assert.deepEqual(
     view.findAll({ type: 'ListItem' }).map((i) => i.text?.split('#')[0]),
     ['◉ Login page loops after token refresh ', '⊘ Stream writer drops the last chunk octo/sdk ', '◌ Gone ']

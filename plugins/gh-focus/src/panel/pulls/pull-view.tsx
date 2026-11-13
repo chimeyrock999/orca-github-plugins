@@ -211,19 +211,19 @@ export function PullView() {
   return (
     <Box grow minHeight={0} gap="sm">
       <Row justify="between" align="center">
-        <Row gap="xs">
-          {back && (
-            <Button size="sm" variant="outline" onPress={() => backFrom(pulls)}>
-              {back}
-            </Button>
-          )}
-          <TasksButton kind="pulls" />
-        </Row>
+        <TasksButton kind="pulls" back />
         <Toolbar label="Pull request" gap="xs">
           {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={pulls.startEdit} />}
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
         </Toolbar>
       </Row>
+      {back && (
+        <Row>
+          <Button size="sm" variant="outline" onPress={() => backFrom(pulls)}>
+            {back}
+          </Button>
+        </Row>
+      )}
       <HandOffProblem />
       {s.answer === null ? (
         <Skeleton lines={8} label={`Loading pull request ${s.number}`} />
