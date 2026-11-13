@@ -17,7 +17,7 @@ so the plugin holds no tokens of its own.
 
 | Plugin | Folder | Type | Status |
 | :--- | :--- | :--- | :--- |
-| gh Focus (`gh-focus`) | [`plugins/github`](plugins/github) | `trusted-worker` | Tabs; issues: list, paging, search, detail, comments, close/reopen, edit, create, reactions; the workspace's pull request: detail, checks line, comments, review, edit, reactions; hand-offs to Orca's Tasks page and Checks tab; Actions: the focused branch's runs, run detail, logs, rerun, cancel, Run workflow, live runs |
+| gh Focus (`gh-focus`) | [`plugins/gh-focus`](plugins/gh-focus) | `trusted-worker` | Tabs; issues: list, paging, search, detail, comments, close/reopen, edit, create, reactions; the workspace's pull request: detail, checks line, comments, review, edit, reactions; hand-offs to Orca's Tasks page and Checks tab; Actions: the focused branch's runs, run detail, logs, rerun, cancel, Run workflow, live runs |
 
 ## Install
 
@@ -30,7 +30,7 @@ gh Focus is not affiliated with GitHub.
 Needs Orca `1.4.256`+ (`orca` on PATH), Node.js 18+, and `gh` logged in.
 
 ```sh
-orca plugin validate ./plugins/github
-orca plugin test ./plugins/github
-orca plugin dev watch ./plugins/github
+orca plugin validate ./plugins/gh-focus
+orca plugin test ./plugins/gh-focus
+orca plugin dev watch ./plugins/gh-focus
 ```

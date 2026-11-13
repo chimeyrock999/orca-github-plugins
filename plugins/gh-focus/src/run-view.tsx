@@ -96,7 +96,7 @@ function Actions({ s, run }: { s: OpenRun; run: RunDetail }) {
     return (
       <Callout tone="warning" title={`Cancel run ${run.workflow} #${run.runNumber}?`}>
         <Stack gap="sm">
-          <Text size="sm">Jobs still running stop now. You can re-run it later.</Text>
+          <Text size="sm">Jobs still running stop now. You can rerun it later.</Text>
           <Row gap="xs">
             <Button size="sm" variant="solid" tone="danger" disabled={!!s.busy} onPress={cancelRun}>
               Cancel run

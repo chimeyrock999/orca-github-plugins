@@ -3,7 +3,7 @@
   "id": "gh-focus",
   "name": "gh Focus",
   "version": "0.1.0",
-  "description": "For GitHub repos: the issue, pull request and Actions runs of the workspace you're in, beside your code. Read, comment, review and re-run without leaving the editor for the Tasks page. Uses the gh CLI; not affiliated with GitHub.",
+  "description": "For GitHub repos: the issue, pull request and Actions runs of the workspace you're in, beside your code. Read, comment, review and rerun without leaving the editor for the Tasks page. Uses the gh CLI; not affiliated with GitHub.",
   "author": {
     "name": "chimeyrock999",
     "url": "https://github.com/chimeyrock999"
@@ -19,7 +19,7 @@
   "contributes": {
     "panels": [
       {
-        "id": "github",
+        "id": "gh-focus",
         "title": "gh Focus",
         "icon": "branch",
         "entry": "src/panel.tsx",
