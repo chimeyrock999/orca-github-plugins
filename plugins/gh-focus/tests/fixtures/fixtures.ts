@@ -296,3 +296,18 @@ export function pullDetail(change: Partial<PullDetail> = {}): PullDetail {
     ...change
   }
 }
+
+/** The row (parent) of an element, by its `path` in the rendered tree. */
+export const rowOf = (path: string): string => path.slice(0, path.lastIndexOf('/'))
+
+/** Whether element path `a` comes before `b` in the rendered tree: segment by segment, by each
+ *  child's number (`#12` after `#9`), not as text. */
+export function before(a: string, b: string): boolean {
+  const [as, bs] = [a.split('/'), b.split('/')]
+  for (let i = 0; i < Math.min(as.length, bs.length); i++) {
+    const [x, y] = [Number(/^#(\d+)/.exec(as[i])?.[1]), Number(/^#(\d+)/.exec(bs[i])?.[1])]
+    if (x !== y) return x < y
+    if (as[i] !== bs[i]) return as[i] < bs[i]
+  }
+  return as.length < bs.length
+}

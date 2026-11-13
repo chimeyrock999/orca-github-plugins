@@ -2,7 +2,7 @@
 // whose `requests` stand in for src/worker.ts.
 import { assert, hostError, mockHost, mount, test } from 'orca/testing'
 import * as panel from '../../../src/panel'
-import { commentItem, failed, issueDetail, links, linkedRows, pullDetail, ref, repoOk } from '../../fixtures/fixtures'
+import { before, commentItem, failed, issueDetail, links, linkedRows, pullDetail, ref, repoOk, rowOf } from '../../fixtures/fixtures'
 import { loadIssue, mergeTimeline, react } from '../../../src/panel/issues/issue-store'
 import { setRepo } from '../../../src/panel/store'
 import type { IssueDetail, LinkedRef } from '../../../src/shared/protocol'
@@ -92,13 +92,13 @@ test('← Tasks heads the issue with Edit and Open on GitHub beside it; Back has
   const tasks = view.find({ type: 'Button', text: '← Tasks' })
   const back = view.find({ type: 'Button', text: '← Back to linked issues' })
   assert.ok(tasks && back)
-  const row = tasks.path.slice(0, tasks.path.lastIndexOf('/'))
+  const row = rowOf(tasks.path)
   // The panel's header has an Open on GitHub of its own (the repo); the issue's sits in this row.
   const inRow = (label: string) => view.findAll({ type: 'IconButton', label }).some((b) => b.path.startsWith(`${row}/`))
   assert.ok(inRow('Open on GitHub'))
   assert.ok(inRow('Edit title and body'))
   assert.ok(!back.path.startsWith(`${row}/`))
-  assert.ok(back.path > row)
+  assert.ok(before(tasks.path, back.path))
   await view.unmount()
 })
 
@@ -405,8 +405,8 @@ test('several linked issues make a list, newest activity first, and none opens b
   const tasks = view.find({ type: 'Button', text: '← Tasks' })
   const count = view.find({ type: 'Text', text: '3 linked issues' })
   assert.ok(tasks && count)
-  assert.ok(!count.path.startsWith(`${tasks.path.slice(0, tasks.path.lastIndexOf('/'))}/`))
-  assert.ok(count.path > tasks.path)
+  assert.ok(!count.path.startsWith(`${rowOf(tasks.path)}/`))
+  assert.ok(before(tasks.path, count.path))
   assert.deepEqual(
     view.findAll({ type: 'ListItem' }).map((i) => i.text?.split('#')[0]),
     ['◉ Login page loops after token refresh ', '⊘ Stream writer drops the last chunk octo/sdk ', '◌ Gone ']

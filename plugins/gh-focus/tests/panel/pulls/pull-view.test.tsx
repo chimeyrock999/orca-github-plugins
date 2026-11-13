@@ -3,7 +3,7 @@
 // Checks tab, over a mock host whose `requests` stand in for src/worker.ts.
 import { assert, hostError, mockHost, mount, test } from 'orca/testing'
 import * as panel from '../../../src/panel'
-import { failed, links, linkedRows, pullDetail, ref, repoOk } from '../../fixtures/fixtures'
+import { before, failed, links, linkedRows, pullDetail, ref, repoOk, rowOf } from '../../fixtures/fixtures'
 import { canReview, timing } from '../../../src/panel/pulls/pull-store'
 import type { PullDetail, TimelineItem } from '../../../src/shared/protocol'
 
@@ -167,6 +167,16 @@ test('another pull request opened from a mention leads back to the workspace one
   assert.equal(view.find({ type: 'Button', text: 'Open in Checks' }), null)
   await view.press({ type: 'Link', text: '1 failing · 1 pending · 4 passed' })
   assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/app/pull/131/checks' })
+  // ← Tasks heads it with Edit and Open on GitHub beside it; Back has a row of its own below.
+  const tasks = view.find({ type: 'Button', text: '← Tasks' })
+  const back = view.find({ type: 'Button', text: '← Back to #124' })
+  assert.ok(tasks && back)
+  const row = rowOf(tasks.path)
+  const inRow = (label: string) => view.findAll({ type: 'IconButton', label }).some((b) => b.path.startsWith(`${row}/`))
+  assert.ok(inRow('Open on GitHub'))
+  assert.ok(inRow('Edit title and body'))
+  assert.ok(!back.path.startsWith(`${row}/`))
+  assert.ok(before(tasks.path, back.path))
   await view.press({ type: 'Button', text: '← Back to #124' })
   assert.deepEqual(h.last('pull.get'), { number: 124 })
   assert.equal(view.find({ type: 'Button', text: /^← Back/ }), null)
@@ -245,11 +255,11 @@ test('the workspace pull request waits for the tab to show', async () => {
 test('a merge state GitHub has not worked out yet is asked again once, a moment later', async () => {
   // Long enough that opening the pull request (first ask and render) ends before the retry.
   timing.mergeRetryMs = 50
-  let merge: PullDetail['merge'] = 'unknown'
-  const h = host({}, () => pullDetail({ merge }))
+  // The first ask answers unknown, every later one clean, whenever the retry comes.
+  let asks = 0
+  const h = host({}, () => pullDetail({ merge: ++asks === 1 ? 'unknown' : 'clean' }))
   const view = await openPull(h)
   assert.ok(view.find({ text: 'Checking' }))
-  merge = 'clean'
   await until(() => h.count('pull.get') >= 2)
   await view.settled()
   assert.equal(h.count('pull.get'), 2)
