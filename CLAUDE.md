@@ -52,6 +52,41 @@ All four checks (validate, test, check, tsc) pass before a PR.
   `panels.post` payloads are at most 256 KiB; panel `Markdown` cannot load remote images.
 - Destructive actions (close, merge, cancel, delete) ask for confirmation in the panel.
 
+## Learn from Orca's own GitHub features
+
+Orca already ships GitHub issues, pull requests and checks. Before you design or build a view or
+an action, read how Orca does it, in the code (https://github.com/stablyai/orca) and in the app.
+Reuse what fits: its GitHub queries and fields, how it handles `gh` errors and rate limits, the
+words, glyphs, order, filters and confirmations. Then decide what the panel adds.
+
+Where it lives, in the app and in the Orca source:
+
+| Orca feature | In the app | Code |
+| :--- | :--- | :--- |
+| Issue and PR lists, filters, GitHub Projects; issue dialog with Activity, edit, comment, close/reopen, reactions | **Tasks** (left sidebar) → GitHub | `src/renderer/src/components/task-page/github/`, `github-item-dialog/`; `src/main/github/issues/`, `work-items/`, `project-view/` |
+| Linked PR and issue of a workspace, failing-checks chip, PR menu (copy link, close, reopen) | Workspace row in the left sidebar | `src/renderer/src/components/sidebar/`; `src/main/github/workspace-links/` |
+| Checks of the worktree's PR, job logs, rerun, review threads | **Checks** tab (right sidebar) | `src/renderer/src/components/right-sidebar/checks-panel/`; `src/main/github/client/check/` |
+| PR conversation, files, checks, reviewers, review, merge, auto-merge, merge queue, stacks, "Fix broken checks" | PR page (a tab) | `src/renderer/src/components/pull-request-page/`; `src/main/github/pull-requests/` |
+| Create a PR | **Source Control** tab (right sidebar) | `src/renderer/src/components/right-sidebar/source-control/` |
+
+User docs: `docs/site/content/docs/review/github.mdx` and `docs/site/content/docs/github-errors.mdx`
+in the Orca repo.
+
+What the panel is for:
+
+- **Goal: small, no duplicates, focused on the work at hand.** You read and answer the issue and
+  pull request of the focused workspace beside the code, without leaving the terminal or editor
+  for another tab. A feature that Orca already has, or that pulls you away from the current work,
+  is left out or handed off; when in doubt, leave it out.
+- A side panel that follows the focused workspace: what you look at while you work, with short
+  actions. It does not rebuild what Orca does better (diff review, merge queue, stacks, Projects).
+- It hands heavy work to Orca: `commands.run` with `view.tasks` or `sidebar.checks.toggle` (needs
+  `workspace:write`), and `workspace.create` to check out a pull request as a worktree. No host
+  method opens a given issue or PR in Orca's own views, so the detail opens in the panel or on
+  GitHub.
+- Orca has no list of a repo's workflow runs, only checks per PR, so Actions (#7) is the panel's
+  own ground.
+
 ## Git and GitHub
 
 - Branches: `main` and `dev`. PRs target `dev`; only `hotfix/*` or the `dev` → `main` release PR
