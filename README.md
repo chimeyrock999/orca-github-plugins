@@ -21,8 +21,9 @@ so the plugin holds no tokens of its own.
 
 gh Focus follows the focused workspace, with three tabs and the hand-offs to Orca:
 
-- **Issues**: the issues Orca links to the workspace; read, comment, react, close or reopen, edit.
-- **Pull requests**: the workspace's pull request; its review state, merge state and checks in a
+- **Issues**: the issues Orca links to the workspace, those of another repo too (read and
+  answered in their own repo); read, comment, react, close or reopen, edit.
+- **Pull requests**: the workspace's pull request, or a short list of the linked ones; its review state, merge state and checks in a
   line each; comment, react, edit, review.
 - **Actions**: the branch's runs; jobs, failed logs, rerun, cancel, deployment approval,
   artifacts, Run workflow, live updates.

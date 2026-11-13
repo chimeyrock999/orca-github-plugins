@@ -8,8 +8,8 @@ Small and focused on the work at hand: the everyday reading, answering and revie
 
 A right-sidebar panel that follows the focused workspace, with three tabs:
 
-- **Issues**: the issues Orca links to the workspace. One opens by itself, several make a short list. Read the body and timeline; comment, edit or delete comments, react, close (completed, not planned, duplicate) or reopen, edit the title, body, labels and assignees.
-- **Pull requests**: the workspace's pull request (linked in Orca, or the branch's). Its review decision, whether it can merge and one line for its checks; comment, react, edit, and review (Comment, Approve, Request changes).
+- **Issues**: the issues Orca links to the workspace. One opens by itself, several make a short list. One Orca links from another repo opens here too, read and answered in its own repo. Read the body and timeline; comment, edit or delete comments, react, close (completed, not planned, duplicate) or reopen, edit the title, body, labels and assignees.
+- **Pull requests**: the workspace's pull request (linked in Orca, or the branch's); several linked make a short list, as on Issues, and one of another repo opens here too. Its review decision, whether it can merge and one line for its checks; comment, react, edit, and review (Comment, Approve, Request changes).
 - **Actions**: the runs of the workspace's branch, or every branch, with search and filters. A run's jobs and steps, the failed steps' logs already open, rerun or cancel, approve or reject a waiting deployment, its artifacts, Run workflow with its inputs, and live updates while it runs.
 - **Hand-offs to Orca**: Tasks opens Orca's Tasks page (the repo's lists, search, new issues), Open in Checks opens Orca's Checks tab (review threads, check logs). With nothing linked, the panel shows how to link an issue and can ask the workspace's agent to do it.
 - **Light on GitHub**: answers are kept in memory for a short while and a write drops what it changes, so the panel spends little of the GitHub budget it shares with Orca, and says so when that budget runs low.
