@@ -263,7 +263,7 @@ function EventLine({ look, actor, words, at }: { look: Look; actor: string | nul
 }
 
 /** A review's comments on the diff: Orca's Checks tab shows and answers them for the workspace's own
- *  pull request; any other opens on GitHub. */
+ *  pull request, and opens a comment's file at its line in the editor; any other opens on GitHub. */
 function DiffComments({ t, r }: { t: AnyThread; r: TimelineReview }) {
   const own = t.kind === 'pulls' && read(t.state).number === workspacePull() && read(t.state).repo === null
   return (
@@ -272,7 +272,7 @@ function DiffComments({ t, r }: { t: AnyThread; r: TimelineReview }) {
         {`${count(r.comments)} comment${r.comments === 1 ? '' : 's'} on the diff`}
       </Text>
       {own && (
-        <Button size="xs" variant="outline" icon="activity" tooltip="Orca's Checks tab answers review threads beside the code" onPress={() => handOff('checks')}>
+        <Button size="xs" variant="outline" icon="activity" tooltip="Orca's Checks tab answers review threads and opens a comment's file at its line" onPress={() => handOff('checks')}>
           Open in Checks
         </Button>
       )}
@@ -458,11 +458,43 @@ export function LabelsAndAssignees({ t, d, s }: { t: AnyThread; d: ThreadDetail;
   )
 }
 
-export function EditTitle({ t, d, s }: { t: AnyThread; d: ThreadDetail; s: ThreadState<ThreadDetail> }) {
-  const editing = s.editing!
+/** The title, or its box while editing, with Edit (where GitHub allows it, not while editing) and
+ *  Open on GitHub beside it; the two are kept whole, so they do not stack under each other in a narrow
+ *  sidebar. The body and Save take the whole width below. */
+export function TitleRow({ t, d, s, label }: { t: AnyThread; d: ThreadDetail; s: ThreadState<ThreadDetail>; label: string }) {
+  const row = (
+    <Box direction="row" gap="xs" align={s.editing ? 'end' : 'start'}>
+      <Box grow minWidth={0}>
+        {s.editing ? (
+          <Input label="Title" value={s.editing.title} invalid={!s.editing.title.trim()} onChange={(title) => t.setEditing({ title })} />
+        ) : (
+          <Text size="md" weight="semibold">
+            {d.title}
+          </Text>
+        )}
+      </Box>
+      <Box shrink={false}>
+        <Toolbar label={label} gap="xs">
+          {d.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={t.startEdit} />}
+          <IconButton icon="open-external" label="Open on GitHub" variant="ghost" onPress={() => shell.openExternal(d.url)} />
+        </Toolbar>
+      </Box>
+    </Box>
+  )
+  if (!s.editing) return row
   return (
     <Stack gap="sm">
-      <Input label="Title" value={editing.title} invalid={!editing.title.trim()} onChange={(title) => t.setEditing({ title })} />
+      {row}
+      <EditBody t={t} d={d} s={s} />
+    </Stack>
+  )
+}
+
+/** The body editor under the title box, with Save and Cancel. */
+function EditBody({ t, d, s }: { t: AnyThread; d: ThreadDetail; s: ThreadState<ThreadDetail> }) {
+  const editing = s.editing!
+  return (
+    <>
       {/* A body cut to fit the panel would lose its end if saved, so it is edited on GitHub. */}
       <Textarea label="Body" rows={10} value={editing.body} disabled={d.truncated} onChange={(body) => t.setEditing({ body })} />
       {d.truncated && (
@@ -479,6 +511,6 @@ export function EditTitle({ t, d, s }: { t: AnyThread; d: ThreadDetail; s: Threa
         </Button>
         {s.busy === 'edit' && <Spinner label="Saving" labelHidden />}
       </Row>
-    </Stack>
+    </>
   )
 }

@@ -1,6 +1,6 @@
 // One issue as GitHub shows it: title, state, labels, assignees and milestone, the body, then the
 // timeline of comments, mentions and state changes, and a box to comment, close or reopen.
-import { Box, Button, Callout, IconButton, Input, RadioGroup, read, RelativeTime, Row, Separator, shell, Skeleton, Spinner, Stack, Text, Textarea, Toolbar } from 'orca'
+import { Box, Button, Callout, Input, RadioGroup, read, RelativeTime, Row, Separator, Skeleton, Spinner, Stack, Text, Textarea } from 'orca'
 import {
   cancelClose,
   confirmClose,
@@ -15,10 +15,10 @@ import {
 } from './issue-store'
 import { count, issueLook } from '../../shared/look'
 import { backFrom } from '../linked/link-store'
-import { backLabel, HandOffProblem, TasksButton } from '../linked/linked-view'
+import { backLabel, HandOffProblem, ThreadTop } from '../linked/linked-view'
 import { Glyph, Problem } from '../parts'
 import type { CloseReason, IssueDetail } from '../../shared/protocol'
-import { Byline, EditTitle, LabelsAndAssignees, MetaLine, Post, Timeline } from '../thread/thread-view'
+import { Byline, LabelsAndAssignees, MetaLine, Post, Timeline, TitleRow } from '../thread/thread-view'
 
 const REASONS: { value: CloseReason; label: string; description: string; button: string }[] = [
   { value: 'completed', label: 'Completed', description: 'Done, closed, fixed, resolved', button: 'Close as completed' },
@@ -88,13 +88,7 @@ function Detail({ d, s }: { d: IssueDetail; s: IssueState }) {
   const look = issueLook(d)
   return (
     <Box grow minHeight={0} scroll="y" gap="md">
-      {s.editing ? (
-        <EditTitle t={issues} d={d} s={s} />
-      ) : (
-        <Text size="md" weight="semibold">
-          {d.title}
-        </Text>
-      )}
+      <TitleRow t={issues} d={d} s={s} label="Issue" />
       <Row gap="xs" align="center" wrap>
         <Glyph look={look} />
         <Text size="sm" tone={look.tone}>
@@ -125,27 +119,10 @@ function Detail({ d, s }: { d: IssueDetail; s: IssueState }) {
 
 export function IssueView() {
   const s = read(issue)
-  const d = s.answer?.ok ? s.answer.detail : null
   const back = backLabel(issues)
   return (
     <Box grow minHeight={0} gap="sm">
-      <Row justify="between" align="center" wrap>
-        <TasksButton kind="issues" back />
-        {/* Kept whole, so the two buttons do not stack; narrower still, they wrap under Tasks. */}
-        <Box shrink={false}>
-          <Toolbar label="Issue" gap="xs">
-            {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={issues.startEdit} />}
-            <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
-          </Toolbar>
-        </Box>
-      </Row>
-      {back && (
-        <Row>
-          <Button size="sm" variant="outline" onPress={() => backFrom(issues)}>
-            {back}
-          </Button>
-        </Row>
-      )}
+      <ThreadTop kind="issues" back={back} onBack={() => backFrom(issues)} />
       <HandOffProblem />
       {s.answer === null ? (
         <Skeleton lines={8} label={`Loading issue ${s.number}`} />
