@@ -42,8 +42,6 @@ function fresh(number: number): IssueState {
 const blankIssue = (): NewIssue => ({ title: '', body: '', labels: [], assignees: [], picking: null, busy: false, error: null })
 
 export const issue = atom<IssueState>(fresh(0))
-/** The issue open on screen, kept per workspace so the panel shows it again when it opens. */
-export const lastIssue = atom<{ repo: string; path: string; number: number } | null>('openIssue', null, { persist: 'workspace' })
 export const newIssue = atom<NewIssue>(blankIssue())
 
 // Opening another issue, the form or the list makes answers for the one before stale.
@@ -85,8 +83,6 @@ export async function loadIssue(): Promise<void> {
 
 /** Opens an issue by number, from the list, a mention or a new issue. */
 export function openIssue(number: number): Promise<void> {
-  const r = read(repo)
-  set(lastIssue, r?.ok ? { repo: r.nameWithOwner, path: r.path, number } : null)
   views++
   update(lists.issues, (s) => ({ ...s, open: String(number) }))
   set(issue, fresh(number))
@@ -96,7 +92,6 @@ export function openIssue(number: number): Promise<void> {
 /** Back to the list, asking for it again when a write changed an issue. */
 export function backToIssues(): Promise<void> | void {
   views++
-  set(lastIssue, null)
   back('issues')
   if (!listStale) return
   listStale = false
@@ -346,8 +341,8 @@ export async function react(subjectId: string, content: Reaction): Promise<void>
 const startedIn = atom<string | null>(null)
 
 /** The first time the Issues tab shows for a workspace: the issue Orca links to the workspace (one
- *  made from an issue), else the issue a past run left open, else the list. Once per workspace, so
- *  Back and tab switches stay where the person went. */
+ *  made from an issue), else the list. Once per workspace, so Back and tab switches stay where the
+ *  person went. */
 export async function startIssues(): Promise<void> {
   const r = read(repo)
   if (!r?.ok || read(tab) !== 'issues') return
@@ -359,14 +354,10 @@ export async function startIssues(): Promise<void> {
   // The person may have opened something, or moved to another workspace, meanwhile.
   if (read(startedIn) !== workspace || read(lists.issues).open || read(tab) !== 'issues') return
   if (links?.ok && links.issue) return openIssue(links.issue)
-  const last = read(lastIssue)
-  // Another clone of the repo is another workspace, with its own issue.
-  if (last && last.repo === r.nameWithOwner && last.path === r.path) return openIssue(last.number)
 }
 
 export function startNewIssue(): void {
   views++
-  set(lastIssue, null)
   set(newIssue, blankIssue())
   update(lists.issues, (s) => ({ ...s, open: 'new' }))
 }

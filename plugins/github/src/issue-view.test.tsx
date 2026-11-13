@@ -334,18 +334,12 @@ test('Refresh loads the open issue again', async () => {
   await view.unmount()
 })
 
-test('the open issue is shown again when the panel opens, for its own workspace only, until Back', async () => {
-  const h = host()
-  const view = await mount(panel, { host: h, persisted: { workspace: { openIssue: { repo: 'octo/app', path: '/code/app', number: 120 } } } })
-  assert.deepEqual(h.last('issue.get'), { number: 120 })
-  assert.ok(view.find({ type: 'Text', text: 'Export CSV drops rows past 10k' }))
-  await view.press({ text: '← Back to issues' })
-  assert.equal(view.persisted.workspace.openIssue, null)
+test('with no linked issue the tab starts on the list, and a viewed issue is not opened again', async () => {
+  const h = host({ 'repo.links': { ok: true, issue: null, pull: null } })
+  const view = await openIssue120(h)
   await view.unmount()
-
-  const other = host()
-  const again = await mount(panel, { host: other, persisted: { workspace: { openIssue: { repo: 'octo/app', path: '/code/other', number: 7 } } } })
-  assert.equal(other.last('issue.get'), undefined)
+  const again = await mount(panel, { host: h })
+  assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, 1)
   assert.equal(again.findAll({ type: 'ListItem' }).length, 3)
   await again.unmount()
 })
@@ -427,9 +421,9 @@ test('a workspace made from an issue opens on that issue, once; Back and tab swi
   await view.unmount()
 })
 
-test('the linked issue waits for the Issues tab, and wins over the issue a past run left open', async () => {
+test('the linked issue waits for the Issues tab', async () => {
   const h = host({ 'repo.links': { ok: true, issue: 4, pull: 13 }, 'pulls.list': itemPage([], 0, null) })
-  const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'pulls' }, workspace: { openIssue: { repo: 'octo/app', path: '/code/app', number: 120 } } } })
+  const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'pulls' } } })
   assert.equal(h.last('issue.get'), undefined)
   await view.select({ type: 'Tabs' }, 'issues')
   assert.deepEqual(h.asked.filter((a) => a.name === 'issue.get').map((a) => a.input), [{ number: 4 }])
@@ -465,8 +459,7 @@ test('a new issue answered after the focus moved to another repo opens nothing t
   await view.press({ text: 'Create issue' })
   assert.equal(h.last('issue.get'), undefined)
   assert.ok(view.find({ text: 'octo/lib' }))
-  assert.equal(view.persisted.workspace.openIssue ?? null, null)
-  await view.unmount()
+    await view.unmount()
 })
 
 test('an issue answered after the focus moved to another repo is dropped', async () => {

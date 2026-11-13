@@ -10,8 +10,8 @@ const lists = {
   'runs.list': runPage(runRows, 296, '2')
 }
 const empty = itemPage([], 0, null)
-// An issue left open by an earlier run opens again, which is how these scenarios show one.
-const openIssue = { workspace: { openIssue: { repo: 'octo/app', path: '/code/app', number: 120 } } }
+// A workspace made from issue 120 opens on it, which is how these scenarios show an issue.
+const linked = { 'repo.links': { ok: true as const, issue: 120, pull: null } }
 const longTimeline = issueDetail({
   head: Array.from({ length: 3 }, (_, i) => commentItem(i + 1)),
   tail: [commentItem(40, { body: 'Shipped in 1.9.', reactions: [{ content: 'ROCKET', count: 3, viewerHasReacted: true, users: ['ana', 'olu'] }] })],
@@ -22,10 +22,11 @@ const longTimeline = issueDetail({
 
 export default defineCheck({
   issues: { requests: lists },
-  'issue-detail': { requests: { ...lists, 'issue.get': { ok: true, issue: issueDetail() } }, persisted: openIssue },
+  'issue-detail': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: issueDetail() } } },
   'issue-closed': {
     requests: {
       ...lists,
+      ...linked,
       'issue.get': {
         ok: true,
         issue: issueDetail({
@@ -34,12 +35,11 @@ export default defineCheck({
           head: [...issueDetail().head, { kind: 'closed', id: 'CE_1', actor: 'mai-t', createdAt: Date.UTC(2026, 10, 12, 8, 0), reason: 'not_planned' }]
         })
       }
-    },
-    persisted: openIssue
+    }
   },
-  'issue-long-timeline': { requests: { ...lists, 'issue.get': { ok: true, issue: longTimeline } }, persisted: openIssue },
-  'issue-read-only': { requests: { ...lists, 'issue.get': { ok: true, issue: issueDetail({ canEdit: false }) } }, persisted: openIssue },
-  'issue-not-found': { requests: { ...lists, 'issue.get': failed('not_found', 'Could not resolve to an Issue with the number of 120.') }, persisted: openIssue },
+  'issue-long-timeline': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: longTimeline } } },
+  'issue-read-only': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: issueDetail({ canEdit: false }) } } },
+  'issue-not-found': { requests: { ...lists, ...linked, 'issue.get': failed('not_found', 'Could not resolve to an Issue with the number of 120.') } },
   'pull-requests': { requests: lists, persisted: { plugin: { tab: 'pulls' } } },
   actions: { requests: lists, persisted: { plugin: { tab: 'runs' } } },
   'empty-repo': { requests: { 'repo.get': repoOk, 'issues.list': empty, 'pulls.list': empty, 'runs.list': empty } },
