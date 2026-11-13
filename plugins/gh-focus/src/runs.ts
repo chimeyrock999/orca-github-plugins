@@ -3,7 +3,7 @@
 import { GhError, type Gh } from './gh'
 import { runRow, runState, type RepoRef, type RunJson } from './lists'
 import { parseLog, trimSteps } from './logs'
-import type { DispatchForm, LogStep, RunDetail, RunJob, RunLogs } from './protocol'
+import type { DispatchForm, LogStep, PendingDeployment, RunArtifact, RunDetail, RunJob, RunLogs } from './protocol'
 import { dispatchInputs } from './workflow-inputs'
 
 /** Logs download a zip and can be long: more time and output than a list call gets (Orca's own
@@ -15,6 +15,8 @@ export const LOG_BUFFER = 64 * 1024 * 1024
 export const FAILED_JOBS = 5
 /** JSON bytes a run may take in one answer or post; a big matrix drops steps to fit (256 KiB limit). */
 export const RUN_BYTES = 200_000
+/** Artifacts one run answer lists (GitHub's largest page): the rest are counted, and open on GitHub. */
+export const ARTIFACTS = 100
 /** Writes call the API once, but gh may be slow to start: as long as issue writes get. */
 const WRITE_MS = 60_000
 /** How often a watched run is asked for: every 10 s while it changes, doubling up to 60 s while it
@@ -94,22 +96,66 @@ export async function getRun(gh: Gh, repo: RepoRef, id: number, signal?: AbortSi
     throw new GhError('gh_failed', `Unexpected gh output: ${JSON.stringify(run).slice(0, 200)}`)
   }
   const jobs = pages.flatMap((p) => p?.jobs ?? []).map(jobOf)
-  const waitingFor = run.status === 'waiting' ? await pendingEnvironments(gh, repo, path, signal) : []
+  const done = run.status === 'completed'
+  const [waitingFor, artifacts] = await Promise.all([
+    run.status === 'waiting' ? pendingDeployments(gh, repo, path, signal).catch(skipUnread<PendingDeployment>) : [],
+    done ? runArtifacts(gh, repo, path, signal).catch((error) => ({ artifacts: skipUnread<RunArtifact>(error), moreArtifacts: 0 })) : noArtifacts
+  ])
   return {
-    run: fitRun({ ...runRow(run), attempt: run.run_attempt ?? 1, workflowId: run.workflow_id ?? 0, done: run.status === 'completed', jobs, waitingFor })
+    run: fitRun({ ...runRow(run), attempt: run.run_attempt ?? 1, workflowId: run.workflow_id ?? 0, done, jobs, waitingFor, ...artifacts })
   }
 }
 
-/** The environments a waiting run needs an approval for. */
-async function pendingEnvironments(gh: Gh, repo: RepoRef, path: string, signal?: AbortSignal): Promise<string[]> {
-  try {
-    const out = (await gh(['api', `${path}/pending_deployments`], { cwd: repo.path, signal, json: true })) as { environment?: { name?: string } }[]
-    return Array.isArray(out) ? out.map((d) => d.environment?.name).filter((n): n is string => !!n) : []
-  } catch (error) {
-    // Waiting on something else (a concurrency group), or no right to see it: the run still shows.
-    if (error instanceof GhError && error.code !== 'cancelled') return []
-    throw error
+/** A part of the run that could not be read is left out; the run still shows. */
+function skipUnread<T>(error: unknown): T[] {
+  if (error instanceof GhError && error.code !== 'cancelled') return []
+  throw error
+}
+
+type PendingJson = { environment?: { id?: number; name?: string }; current_user_can_approve?: boolean }
+
+/** The environments a waiting run needs an approval for. None when it waits on something else, such
+ *  as a concurrency group. */
+async function pendingDeployments(gh: Gh, repo: RepoRef, path: string, signal?: AbortSignal): Promise<PendingDeployment[]> {
+  const out = (await gh(['api', `${path}/pending_deployments`], { cwd: repo.path, signal, json: true })) as PendingJson[]
+  if (!Array.isArray(out)) return []
+  return out.flatMap(({ environment: e, current_user_can_approve }) =>
+    typeof e?.id === 'number' && e.name ? [{ id: e.id, name: e.name, canApprove: current_user_can_approve === true }] : []
+  )
+}
+
+type ArtifactJson = { id: number; name: string; size_in_bytes: number; expired: boolean; expires_at: string | null }
+type Artifacts = Pick<RunDetail, 'artifacts' | 'moreArtifacts'>
+const noArtifacts: Artifacts = { artifacts: [], moreArtifacts: 0 }
+
+/** The first page of a run's artifacts, so the run stays one panel message; the rest are counted. */
+async function runArtifacts(gh: Gh, repo: RepoRef, path: string, signal?: AbortSignal): Promise<Artifacts> {
+  const out = (await gh(['api', `${path}/artifacts?per_page=${ARTIFACTS}`], { cwd: repo.path, signal, json: true })) as {
+    total_count?: number
+    artifacts?: ArtifactJson[]
   }
+  const artifacts = (Array.isArray(out?.artifacts) ? out.artifacts : [])
+    .slice(0, ARTIFACTS)
+    .map((a) => ({ id: a.id, name: a.name, bytes: a.size_in_bytes, expired: a.expired === true, expiresAt: time(a.expires_at) }))
+  return { artifacts, moreArtifacts: Math.max(0, (out?.total_count ?? 0) - artifacts.length) }
+}
+
+/** Approves or rejects, in one write, the environments the panel showed as this login's to review.
+ *  GitHub asks for a comment; the panel sends none, as GitHub's own form allows. */
+export async function reviewDeployments(
+  gh: Gh,
+  repo: RepoRef,
+  input: { id: number; approve: boolean; environments: number[] },
+  signal?: AbortSignal
+): Promise<object> {
+  const path = runPath(repo, input.id)
+  const ids = (Array.isArray(input.environments) ? input.environments : []).filter((e) => Number.isSafeInteger(e) && e > 0)
+  if (ids.length === 0) throw new GhError('gh_failed', 'Choose a deployment to review.')
+  const args = ['api', '-X', 'POST', `${path}/pending_deployments`]
+  for (const id of ids) args.push('-F', `environment_ids[]=${id}`)
+  args.push('-f', `state=${input.approve ? 'approved' : 'rejected'}`, '-f', 'comment=')
+  await gh(args, { cwd: repo.path, signal, timeoutMs: WRITE_MS, json: true })
+  return {}
 }
 
 function logOf(gh: Gh, repo: RepoRef, job: number, which: '--log' | '--log-failed', signal?: AbortSignal): Promise<string> {

@@ -22,7 +22,7 @@ import { listIssues, listLabels, listRuns, listWorkflows, type RepoRef } from '.
 import type { Answer, OrcaView } from './protocol'
 import { branchPull, commentOnPull, editPull, getPull, pullTimeline, reviewPull } from './pulls'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './repo'
-import { cancelRun, dispatchWorkflow, getRun, rerunRun, runLogs, watchRun, workflowForm, type WatchDeps } from './runs'
+import { cancelRun, dispatchWorkflow, getRun, rerunRun, reviewDeployments, runLogs, watchRun, workflowForm, type WatchDeps } from './runs'
 
 export type WorkerDeps = RepoDeps & {
   gh: Gh
@@ -120,6 +120,7 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   orca.panels.handle('run.logs', (input, { signal }) => inRepo(tracker, (repo) => runLogs(deps.gh, repo, input, signal)))
   orca.panels.handle('run.rerun', (input, { signal }) => inRepo(tracker, (repo) => rerunRun(deps.gh, repo, input, signal)))
   orca.panels.handle('run.cancel', ({ id }, { signal }) => inRepo(tracker, (repo) => cancelRun(deps.gh, repo, id, signal)))
+  orca.panels.handle('run.review', (input, { signal }) => inRepo(tracker, (repo) => reviewDeployments(deps.gh, repo, input, signal)))
   // Each update goes to the panel that asked only: another panel may show another run.
   orca.panels.handle('run.watch', (input, { signal, panel }) =>
     inRepo(tracker, (repo) => watchRun(deps.gh, repo, input, signal, { ...deps.watch, post: (run) => orca.panels.post('run.progress', { run }, { panel: panel.id }) }))
