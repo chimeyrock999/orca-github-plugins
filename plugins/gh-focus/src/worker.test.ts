@@ -138,18 +138,41 @@ test('an answer for a focus that already moved on is dropped', async () => {
   await worker.deactivate()
 })
 
-test('a failed host call is an answer, not a thrown error', async () => {
+test('a failed host call is an answer that keeps what Orca said', async () => {
+  const cases: [Error, unknown][] = [
+    [hostError('unavailable', 'Orca is restarting'), { code: 'unavailable', message: 'Orca is restarting' }],
+    [hostError('timeout', 'no answer'), { code: 'timeout', message: 'no answer' }],
+    [hostError('capability_denied', 'workspace:read'), { code: 'not_allowed', message: 'workspace:read' }],
+    [hostError('rate_limited', 'slow down', 5_000), { code: 'host_rate_limited', message: 'slow down', retryAfterMs: 5_000 }],
+    [new Error('socket closed'), { code: 'host_failed', message: 'socket closed' }]
+  ]
+  for (const [error, expected] of cases) {
+    const host = mockHost({
+      results: {
+        'workspace.readContext': { branch: 'main', displayName: 'gl', terminals: [] },
+        'workspace.list': () => {
+          throw error
+        }
+      }
+    })
+    const worker = await mountWorker(repoWorker(), { host })
+    assert.deepEqual(await worker.request('repo.get'), { ok: false, error: expected })
+    await worker.deactivate()
+  }
+})
+
+test('repo.pick answers with Orca code when the focus cannot be read', async () => {
   const host = mockHost({
     results: {
-      'workspace.readContext': { branch: 'main', displayName: 'gl', terminals: [] },
-      'workspace.list': () => {
-        throw hostError('unavailable', 'Orca is restarting')
-      }
+      'workspace.readContext': () => {
+        throw hostError('consent_required', 'needs consent')
+      },
+      'workspace.list': { workspaces, truncated: false }
     }
   })
   const worker = await mountWorker(repoWorker(), { host })
-  const answer = await worker.request('repo.get')
-  assert.equal(!answer.ok && answer.error.code, 'host_failed')
+  const answer = await worker.request('repo.pick', { path: '/code/app' })
+  assert.deepEqual(answer, { ok: false, error: { code: 'not_allowed', message: 'needs consent' } })
   await worker.deactivate()
 })
 

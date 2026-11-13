@@ -3,6 +3,7 @@
 import type { OrcaWorkerApi } from 'orca/worker'
 import { toFailure, type Gh } from './gh'
 import { resolveFocus, stripRef, type FocusContext, type FocusDeps } from './focus'
+import { hostFailure } from './host-error'
 import type { Answer, RepoAnswer } from './protocol'
 
 export type GhRepoAnswer = Answer<{ nameWithOwner: string; url: string }>
@@ -82,8 +83,9 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
     }
   }
 
+  // A rejected Orca call (workspace.readContext, workspace.list, storage) keeps Orca's code.
   function hostFailed(error: unknown): RepoAnswer {
-    return { ok: false, error: { code: 'host_failed', message: String((error as Error)?.message ?? error) } }
+    return { ok: false, error: hostFailure(error) }
   }
 
   async function resolve(context: FocusContext | null): Promise<RepoAnswer> {

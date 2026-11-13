@@ -40,7 +40,7 @@ The Actions tab starts on the runs of the focused workspace's branch (every even
 - `src/views.tsx`, `src/thread-view.tsx` (posts, reactions, the timeline, metadata lines and pickers), `src/issue-view.tsx`, `src/issue-forms.tsx`, `src/pull-view.tsx`, `src/run-view.tsx`, `src/parts.tsx`, `src/panel.tsx`: the components.
 - `src/panel.check.ts`: `orca plugin check` scenarios, with the worker stubbed: no workspace, several workspaces to pick from, not a GitHub repo, gh logged out, empty repo, rate limited, each tab with rows, runs with one queued; through a workspace linked to issue 120, an issue open, closed, with a long timeline, read only and not found; a branch with no pull request; and through a workspace whose pull request is 131, one with failing checks and reviews, your own, ready to merge, with conflicts, a draft without checks, closed, merged and not found. Scenarios cannot press, so reviews and hand-offs are covered by `src/pull-view.test.tsx`.
 
-Error codes: `no_workspace`, `workspace_not_found`, `ambiguous_workspace` (with `candidates`), `remote_workspace`, `host_failed`, `not_a_repo`, `gh_missing`, `gh_logged_out`, `not_found`, `rate_limited`, `timeout`, `cancelled`, `bad_query`, `gh_failed`.
+Error codes: `no_workspace`, `workspace_not_found`, `ambiguous_workspace` (with `candidates`), `remote_workspace`, `host_failed` (Orca failed with no code; with one, `not_allowed`, `host_rate_limited`, `unavailable`, `timeout` or `action_failed`), `not_a_repo`, `gh_missing`, `gh_logged_out`, `not_found`, `rate_limited`, `timeout`, `cancelled`, `bad_query`, `gh_failed`.
 
 ## Develop
 
