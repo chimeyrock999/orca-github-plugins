@@ -1,6 +1,7 @@
 // One pull request as GitHub shows it: title, state, base ← head, its review decision, merge state
 // and checks in one line each (Orca's words), reviewers, labels and assignees, the body, the timeline
-// of comments, reviews and events, and a box to comment or review; your own goes ready or back to draft.
+// of comments, reviews and events, and a box to comment or review; your own goes ready or back to
+// draft.
 import {
   Box,
   Button,

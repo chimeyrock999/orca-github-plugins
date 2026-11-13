@@ -223,6 +223,17 @@ test('a low budget is told to the panels and kept answers live longer', async ()
   await worker.deactivate()
 })
 
+test('ready or back to draft drops the kept items: the pull request and the list are asked for again', async () => {
+  const hub = github()
+  const { worker } = await mount(hub.gh)
+  await worker.request('issue.get', { number: 8 })
+  await worker.request('pull.ready', { number: 21, ready: true })
+  const before = hub.calls.length
+  await worker.request('issue.get', { number: 8 })
+  assert.equal(hub.calls.length - before, 1)
+  await worker.deactivate()
+})
+
 test('a run still going is not kept, so reopening it never goes back; a finished one is', async () => {
   let status = 'in_progress'
   let reads = 0

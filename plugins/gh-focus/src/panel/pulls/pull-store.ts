@@ -1,7 +1,8 @@
 // The Pull requests tab: the pull requests linked to the focused workspace (or its branch's), each a
-// thread (src/panel/thread/thread-store.ts) with what only pull requests have, a review (approve, request changes
-// or comment) and, on your own, draft or ready for review. Orca's Tasks page lists, searches and filters a repo's pull requests, and its own pull
-// request views close, reopen and merge them.
+// thread (src/panel/thread/thread-store.ts) with what only pull requests have, a review (approve,
+// request changes or comment) and, on your own, draft or ready for review. Orca's Tasks page lists,
+// searches and filters a repo's pull requests, and its own pull request views close, reopen and
+// merge them.
 import { atom, plugin, read, set, update } from 'orca'
 import type { PullDetail, ReviewEvent } from '../../shared/protocol'
 import { atRepo, makeThread, WRITE, type ThreadState } from '../thread/thread-store'
