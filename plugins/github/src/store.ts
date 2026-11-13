@@ -2,6 +2,7 @@
 // search, the page (a stack of cursors, so Previous goes back without asking GitHub for one), the
 // answer, and the row open in detail.
 import { atom, plugin, read, set, update, type Atom } from 'orca'
+import { hostFailure } from './host-error'
 import type { Answer, ErrorCode, IssueRow, ItemPage, ItemSort, Page, PanelError, PullRow, RepoAnswer, RunRow } from './protocol'
 
 export type Kind = 'issues' | 'pulls' | 'runs'
@@ -77,31 +78,14 @@ export function rowKey(row: AnyRow): string {
 const loads: Record<Kind, number> = { issues: 0, pulls: 0, runs: 0 }
 // Tabs whose first page was asked for since the repo was set.
 const started = new Set<Kind>()
+// Goes up each time the repo answer changes, so what started for a workspace starts again.
+let repoChanges = 0
+/** How many times the repo answer has changed in this panel run. */
+export const repoEpoch = () => repoChanges
 
-// Orca's rejection codes as the panel's: kept where the panel has words for them, its permission
-// answers as not_allowed, and its rate limit as its own (GitHub's comes as an answer, never a
-// rejection). Any other code is a request the plugin got wrong, which Orca's typings say to treat
-// as action_failed.
-const HOST_CODES = new Map<string, ErrorCode>([
-  ['timeout', 'timeout'],
-  ['cancelled', 'cancelled'],
-  ['too_large', 'too_large'],
-  ['unavailable', 'unavailable'],
-  ['action_failed', 'action_failed'],
-  ['rate_limited', 'host_rate_limited'],
-  ['capability_denied', 'not_allowed'],
-  ['consent_required', 'not_allowed'],
-  ['not_permitted', 'not_allowed']
-])
-
-/** A rejected plugin.request as a failed answer, keeping what Orca's code means; one with no code
- *  is Orca not answering. */
+/** A rejected plugin.request as a failed answer, keeping what Orca's code means. */
 export function requestFailed(error: unknown): { ok: false; error: PanelError } {
-  const e = error as { code?: unknown; message?: unknown; retryAfterMs?: unknown }
-  const code: ErrorCode = typeof e?.code !== 'string' ? 'host_failed' : (HOST_CODES.get(e.code) ?? 'action_failed')
-  const failure: PanelError = { code, message: String(e?.message ?? error) }
-  if (typeof e?.retryAfterMs === 'number') failure.retryAfterMs = e.retryAfterMs
-  return { ok: false, error: failure }
+  return { ok: false, error: hostFailure(error) }
 }
 
 // Failures that say nothing of whether gh ran: no answer in time, the panel stopped waiting while
@@ -119,7 +103,7 @@ function ask(kind: Kind, s: ListState): Promise<Answer<ListPage>> {
   const answer =
     kind === 'runs'
       ? plugin.request('runs.list', { query: s.query, after, filters: s.filters, scope: s.scope })
-      : plugin.request(kind === 'issues' ? 'issues.list' : 'pulls.list', {
+      : plugin.request('issues.list', {
           state: s.state,
           query: s.query,
           after,
@@ -130,8 +114,10 @@ function ask(kind: Kind, s: ListState): Promise<Answer<ListPage>> {
   return (answer as Promise<Answer<ListPage>>).catch(requestFailed)
 }
 
-/** Asks for the page the list's cursors point at, dropping it if a newer load started. */
+/** Asks for the page the list's cursors point at, dropping it if a newer load started. The Pull
+ *  requests tab has no list: it shows the workspace's pull request, and Orca's Tasks page the rest. */
 export async function load(kind: Kind): Promise<void> {
+  if (kind === 'pulls') return
   const mine = ++loads[kind]
   const list = lists[kind]
   update(list, (s) => ({ ...s, answer: null }))
@@ -222,6 +208,7 @@ export function setRepo(answer: RepoAnswer): Promise<void> | void {
   const same = sameRepo(read(repo), answer)
   set(repo, answer)
   if (same) return
+  repoChanges++
   started.clear()
   choicesFor++
   set(choices, noChoices())
@@ -261,8 +248,8 @@ export function githubUrl(): string | null {
   if (!r?.ok) return null
   const kind = read(tab)
   const s = read(lists[kind])
-  // An issue opens by number, so it need not be on the page.
-  if (kind === 'issues' && s.open && /^\d+$/.test(s.open)) return `${r.url}/issues/${s.open}`
+  // Issues and pull requests open by number, so they need not be on the page.
+  if (kind !== 'runs' && s.open && /^\d+$/.test(s.open)) return `${r.url}/${kind === 'issues' ? 'issues' : 'pull'}/${s.open}`
   if (s.open && s.answer?.ok) {
     const row = s.answer.rows.find((x) => rowKey(x) === s.open)
     if (row) return row.url

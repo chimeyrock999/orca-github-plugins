@@ -248,19 +248,46 @@ export type TimelineState = {
   id: string
   actor: string | null
   createdAt: number
-  /** Closed events only. */
+  /** Closed events of issues only; null for a reopened event or a pull request. */
   reason: 'completed' | 'not_planned' | 'duplicate' | null
 }
-export type TimelineItem = TimelineComment | TimelineMention | TimelineState
+export type TimelineItem = TimelineComment | TimelineMention | TimelineState | TimelineReview | TimelineMerged
 
-/** One issue with the start and the end of its timeline, as GitHub shows a long one: `head` from the
- *  start, `next` the cursor after it (null once it meets `tail`), `tail` the latest items. */
-export type IssueDetail = {
+export type ReviewState = 'approved' | 'changes_requested' | 'commented' | 'dismissed'
+/** A submitted pull request review: its body, and how many comments it left on the diff (shown
+ *  on GitHub only). */
+export type TimelineReview = {
+  kind: 'review'
+  id: string
+  url: string
+  author: string | null
+  state: ReviewState
+  body: string
+  truncated: boolean
+  createdAt: number
+  /** Comments on the diff. */
+  comments: number
+  reactions: ReactionGroup[]
+}
+export type TimelineMerged = {
+  kind: 'merged'
+  id: string
+  actor: string | null
+  createdAt: number
+  /** Short sha of the merge commit, and the branch it went into. */
+  commit: string
+  into: string
+}
+
+/** What an issue and a pull request share: the body, labels, assignees and milestone, and the start
+ *  and the end of the timeline, as GitHub shows a long one: `head` from the start, `next` the cursor
+ *  after it (null once it meets `tail`), `tail` the latest items. */
+export type ThreadDetail = {
+  /** GraphQL node id, for reactions. */
   id: string
   number: number
   title: string
   url: string
-  state: IssueState
   author: string | null
   body: string
   truncated: boolean
@@ -280,6 +307,39 @@ export type IssueDetail = {
   /** The gh login, so the viewer's own reactions read as You. */
   viewer: string | null
 }
+
+export type IssueDetail = ThreadDetail & { state: IssueState }
+
+/** Whether a pull request can be merged now, from GitHub's merge state: `unstable` is a passing
+ *  required set with other checks failing, `unknown` while GitHub is still working it out. */
+export type MergeState = 'clean' | 'conflicts' | 'behind' | 'blocked' | 'unstable' | 'draft' | 'unknown'
+export type ReviewDecision = 'approved' | 'changes_requested' | 'review_required' | null
+/** The head commit's checks counted as Orca counts them, so the panel and Orca's Checks tab agree:
+ *  skipped passes; cancelled and those that need an action (an approval) are told apart from the
+ *  failing; neutral and stale are neither. */
+export type CheckCounts = { passed: number; failed: number; cancelled: number; needsAction: number; pending: number; neutral: number }
+
+export type PullDetail = ThreadDetail & {
+  state: PullState
+  /** The branch it merges into. */
+  baseRef: string
+  /** The branch it merges from, as `owner:branch` when that is in a fork. */
+  headRef: string
+  mergedAt: number | null
+  merge: MergeState
+  review: ReviewDecision
+  /** Reviews asked for and not given yet: logins, or team names. */
+  reviewers: string[]
+  /** Counted from GitHub's rollup, every check; null when the head commit has none. Orca's Checks
+   *  tab lists them, with logs and reruns. */
+  checks: CheckCounts | null
+}
+
+/** Orca's own views the panel hands off to. */
+export type OrcaView = 'tasks' | 'checks'
+
+/** The review `gh pr review` submits. */
+export type ReviewEvent = 'approve' | 'request_changes' | 'comment'
 
 export type IssueEdit = {
   number: number
@@ -304,12 +364,12 @@ declare module 'orca' {
     /** Forgets the pick for the focused branch and name. */
     'repo.unpick': { output: RepoAnswer }
     /** The issue and pull request Orca links to the focused workspace (one made from them), when
-     *  they are of its repo; null when there is none or Orca's CLI does not say. */
-    'repo.links': { output: Answer<{ issue: number | null; pull: number | null }> }
+     *  they are of its repo; null when there is none or Orca's CLI does not say. With `branch` and
+     *  no linked pull request, `pull` is the one gh finds for the workspace's branch (a gh call, so
+     *  only the Pull requests tab asks for it). */
+    'repo.links': { input: { branch?: boolean }; output: Answer<{ issue: number | null; pull: number | null }> }
     /** One page of the focused repo's issues, newest first. */
     'issues.list': { input: ItemListInput; output: Answer<ItemPage<IssueRow>> }
-    /** One page of the focused repo's pull requests, newest first. */
-    'pulls.list': { input: ItemListInput; output: Answer<ItemPage<PullRow>> }
     /** One page of the focused repo's workflow runs, newest first. */
     'runs.list': { input: RunListInput; output: Answer<RunPage> }
     /** The focused repo's label names, for the label filter. */
@@ -329,6 +389,15 @@ declare module 'orca' {
     'issue.create': { input: IssueCreate; output: Answer<{ number: number; url: string }> }
     /** Adds or removes the viewer's reaction on an issue or comment, by its node id. */
     'reaction.set': { input: { subjectId: string; content: Reaction; on: boolean }; output: Done }
+    /** One pull request with its checks, body and the start and end of its timeline. */
+    'pull.get': { input: { number: number }; output: Answer<{ pull: PullDetail }> }
+    'pull.timeline': { input: { number: number; after: string }; output: Answer<{ items: TimelineItem[]; next: string | null }> }
+    'pull.comment': { input: { number: number; body: string }; output: Done }
+    'pull.edit': { input: IssueEdit; output: Done }
+    /** Approve, request changes (with a body) or comment (with a body). */
+    'pull.review': { input: { number: number; event: ReviewEvent; body: string }; output: Done }
+    /** Shows one of Orca's own views: its Tasks page, or the Checks tab of the right sidebar. */
+    'orca.show': { input: { view: OrcaView }; output: Done }
     /** Logins that can be assigned in the focused repo. */
     'assignees.list': { output: Answer<{ logins: string[] }> }
     /** The focused repo's workflows, for the workflow filter. */

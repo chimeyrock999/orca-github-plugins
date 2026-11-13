@@ -7,36 +7,32 @@ import {
   EmptyState,
   IconButton,
   Input,
-  KeyValue,
   List,
   ListItem,
   read,
   RelativeTime,
   Row,
   Select,
-  shell,
   Skeleton,
   Stack,
   Text,
-  Toolbar,
-  type KeyValueItem
+  Toolbar
 } from 'orca'
-import { count, duration, issueLook, itemEvent, localTime, pageLine, pullLook, runCause, runLook, type Look } from './look'
+import { count, duration, issueLook, itemEvent, pageLine, runCause, runLook, type Look } from './look'
 import { Glyph, Problem } from './parts'
 import { NewIssueView } from './issue-forms'
 import { openIssue, startNewIssue } from './issue-store'
 import { IssueView } from './issue-view'
 import { DISPATCH, openRun, startDispatch } from './run-store'
 import { DispatchView, Requested, RunView } from './run-view'
+import { PullsTab } from './pull-view'
 import { PAGE_SIZE, type IssueRow, type ItemSort, type PullRow, type RunRow } from './protocol'
 import {
-  back,
   choices,
   clearFilters,
   filterCount,
   lists,
   next,
-  openRow,
   previous,
   rowKey,
   search,
@@ -87,14 +83,12 @@ function RunMeta({ row }: { row: RunRow }) {
 }
 
 function lookOf(kind: Kind, row: IssueRow | PullRow | RunRow): Look {
-  if (kind === 'runs') return runLook(row as RunRow)
-  return kind === 'pulls' ? pullLook(row as PullRow) : issueLook(row as IssueRow)
+  return kind === 'runs' ? runLook(row as RunRow) : issueLook(row as IssueRow)
 }
 
+/** An issue opens by number, a run by id; the Pull requests tab has no list. */
 function press(kind: Kind, row: IssueRow | PullRow | RunRow): unknown {
-  if (kind === 'issues') return openIssue((row as IssueRow).number)
-  if (kind === 'runs') return openRun((row as RunRow).id)
-  return openRow(kind, rowKey(row))
+  return kind === 'issues' ? openIssue((row as IssueRow).number) : openRun((row as RunRow).id)
 }
 
 function RowItem({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow }) {
@@ -322,56 +316,13 @@ function ListView({ kind, s }: { kind: Kind; s: ListState }) {
   )
 }
 
-function details(item: IssueRow | PullRow): KeyValueItem[] {
-  const items: KeyValueItem[] = [
-    { label: 'Author', value: item.author },
-    { label: 'Labels', value: item.labels.join(', ') || 'None' }
-  ]
-  if ('branch' in item) items.push({ label: 'Branch', value: item.branch, code: true })
-  items.push({ label: 'Opened', value: localTime(item.createdAt) })
-  if ('mergedAt' in item && item.mergedAt) items.push({ label: 'Merged', value: localTime(item.mergedAt) })
-  else if (item.closedAt) items.push({ label: 'Closed', value: localTime(item.closedAt) })
-  return items
-}
-
-function Detail({ kind, row }: { kind: Kind; row: IssueRow | PullRow }) {
-  const look = lookOf(kind, row)
-  return (
-    <Stack gap="sm">
-      <Row>
-        <Button size="sm" variant="outline" onPress={() => back(kind)}>
-          {`← Back to ${NAMES[kind].plural}`}
-        </Button>
-      </Row>
-      {/* Heading level 3 draws as a small caps label; the title reads as a title. */}
-      <Text size="md" weight="semibold">
-        {row.title}
-      </Text>
-      <Row gap="xs" align="center">
-        <Glyph look={look} />
-        <Text size="sm" tone={look.tone}>
-          {look.label}
-        </Text>
-        <Text size="sm" muted>
-          {`#${row.number}`}
-        </Text>
-      </Row>
-      <KeyValue items={details(row)} />
-      <Row>
-        <Button size="sm" icon="open-external" onPress={() => shell.openExternal(row.url)}>
-          Open on GitHub
-        </Button>
-      </Row>
-    </Stack>
-  )
-}
-
 export function KindView({ kind }: { kind: Kind }) {
   const s = read(lists[kind])
+  // The Pull requests tab has no list: the workspace's pull request, or why there is none.
+  if (kind === 'pulls') return <PullsTab />
   // An issue opens by number, so it shows whether or not it is on the page.
   if (kind === 'issues' && s.open) return s.open === 'new' ? <NewIssueView /> : <IssueView />
   // A run opens by id, so it shows while the page is loading again too.
   if (kind === 'runs' && s.open) return s.open === DISPATCH ? <DispatchView /> : <RunView />
-  const row = s.open && s.answer?.ok ? s.answer.rows.find((r) => rowKey(r) === s.open) : undefined
-  return row ? <Detail kind={kind} row={row as IssueRow | PullRow} /> : <ListView kind={kind} s={s} />
+  return <ListView kind={kind} s={s} />
 }
