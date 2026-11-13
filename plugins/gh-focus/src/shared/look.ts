@@ -178,6 +178,12 @@ export function pageLine(page: number, total: number, limit: number | null, page
   return `Page ${page} of ${pages} · ${count(total)} total${capped}`
 }
 
+/** What the low-budget callout says: how much is left, until when, and what the panel does about it. */
+export function budgetWords(b: { limit: number; remaining: number; resetAt: number }): string {
+  const until = new Date(b.resetAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return `${count(b.remaining)} of ${count(b.limit)} requests left until ${until}, shared with Orca. The panel asks GitHub less often until then; Refresh still asks now.`
+}
+
 /** A moment as the viewer's locale writes a date and time; null stays null. */
 export const localTime = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toLocaleString())
 

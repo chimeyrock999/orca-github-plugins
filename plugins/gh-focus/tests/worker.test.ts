@@ -297,10 +297,10 @@ test('issue requests run gh in the focused repo, and answer the repo error witho
     return ''
   }
   const worker = await mountWorker(listWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
-  assert.deepEqual(await worker.request('issue.comment', { number: 8, body: 'Fixed in #131.' }), { ok: true })
+  assert.deepEqual(await worker.request('issue.comment', { number: 8, body: 'Fixed in #131.' }), { ok: true, comment: null })
   assert.deepEqual(await worker.request('issue.close', { number: 8, reason: 'not planned' }), { ok: true })
   assert.deepEqual(calls.map((c) => [c.cwd, c.args.slice(0, 2)]), [
-    ['/work/spike', ['issue', 'comment']],
+    ['/work/spike', ['api', '-X']],
     ['/work/spike', ['issue', 'close']]
   ])
   // A refused write is an answer too.
@@ -321,7 +321,7 @@ test('pull request requests run gh pr in the focused repo, and answer the repo e
     return args[0] === 'api' ? { data: { repository: { pullRequest: null } } } : ''
   }
   const worker = await mountWorker(listWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
-  assert.deepEqual(await worker.request('pull.comment', { number: 13, body: 'Looks good.' }), { ok: true })
+  assert.deepEqual(await worker.request('pull.comment', { number: 13, body: 'Looks good.' }), { ok: true, comment: null })
   assert.deepEqual(await worker.request('pull.review', { number: 13, event: 'approve', body: '' }), { ok: true })
   assert.deepEqual(await worker.request('pull.edit', { number: 13, addLabels: ['bug'] }), { ok: true })
   const missing = await worker.request('pull.get', { number: 13 })
@@ -329,7 +329,7 @@ test('pull request requests run gh pr in the focused repo, and answer the repo e
   const page = await worker.request('pull.timeline', { number: 13, after: 'c1' })
   assert.equal(!page.ok && page.error.code, 'not_found')
   assert.deepEqual(calls.map((c) => [c.cwd, c.args.slice(0, 2)]), [
-    ['/work/spike', ['pr', 'comment']],
+    ['/work/spike', ['api', '-X']],
     ['/work/spike', ['pr', 'review']],
     ['/work/spike', ['pr', 'edit']],
     ['/work/spike', ['api', 'graphql']],
@@ -399,10 +399,14 @@ test('repo.links: with no linked pull request of this repo, the branch pull requ
   // Orca's CLI says nothing: gh still finds the branch's.
   linked = null
   assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issues: [], pulls: [ref(21)] })
-  // No pull request for the branch, or gh failing, is none, not an error.
+  // The branch's pull request is kept a while: asking again within it costs no gh call.
+  assert.equal(calls.length, 1)
+  // No pull request for the branch, or gh failing, is none, not an error (after Refresh drops the kept one).
   branch = new GhError('gh_failed', 'no pull requests found for branch "feature/spike"')
+  await worker.request('cache.drop')
   assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issues: [], pulls: [] })
   branch = { message: 'odd' }
+  await worker.request('cache.drop')
   assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issues: [], pulls: [] })
   await worker.deactivate()
 })
@@ -531,7 +535,7 @@ function runWorker(gh: Gh, branch: string | null = 'feature/spike') {
 test('run.watch posts each poll to the panel that asked, and answers done when the run ends', async () => {
   let polls = 0
   const gh: Gh = async (args) => {
-    if (args.some((a) => a.includes('/jobs'))) return [{ jobs: [] }]
+    if (args.some((a) => a.includes('/jobs'))) return { jobs: [] }
     polls++
     return { id: 9, name: 'CI', display_title: 'CI', run_number: 1, event: 'push', status: polls < 3 ? 'in_progress' : 'completed', conclusion: polls < 3 ? null : 'success', head_branch: 'main', head_sha: 'abc1234', actor: null, run_started_at: '2026-11-13T06:40:00Z', updated_at: '2026-11-13T06:41:00Z', html_url: 'https://github.com/octo/app/actions/runs/9' }
   }

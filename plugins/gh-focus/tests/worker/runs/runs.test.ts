@@ -11,6 +11,7 @@ import {
   getRun,
   LEASE_MS,
   LOG_BUFFER,
+  POLL_LOW_MS,
   POLL_MAX_MS,
   POLL_MIN_MS,
   rerunRun,
@@ -78,8 +79,10 @@ const job = (id: number, name: string, conclusion: string | null, status = 'comp
 })
 const jobsPages = [{ total_count: 3, jobs: [job(11, 'lint', 'success'), job(12, 'test (ubuntu)', 'failure')] }, { jobs: [job(13, 'build', null, 'queued', [])] }]
 
-const runRoutes = (run = runJson(), pages: unknown = jobsPages, artifacts: unknown = { total_count: 0, artifacts: [] }): [RegExp, unknown][] => [
-  [/^api --paginate --slurp repos\/octo\/app\/actions\/runs\/43380486297\/jobs\?filter=latest&per_page=100$/, pages],
+const runRoutes = (run = runJson(), pages: unknown[] = jobsPages, artifacts: unknown = { total_count: 0, artifacts: [] }): [RegExp, unknown][] => [
+  // A page at a time, each a plain GET a conditional read can ask.
+  [/^api repos\/octo\/app\/actions\/runs\/43380486297\/jobs\?filter=latest&per_page=100$/, pages[0]],
+  [/^api repos\/octo\/app\/actions\/runs\/43380486297\/jobs\?filter=latest&per_page=100&page=2$/, pages[1]],
   [/^api repos\/octo\/app\/actions\/runs\/43380486297\/artifacts\?per_page=100$/, artifacts],
   [/^api repos\/octo\/app\/actions\/runs\/43380486297$/, run]
 ]
@@ -312,7 +315,7 @@ test('run.watch posts the run at each poll and answers done once it completes', 
 test('run.watch backs off while the run does not change and comes back to 10 s when it does', async () => {
   let moved = false
   const gh = routedGh([
-    [/jobs/, () => [{ jobs: [job(12, 'test', null, 'in_progress', [step(1, 'Test', moved ? 'success' : null, moved ? 'completed' : 'in_progress')])] }]],
+    [/jobs/, () => ({ jobs: [job(12, 'test', null, 'in_progress', [step(1, 'Test', moved ? 'success' : null, moved ? 'completed' : 'in_progress')])] })],
     [/^api repos\/octo\/app\/actions\/runs\/43380486297$/, runJson({ status: 'in_progress', conclusion: null })]
   ])
   const c = clock()
@@ -471,4 +474,19 @@ test('sleep ends early on abort', async () => {
   stop.abort()
   await slept
   assert.ok(Date.now() - started < 1_000)
+})
+
+test('run.get reads only the first page of jobs when it holds them all', async () => {
+  const gh = routedGh(runRoutes(runJson(), [{ total_count: 2, jobs: [job(11, 'lint', 'success'), job(12, 'test', 'failure')] }]))
+  const { run } = await getRun(gh, repo, 43380486297)
+  assert.deepEqual(run.jobs.map((j) => j.id), [11, 12])
+  assert.equal(gh.calls.filter((c) => c.args[1]?.includes('/jobs')).length, 1)
+})
+
+test('run.watch waits at least 30 s between polls while the GitHub budget is low', async () => {
+  const gh = routedGh(stateRoutes(['in_progress', 'in_progress', 'completed']))
+  const c = clock()
+  await watchRun(gh, repo, { id: 43380486297 }, new AbortController().signal, { ...c, low: () => true, post: () => {} })
+  // A change brings the wait back to 30 s, not 10 s; no change still backs off as before.
+  assert.deepEqual(c.slept, [POLL_LOW_MS, POLL_LOW_MS])
 })

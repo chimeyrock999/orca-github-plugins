@@ -1,13 +1,14 @@
 // One issue: its body and timeline through GraphQL, which pages comments and says what the viewer
 // may do; writes through gh's own issue commands, which take label and login names. Comments are
-// edited and deleted through the REST API by id, reactions through GraphQL by node id.
+// posted, edited and deleted through the REST API, reactions through GraphQL by node id.
 import { GhError, type Gh } from '../gh'
 import { issueState, repoFlag, type RepoRef } from '../lists'
-import { PAGE_SIZE, REACTIONS, type CloseReason, type IssueDetail, type IssueEdit, type Reaction, type TimelineItem } from '../../shared/protocol'
+import { PAGE_SIZE, REACTIONS, type CloseReason, type IssueDetail, type IssueEdit, type Reaction, type TimelineComment, type TimelineItem } from '../../shared/protocol'
 import {
   BODY_BYTES,
   bothEnds,
   clip,
+  COMMENT_BYTES,
   COMMON_NODES,
   graphqlData,
   laterPage,
@@ -138,9 +139,46 @@ export function needText(text: string, what: string): string {
 /** gh's command group: `issue`, or `pr` for a pull request, which takes the same flags here. */
 export type Noun = 'issue' | 'pr'
 
-export async function commentOn(gh: Gh, repo: RepoRef, number: number, body: string, signal?: AbortSignal, noun: Noun = 'issue'): Promise<object> {
-  await run(gh, repo, [noun, 'comment', String(number), '--body', needText(body, 'The comment')], signal)
-  return {}
+type CommentJson = { id?: unknown; node_id?: unknown; html_url?: unknown; body?: unknown; created_at?: unknown; user?: { login?: unknown } | null }
+
+/** The comment GitHub answered a REST post with, as the timeline shows it; null when the answer is
+ *  not one. The viewer wrote it, so they may edit and delete it. */
+export function postedComment(json: unknown): TimelineComment | null {
+  const c = json as CommentJson | null
+  const createdAt = typeof c?.created_at === 'string' ? Date.parse(c.created_at) : NaN
+  if (typeof c?.id !== 'number' || typeof c.node_id !== 'string' || typeof c.html_url !== 'string' || typeof c.body !== 'string' || !Number.isFinite(createdAt)) {
+    return null
+  }
+  const { text, truncated } = clip(c.body, COMMENT_BYTES)
+  const login = c.user?.login
+  return {
+    kind: 'comment',
+    id: c.node_id,
+    databaseId: c.id,
+    url: c.html_url,
+    author: typeof login === 'string' ? login : null,
+    body: text,
+    truncated,
+    createdAt,
+    edited: false,
+    canEdit: true,
+    canDelete: true,
+    reactions: []
+  }
+}
+
+/** Posts a comment on an issue or pull request (the same REST call for both), answering it as the
+ *  timeline shows it, so the panel need not ask for the thread again. */
+export async function commentOn(gh: Gh, repo: RepoRef, number: number, body: string, signal?: AbortSignal): Promise<{ comment: TimelineComment | null }> {
+  if (!Number.isSafeInteger(number) || number <= 0) throw new GhError('not_found', `No issue or pull request has the number ${number}.`)
+  const path = `repos/${repo.nameWithOwner}/issues/${number}/comments`
+  const out = await run(gh, repo, ['api', '-X', 'POST', path, '-f', `body=${needText(body, 'The comment')}`], signal)
+  // The comment is posted whatever the answer says; one that cannot be read only costs a reload.
+  try {
+    return { comment: postedComment(typeof out === 'string' ? JSON.parse(out) : out) }
+  } catch {
+    return { comment: null }
+  }
 }
 
 export async function editComment(gh: Gh, repo: RepoRef, id: number, body: string, signal?: AbortSignal): Promise<object> {

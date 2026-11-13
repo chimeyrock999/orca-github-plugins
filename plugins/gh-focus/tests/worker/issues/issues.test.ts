@@ -201,13 +201,38 @@ test('issue.timeline asks for the page after the cursor', async () => {
   assert.deepEqual([page.items.map((i) => i.id), page.next], [['IC_31', 'IC_32'], 'c1'])
 })
 
-test('comment, edit and delete: gh issue comment, then the REST comment by id', async () => {
-  const gh = fakeGh('', '', '')
-  await commentOn(gh, repo, 8, 'Fixed in #131.')
+// As POST repos/{owner}/{repo}/issues/{number}/comments answers (abridged).
+const POSTED = {
+  id: 1003,
+  node_id: 'IC_kwDO3',
+  html_url: 'https://github.com/octo/app/issues/8#issuecomment-1003',
+  body: 'Fixed in #131.',
+  user: { login: 'ana' },
+  created_at: '2026-11-13T07:00:00Z',
+  updated_at: '2026-11-13T07:00:00Z'
+}
+
+test('comment, edit and delete: the REST comments API, the comment by id', async () => {
+  const gh = fakeGh(JSON.stringify(POSTED), '', '')
+  const { comment } = await commentOn(gh, repo, 8, 'Fixed in #131.')
+  assert.deepEqual(comment, {
+    kind: 'comment',
+    id: 'IC_kwDO3',
+    databaseId: 1003,
+    url: 'https://github.com/octo/app/issues/8#issuecomment-1003',
+    author: 'ana',
+    body: 'Fixed in #131.',
+    truncated: false,
+    createdAt: Date.parse('2026-11-13T07:00:00Z'),
+    edited: false,
+    canEdit: true,
+    canDelete: true,
+    reactions: []
+  })
   await editComment(gh, repo, 1002, '@ana see the fix')
   await deleteComment(gh, repo, 1002)
   assert.deepEqual(gh.calls.map((c) => c.args), [
-    ['issue', 'comment', '8', '--body', 'Fixed in #131.'],
+    ['api', '-X', 'POST', 'repos/octo/app/issues/8/comments', '-f', 'body=Fixed in #131.'],
     ['api', '-X', 'PATCH', 'repos/octo/app/issues/comments/1002', '-f', 'body=@ana see the fix'],
     ['api', '-X', 'DELETE', 'repos/octo/app/issues/comments/1002']
   ])
@@ -224,7 +249,7 @@ test('another repo: gh commands name it with -R, API paths and GraphQL name it a
   await editIssue(gh, other, { number: 45, addLabels: ['bug'] })
   await editComment(gh, other, 7, 'edited')
   assert.deepEqual(gh.calls.map((c) => c.args), [
-    ['issue', 'comment', '45', '--body', 'Same here.', '-R', 'octo/sdk'],
+    ['api', '-X', 'POST', 'repos/octo/sdk/issues/45/comments', '-f', 'body=Same here.'],
     ['issue', 'close', '45', '--reason', 'completed', '-R', 'octo/sdk'],
     ['issue', 'edit', '45', '--add-label', 'bug', '-R', 'octo/sdk'],
     ['api', '-X', 'PATCH', 'repos/octo/sdk/issues/comments/7', '-f', 'body=edited']
@@ -306,4 +331,11 @@ test('issue.get says who the viewer is', async () => {
   const answer = issueAnswer([comment(1)]) as { data: Record<string, unknown> }
   answer.data.viewer = { login: 'chimeyrock999' }
   assert.equal((await getIssue(fakeGh(answer), repo, 8)).issue.viewer, 'chimeyrock999')
+})
+
+test('a posted comment GitHub answered oddly is still posted: the answer only has no comment', async () => {
+  assert.deepEqual(await commentOn(fakeGh('not json'), repo, 8, 'x'), { comment: null })
+  assert.deepEqual(await commentOn(fakeGh(JSON.stringify({ id: 'x' })), repo, 8, 'x'), { comment: null })
+  await assert.rejects(commentOn(fakeGh(''), repo, 0, 'x'), (e: unknown) => e instanceof GhError && e.code === 'not_found')
+  await assert.rejects(commentOn(fakeGh(''), repo, 8, '  '), (e: unknown) => e instanceof GhError && e.code === 'gh_failed')
 })

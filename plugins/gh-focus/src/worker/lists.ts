@@ -160,9 +160,9 @@ export async function listRuns(
   const page = Math.max(1, Number.parseInt(input.after ?? '1', 10) || 1)
   const base = `repos/${repo.nameWithOwner}/actions`
   const path = query.workflow ? `${base}/workflows/${await workflowPath(gh, repo, query.workflow, signal)}/runs` : `${base}/runs`
-  const args = ['api', '-X', 'GET', path, '-F', `per_page=${PAGE_SIZE}`, '-F', `page=${page}`]
-  for (const [key, value] of Object.entries(query.params)) args.push('-f', `${key}=${value}`)
-  const out = (await gh(args, { cwd: repo.path, signal, json: true })) as { total_count?: number; workflow_runs?: RunJson[] }
+  // The query goes in the path: a plain GET, which can be a conditional read.
+  const search = new URLSearchParams({ per_page: String(PAGE_SIZE), page: String(page), ...query.params })
+  const out = (await gh(['api', `${path}?${search}`], { cwd: repo.path, signal, json: true })) as { total_count?: number; workflow_runs?: RunJson[] }
   if (!Array.isArray(out?.workflow_runs) || typeof out.total_count !== 'number') {
     throw new GhError('gh_failed', `Unexpected gh output: ${JSON.stringify(out).slice(0, 200)}`)
   }

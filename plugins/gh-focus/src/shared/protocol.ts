@@ -367,6 +367,13 @@ export type IssueEdit = {
 }
 /** A write's answer: nothing more than that it worked. */
 export type Done = Answer<Record<never, never>>
+/** A posted comment's answer: the comment as GitHub has it, so the panel shows it without asking
+ *  for the thread again; null when GitHub's answer could not be read (the panel then asks). */
+export type Commented = Answer<{ comment: TimelineComment | null }>
+
+/** The REST budget GitHub says is left (shared with Orca) while it is low: under a tenth of the
+ *  limit until `resetAt` (milliseconds since the epoch). */
+export type GitHubBudget = { limit: number; remaining: number; resetAt: number }
 
 /* An issue or pull request request with `repo` (`owner/name`) reads or writes that repo instead of
  * the focused one: an item Orca links to the workspace from another repo. */
@@ -374,6 +381,10 @@ declare module 'orca' {
   interface PluginRequests {
     /** The GitHub repo (`owner/name`) of the focused workspace. */
     'repo.get': { output: RepoAnswer }
+    /** Forgets every GitHub answer the worker keeps, so the reads after it ask GitHub (Refresh). */
+    'cache.drop': { output: Done }
+    /** The GitHub budget while it is low, else null. */
+    'budget.get': { output: Answer<{ budget: GitHubBudget | null }> }
     /** Picks the folder for the focused branch and name when several workspaces share them
      *  (`ambiguous_workspace`); kept in storage for this branch, name and set of matching projects,
      *  and used while that set stays the same and the folder is one of them. */
@@ -401,7 +412,7 @@ declare module 'orca' {
     'issue.get': { input: { number: number; repo?: string }; output: Answer<{ issue: IssueDetail }> }
     /** The timeline after `after`, up to a page. */
     'issue.timeline': { input: { number: number; after: string; repo?: string }; output: Answer<{ items: TimelineItem[]; next: string | null }> }
-    'issue.comment': { input: { number: number; body: string; repo?: string }; output: Done }
+    'issue.comment': { input: { number: number; body: string; repo?: string }; output: Commented }
     /** Edits or deletes a comment by its REST id. */
     'comment.edit': { input: { id: number; body: string; repo?: string }; output: Done }
     'comment.delete': { input: { id: number; repo?: string }; output: Done }
@@ -414,7 +425,7 @@ declare module 'orca' {
     /** One pull request with its checks, body and the start and end of its timeline. */
     'pull.get': { input: { number: number; repo?: string }; output: Answer<{ pull: PullDetail }> }
     'pull.timeline': { input: { number: number; after: string; repo?: string }; output: Answer<{ items: TimelineItem[]; next: string | null }> }
-    'pull.comment': { input: { number: number; body: string; repo?: string }; output: Done }
+    'pull.comment': { input: { number: number; body: string; repo?: string }; output: Commented }
     'pull.edit': { input: IssueEdit & { repo?: string }; output: Done }
     /** Approve, request changes (with a body) or comment (with a body). */
     'pull.review': { input: { number: number; event: ReviewEvent; body: string; repo?: string }; output: Done }
@@ -455,5 +466,8 @@ declare module 'orca' {
     'repo.changed': RepoAnswer
     /** A watched run as it is now, to the panel that watches it. */
     'run.progress': { run: RunDetail }
+    /** Posted to every open panel when the low GitHub budget changes, and with null once it is no
+     *  longer low. */
+    'budget.changed': { budget: GitHubBudget | null }
   }
 }

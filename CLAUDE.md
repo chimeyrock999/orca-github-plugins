@@ -20,18 +20,24 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
     - `host-error.ts`: what a rejected Orca call means to the panel (`hostFailure`), used by the
       panel's `requestFailed` and the worker's host calls.
   - `src/worker/`: Node side only.
-    - `gh.ts`: `runGh` and `GhError` codes; every GitHub call goes through it. `exec.ts`: child
-      processes and the Orca CLI.
+    - `gh.ts`: `runGh` and `GhError` codes; every GitHub call goes through it, a plain REST GET as a
+      conditional read (`etag`). `exec.ts`: child processes and the Orca CLI.
+    - `cache.ts`: what the worker keeps of GitHub's answers, in memory only: `Reads` (a TTL per
+      answer, one gh call for identical reads in flight, dropped by tag on writes, `repo.changed`
+      and Refresh), `withEtags` (a 304 answers the kept body and costs no budget) and `Budget` (the
+      REST budget left, low under a tenth of the limit: longer TTLs, slower `run.watch`, and the
+      panel's warning).
     - `lists.ts`: one page of runs (REST), the repo's labels and workflows; `timeline.ts`: the
       timeline issues and pull requests share (GraphQL pages, cut to fit the message limit).
     - `linked/linked.ts`: what Orca links to the workspace (`orca worktree show`'s `linkedItems`,
       read in `exec.ts`), their state from GitHub in one GraphQL query, and the free agent Ask agent
       types into.
     - `repo/` (`repo.ts`, `focus.ts`): the focused workspace's repo, `repo.get`, `repo.changed`.
-    - `issues/issues.ts`: one issue (GraphQL body and timeline) and its writes (gh issue commands).
+    - `issues/issues.ts`: one issue (GraphQL body and timeline) and its writes (gh issue commands;
+      a comment through the REST API, which answers the comment the panel then shows in place).
     - `pulls/pulls.ts`: one pull request (refs, merge state, review decision, checks, timeline with
-      reviews and the merge), its writes (`gh pr comment`, `edit`, `review`) and the branch's pull
-      request (`gh pr view`).
+      reviews and the merge), its writes (a comment as on an issue, `gh pr edit`, `review`) and the
+      branch's pull request (`gh pr view`).
     - `runs/` (`runs.ts`, `logs.ts`, `workflow-inputs.ts`): one run, its logs, rerun, cancel, the
       `run.watch` lease, and the Run workflow form.
   - `src/panel/`: panel side only; no DOM, no `node:`, only the `orca` catalog; state in atoms.
@@ -49,7 +55,8 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
   (`orca plugin test` finds it there). `tests/fixtures/` holds the canned answers (`fixtures.ts` for
   the panel and the check scenarios, `worker-fixtures.ts` for the worker). `tests/manifest.test.ts`
   checks the listing rules (name, engines, metadata); `tests/layout.test.ts` checks the import rules
-  below.
+  below. `tests/requests.test.ts` counts the gh calls each screen costs through the real worker
+  (the numbers of #39); `tests/panel/requests.test.tsx` what the panel asks for to spend less.
 - Where new files go: a new feature gets a folder on each side it touches (`src/worker/<feature>/`,
   `src/panel/<feature>/`) and its tests at the same paths under `tests/`. Code both sides import goes
   in `src/shared/`. Only the entries and the check scenarios sit directly in `src/`.
@@ -85,6 +92,10 @@ All four checks (validate, test, check, tsc) pass before a PR.
 - Limits to design around: `plugin.request` times out at 30 s by default (120 s max);
   `panels.post` payloads are at most 256 KiB; panel `Markdown` cannot load remote images.
 - Destructive actions (close, merge, cancel, delete) ask for confirmation in the panel.
+- The panel shares the user's GitHub budget with Orca. A new read goes through `kept` in
+  `src/worker.ts` (short TTL for what changes, long for labels, assignees, workflows); a new write
+  through `inItems` / `inRuns` (or `written`), so it drops what it can change. Refresh drops
+  everything (`cache.drop`), and nothing is stored on disk.
 
 ## Learn from Orca's own GitHub features
 

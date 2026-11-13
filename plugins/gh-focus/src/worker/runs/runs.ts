@@ -23,6 +23,8 @@ const WRITE_MS = 60_000
  *  does not, as Orca's Checks tab backs off; and how long one watch request holds (under 120 s). */
 export const POLL_MIN_MS = 10_000
 export const POLL_MAX_MS = 60_000
+/** The shortest wait while the GitHub budget is low. */
+export const POLL_LOW_MS = 30_000
 export const LEASE_MS = 100_000
 /** After Run workflow: how often and how many times to look for the run it started. */
 const FIND_MS = 2_000
@@ -85,17 +87,31 @@ export function fitRun(run: RunDetail, budget = RUN_BYTES): RunDetail {
   return { ...run, jobs: run.jobs.map(cut) }
 }
 
+type JobsPage = { total_count?: number; jobs?: JobJson[] }
+
+/** The jobs of the run's latest attempt, a page at a time (a matrix can pass 100): each page a plain
+ *  GET, which can come back 304 while nothing changed. */
+async function runJobs(gh: Gh, repo: RepoRef, path: string, signal?: AbortSignal): Promise<JobJson[]> {
+  const jobs: JobJson[] = []
+  for (let page = 1; ; page++) {
+    const out = (await gh(['api', `${path}/jobs?filter=latest&per_page=100${page > 1 ? `&page=${page}` : ''}`], { cwd: repo.path, signal, json: true })) as JobsPage
+    if (!Array.isArray(out?.jobs)) throw new GhError('gh_failed', `Unexpected gh output: ${JSON.stringify(out).slice(0, 200)}`)
+    jobs.push(...out.jobs)
+    if (out.jobs.length === 0 || jobs.length >= (out.total_count ?? jobs.length)) return jobs
+  }
+}
+
 /** The run and the jobs of its latest attempt, every page of them (a matrix can pass 100). */
 export async function getRun(gh: Gh, repo: RepoRef, id: number, signal?: AbortSignal): Promise<{ run: RunDetail }> {
   const path = runPath(repo, id)
-  const [run, pages] = (await Promise.all([
-    gh(['api', path], { cwd: repo.path, signal, json: true }),
-    gh(['api', '--paginate', '--slurp', `${path}/jobs?filter=latest&per_page=100`], { cwd: repo.path, signal, json: true })
-  ])) as [RunJson & { run_attempt?: number; workflow_id?: number }, { jobs?: JobJson[] }[]]
-  if (typeof run?.id !== 'number' || !Array.isArray(pages)) {
+  const [run, found] = (await Promise.all([gh(['api', path], { cwd: repo.path, signal, json: true }), runJobs(gh, repo, path, signal)])) as [
+    RunJson & { run_attempt?: number; workflow_id?: number },
+    JobJson[]
+  ]
+  if (typeof run?.id !== 'number') {
     throw new GhError('gh_failed', `Unexpected gh output: ${JSON.stringify(run).slice(0, 200)}`)
   }
-  const jobs = pages.flatMap((p) => p?.jobs ?? []).map(jobOf)
+  const jobs = found.map(jobOf)
   const done = run.status === 'completed'
   const [waitingFor, artifacts] = await Promise.all([
     run.status === 'waiting' ? pendingDeployments(gh, repo, path, signal).catch(skipUnread<PendingDeployment>) : [],
@@ -230,6 +246,8 @@ export type WatchDeps = {
   post: (run: RunDetail) => void
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
   now?: () => number
+  /** Whether the GitHub budget is low: the watch then waits at least POLL_LOW_MS. */
+  low?: () => boolean
 }
 
 /** What a poll compares: the run's and every job's and step's state, as Orca's Checks tab does. */
@@ -257,6 +275,7 @@ export async function watchRun(gh: Gh, repo: RepoRef, input: WatchInput, signal:
   let every = Math.min(Math.max(input.every ?? POLL_MIN_MS, POLL_MIN_MS), POLL_MAX_MS)
   let mark = input.mark ?? null
   for (;;) {
+    if (deps.low?.()) every = Math.max(every, POLL_LOW_MS)
     await wait(every, signal)
     if (signal.aborted) throw new GhError('cancelled', 'The panel stopped watching the run.')
     const { run } = await getRun(gh, repo, id, signal)

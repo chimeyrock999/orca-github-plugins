@@ -1,6 +1,7 @@
 // No build step: Orca strips the types and compiles the JSX when the panel loads.
 import {
   Box,
+  Callout,
   EmptyState,
   Heading,
   IconButton,
@@ -19,10 +20,11 @@ import {
 import { issue, issues } from './panel/issues/issue-store'
 import { findAgent } from './panel/linked/link-store'
 import { pull, pulls } from './panel/pulls/pull-store'
-import { githubUrl, itemKey, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './panel/store'
+import { budget, budgetAnswered, budgetChanged, githubUrl, itemKey, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './panel/store'
 import { Problem } from './panel/parts'
 import { DISPATCH, loadForm, loadRun, progress, tabShown } from './panel/runs/run-store'
 import { KindView } from './panel/views'
+import { budgetWords } from './shared/look'
 
 /** Runs `step`, then lets the tab on screen ask Orca what it links to the workspace if it has not
  *  yet (each tab starts only when it shows); with nothing linked, a free agent is looked for. */
@@ -45,6 +47,11 @@ async function agentIfNone(again: boolean): Promise<void> {
 export function setup(ctx: PanelContext): void {
   ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void thenStart(setRepo(answer))))
   ctx.subscriptions.push(plugin.on('run.progress', ({ run }) => progress(run)))
+  ctx.subscriptions.push(plugin.on('budget.changed', (answer) => budgetChanged(answer.budget)))
+  void plugin.request('budget.get').then(
+    (answer) => answer.ok && budgetAnswered(answer.budget),
+    () => undefined
+  )
   void plugin.request('repo.get').then(
     (answer) => thenStart(setRepo(answer)),
     (error: unknown) => setRepo(requestFailed(error))
@@ -73,6 +80,17 @@ async function refreshAll(): Promise<void> {
 function openOnGitHub(): unknown {
   const url = githubUrl()
   return url ? shell.openExternal(url) : undefined
+}
+
+/** The GitHub budget the panel shares with Orca, while it is low. */
+function BudgetLow() {
+  const b = read(budget)
+  if (!b) return null
+  return (
+    <Callout tone="warning" title="GitHub budget low" icon="warning">
+      <Text size="sm">{budgetWords(b)}</Text>
+    </Callout>
+  )
 }
 
 export default function Panel() {
@@ -108,6 +126,7 @@ export default function Panel() {
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" onPress={openOnGitHub} />
         </Toolbar>
       </Row>
+      <BudgetLow />
       <Tabs
         label="GitHub"
         value={read(tab)}

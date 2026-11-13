@@ -115,3 +115,32 @@ test('partial: a GraphQL answer that only misses things or is refused some keeps
   assert.equal((await failed(runGh(['api', 'graphql'], { json: true, partial: true }, fake({ code: 1, stdout: odd, stderr: 'no' })))).code, 'gh_failed')
   assert.equal((await failed(runGh(['api', 'graphql'], { json: true, partial: true }, fake({ code: 4, stdout: '', stderr: 'gh auth login' })))).code, 'gh_logged_out')
 })
+
+const HEADERS = 'X-Ratelimit-Limit: 5000\r\nX-Ratelimit-Remaining: 4321\r\nX-Ratelimit-Reset: 1794566246\r\nX-Ratelimit-Resource: core\r\n'
+
+test('etag: a conditional read sends -i and If-None-Match, and answers a Conditional with the rate limit', async () => {
+  const { Conditional } = await import('../../src/worker/gh')
+  const ok = fake({ code: 0, stdout: `HTTP/2.0 200 OK\nEtag: W/"abc"\r\n${HEADERS}\r\n{"id":7}` })
+  const first = await runGh(['api', 'repos/o/r/actions/runs/7'], { cwd: '/r', json: true, etag: null }, ok)
+  assert.ok(first instanceof Conditional)
+  assert.deepEqual({ ...(first as InstanceType<typeof Conditional>) }, {
+    status: 200,
+    etag: 'W/"abc"',
+    body: { id: 7 },
+    rate: { resource: 'core', limit: 5000, remaining: 4321, resetAt: 1794566246000 }
+  })
+  assert.deepEqual(ok.calls[0].args, ['api', 'repos/o/r/actions/runs/7', '-i'])
+
+  // gh exits 1 on a 304 and says so on stderr: the body is still the one behind the etag.
+  const same = fake({ code: 1, stdout: `HTTP/2.0 304 Not Modified\nEtag: W/"abc"\r\n${HEADERS}\r\n`, stderr: 'gh: HTTP 304\n' })
+  const second = (await runGh(['api', 'repos/o/r/actions/runs/7'], { json: true, etag: 'W/"abc"' }, same)) as InstanceType<typeof Conditional>
+  assert.equal(second.status, 304)
+  assert.equal(second.body, null)
+  assert.equal(second.rate?.remaining, 4321)
+  assert.deepEqual(same.calls[0].args, ['api', 'repos/o/r/actions/runs/7', '-i', '-H', 'If-None-Match: W/"abc"'])
+})
+
+test('etag: any other status fails as usual', async () => {
+  const gone = fake({ code: 1, stdout: `HTTP/2.0 404 Not Found\n${HEADERS}\r\n{"message":"Not Found"}`, stderr: 'gh: Not Found (HTTP 404)\n' })
+  assert.equal((await failed(runGh(['api', 'x'], { json: true, etag: 'W/"abc"' }, gone))).code, 'not_found')
+})

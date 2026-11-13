@@ -2,7 +2,7 @@
 // answers. The JSON follows what GitHub's GraphQL API answered for real pull requests.
 import { assert, test } from 'orca/testing'
 import { GhError, type Gh } from '../../../src/worker/gh'
-import { branchPull, commentOnPull, editPull, getPull, pullTimeline, reviewPull } from '../../../src/worker/pulls/pulls'
+import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, reviewPull } from '../../../src/worker/pulls/pulls'
 import { COMMENT_BYTES } from '../../../src/worker/timeline'
 
 const repo = { nameWithOwner: 'octo/app', path: '/code/app' }
@@ -230,14 +230,14 @@ test('pull.timeline asks for the page after the cursor and drops the close by th
   assert.equal(page.next, null)
 })
 
-test('comment and edit go through gh pr', async () => {
-  const gh = fakeGh('https://github.com/octo/app/pull/131#issuecomment-1', '')
+test('a comment goes through the REST comments API, an edit through gh pr', async () => {
+  const gh = fakeGh('{}', '')
   await commentOnPull(gh, repo, 131, 'Looks good.')
   await editPull(gh, repo, { number: 131, title: 'fix: stream export', addLabels: ['bug'], removeAssignees: ['kenji'] })
   assert.deepEqual(
     gh.calls.map((c) => c.args),
     [
-      ['pr', 'comment', '131', '--body', 'Looks good.'],
+      ['api', '-X', 'POST', 'repos/octo/app/issues/131/comments', '-f', 'body=Looks good.'],
       ['pr', 'edit', '131', '--title', 'fix: stream export', '--add-label', 'bug', '--remove-assignee', 'kenji']
     ]
   )
@@ -263,10 +263,11 @@ test('review: approve may be empty; request changes and comment need a body', as
   assert.equal(gh.calls.length, 3)
 })
 
-test('branchPull: the pull request gh finds for the checked-out branch, else null', async () => {
-  const gh = fakeGh({ number: 21 }, new GhError('gh_failed', 'no pull requests found for branch "main"'), null)
-  assert.equal(await branchPull(gh, repo), 21)
+test('findBranchPull: the pull request gh finds for the checked-out branch, null when there is none, and a gh that cannot tell throws', async () => {
+  const gh = fakeGh({ number: 21 }, new GhError('gh_failed', 'no pull requests found for branch "main"'), null, new GhError('rate_limited', 'API rate limit exceeded'))
+  assert.equal(await findBranchPull(gh, repo), 21)
   assert.deepEqual(gh.calls[0], { args: ['pr', 'view', '--json', 'number'], cwd: '/code/app', timeoutMs: undefined })
-  assert.equal(await branchPull(gh, repo), null)
-  assert.equal(await branchPull(gh, repo), null)
+  assert.equal(await findBranchPull(gh, repo), null)
+  assert.equal(await findBranchPull(gh, repo), null)
+  await assert.rejects(findBranchPull(gh, repo), isGhError('rate_limited'))
 })
