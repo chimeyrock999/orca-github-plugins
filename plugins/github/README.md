@@ -1,4 +1,8 @@
-# GitHub
+# gh Focus
+
+For GitHub repos: the issue, pull request and Actions runs of the workspace you're in, beside your code. Read, comment, review and re-run without leaving the editor for the Tasks page. Not affiliated with GitHub.
+
+Small and focused on the work at hand: the everyday reading, answering and reviewing happens beside the code. The detail work (merge, reviewers, the files diff, Projects) stays on Orca's Tasks page and pull request page, and the panel hands off to them. The Issues and Pull requests tabs still list the whole repo for now; #22 shrinks them to a picker for the work at hand.
 
 A right-sidebar panel with the issues, pull requests and Actions runs of the focused workspace's repo. Every GitHub call goes through the `gh` CLI already logged in on the machine; the plugin stores no tokens. The panel (`src/panel.tsx`) asks with `plugin.request`, the plugin's own worker (`src/worker.ts`) answers with `orca.panels.handle` and runs `gh`; `src/protocol.ts` types both sides. Orca transpiles both files when they load, so there is no build step: save and the panel or worker reloads.
 
@@ -38,6 +42,7 @@ orca plugin dev watch .    # loads this folder into Orca and prints its logs and
 orca plugin dev request . issues.list --data '{"state":"open","query":"","after":null}'
 ```
 
-Orca names the publisher after where the plugin is installed from: the GitHub or GitLab owner of
-its repository, or `local` for a folder. See
+The plugin id is `gh-focus`. Orca names the publisher after where the plugin is installed from: the
+GitHub or GitLab owner of its repository (`chimeyrock999.gh-focus` from the community catalog), or
+`local` for a folder. See
 https://github.com/stablyai/orca/blob/main/docs/reference/plugin-authoring.md.
