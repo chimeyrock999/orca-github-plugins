@@ -1,34 +1,37 @@
-// The plugin's own worker. Orca starts it on the panel's first plugin.request and transpiles
-// this file when it loads: no build step. A save restarts it and drops its in-memory state, so
-// the total lives in orca.storage (the storage:own capability).
-import { existsSync } from 'node:fs'
+// The focused workspace's GitHub repo: src/focus.ts finds the workspace folder, gh names its repo.
+// The tracker follows workspace.changed and tells open panels when the answer changes.
 import type { OrcaWorkerApi } from 'orca/worker'
-import { ghRepo, terminalPath, type GhRepoAnswer } from './exec'
+import { toFailure, type Gh } from './gh'
 import { resolveFocus, type FocusContext, type FocusDeps } from './focus'
-import type { RepoAnswer } from './protocol'
+import type { Answer, RepoAnswer } from './protocol'
 
-const TOTAL = 'total'
+export type GhRepoAnswer = Answer<{ nameWithOwner: string; url: string }>
 
-async function storedTotal(orca: OrcaWorkerApi): Promise<number> {
-  const value = await orca.storage.get(TOTAL)
-  return typeof value === 'number' ? value : 0
+/** `owner/name` and web URL of the repo gh picks for the folder, by gh's own remote rules. */
+export async function ghRepo(path: string, gh: Gh): Promise<GhRepoAnswer> {
+  try {
+    const out = (await gh(['repo', 'view', '--json', 'nameWithOwner,url'], { cwd: path, json: true })) as {
+      nameWithOwner?: unknown
+      url?: unknown
+    }
+    if (typeof out?.nameWithOwner === 'string' && out.nameWithOwner.includes('/') && typeof out.url === 'string') {
+      return { ok: true, nameWithOwner: out.nameWithOwner, url: out.url }
+    }
+    return { ok: false, error: { code: 'gh_failed', message: `Unexpected gh output: ${JSON.stringify(out).slice(0, 200)}` } }
+  } catch (error) {
+    return toFailure(error)
+  }
 }
 
-export type WorkerDeps = FocusDeps & { ghRepo: (path: string) => Promise<GhRepoAnswer> }
+export type RepoDeps = FocusDeps & { ghRepo: (path: string) => Promise<GhRepoAnswer> }
 
-const defaultDeps: WorkerDeps = { ghRepo: (path) => ghRepo(path), terminalPath: (id) => terminalPath(id), exists: existsSync }
+export type RepoTracker = {
+  /** The answer for the newest focus. An error is asked again, as it may be gone (a login, a
+   *  remote added, a new workspace). */
+  get(): Promise<RepoAnswer>
+}
 
-export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
-  orca.panels.handle('counter.get', async () => ({ total: await storedTotal(orca) }))
-
-  orca.panels.handle('counter.add', async ({ by }) => {
-    const total = (await storedTotal(orca)) + by
-    await orca.storage.set(TOTAL, total)
-    // Every open panel hears it, so a second panel stays in step.
-    orca.panels.post('counter.changed', { total })
-    return { total }
-  })
-
+export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps): RepoTracker {
   // One answer per focus: a newer workspace.changed supersedes a resolve still in flight.
   let current: Promise<RepoAnswer> | null = null
   let generation = 0
@@ -76,7 +79,7 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
       const { path } = focus.workspace
       const repo = await repoOf(path)
       if (!repo.ok) return { ok: false, error: { ...repo.error, path } }
-      return { ok: true, nameWithOwner: repo.nameWithOwner, path, resolvedBy: focus.resolvedBy }
+      return { ok: true, nameWithOwner: repo.nameWithOwner, url: repo.url, path, resolvedBy: focus.resolvedBy }
     } catch (error) {
       return hostFailed(error)
     }
@@ -107,13 +110,10 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
 
   orca.events.on('workspace.changed', ({ context }) => settle(Promise.resolve(context)))
 
-  orca.panels.handle('repo.get', async () => {
-    // An error may be gone (a login, a remote added, a new workspace): asking is a retry.
-    if (!current || !(await latest()).ok) void settle(orca.host.call('workspace.readContext'))
-    return latest()
-  })
-}
-
-export default function activate(orca: OrcaWorkerApi): void {
-  activateWith(orca, defaultDeps)
+  return {
+    async get() {
+      if (!current || !(await latest()).ok) void settle(orca.host.call('workspace.readContext'))
+      return latest()
+    }
+  }
 }

@@ -1,0 +1,71 @@
+// The words and tones rows and errors show with.
+import { assert, test } from 'orca/testing'
+import { count, duration, pageLine, issueLook, itemEvent, problemOf, pullLook, runCause, runLook } from './look'
+import type { IssueRow, PullRow, RunRow } from './protocol'
+
+const issue: IssueRow = { number: 8, title: 't', url: 'u', state: 'open', author: 'mai-t', labels: [], createdAt: 1, closedAt: null }
+const pull: PullRow = { ...issue, state: 'open', branch: 'fix/x', mergedAt: null }
+const run: RunRow = {
+  id: 1,
+  runNumber: 296,
+  workflow: 'CI',
+  title: 't',
+  url: 'u',
+  state: 'success',
+  event: 'push',
+  branch: 'main',
+  sha: '233b470d3a189e89cf6fa69624e11c3fa9387d81',
+  actor: 'mai-t',
+  pullNumber: null,
+  startedAt: 1,
+  durationMs: 1
+}
+
+test('states read like GitHub: open green, done and merged in the text colour, failures red', () => {
+  assert.deepEqual([issueLook(issue).tone, issueLook({ ...issue, state: 'done' }).tone, issueLook({ ...issue, state: 'not_planned' }).tone], ['success', 'accent', 'neutral'])
+  assert.deepEqual(
+    (['open', 'draft', 'merged', 'closed'] as const).map((state) => pullLook({ ...pull, state }).tone),
+    ['success', 'neutral', 'accent', 'danger']
+  )
+  assert.deepEqual(
+    (['success', 'failure', 'running', 'cancelled'] as const).map((state) => runLook({ ...run, state }).tone),
+    ['success', 'danger', 'warning', 'neutral']
+  )
+  // Done and not planned are told apart by glyph too, not by colour alone.
+  assert.notEqual(issueLook({ ...issue, state: 'done' }).glyph, issueLook({ ...issue, state: 'not_planned' }).glyph)
+})
+
+test('itemEvent: opened, closed or merged, with its time', () => {
+  assert.deepEqual(itemEvent(issue), { verb: 'opened', at: 1 })
+  assert.deepEqual(itemEvent({ ...issue, state: 'done', closedAt: 5 }), { verb: 'closed', at: 5 })
+  assert.deepEqual(itemEvent({ ...pull, state: 'merged', closedAt: 5, mergedAt: 6 }), { verb: 'merged', at: 6 })
+  assert.deepEqual(itemEvent({ ...pull, state: 'draft' }), { verb: 'opened', at: 1 })
+})
+
+test('runCause says what started the run', () => {
+  assert.equal(runCause(run), 'Commit 233b470 pushed by mai-t')
+  assert.equal(runCause({ ...run, event: 'pull_request', pullNumber: 134 }), 'Pull request #134 by mai-t')
+  assert.equal(runCause({ ...run, event: 'pull_request_target', pullNumber: null, actor: null }), 'Pull request')
+  assert.equal(runCause({ ...run, event: 'schedule' }), 'Scheduled')
+  assert.equal(runCause({ ...run, event: 'workflow_dispatch' }), 'Manually run by mai-t')
+  assert.equal(runCause({ ...run, event: 'merge_group' }), 'merge group by mai-t')
+})
+
+test('duration reads like GitHub', () => {
+  assert.equal(duration(57_000), '57s')
+  assert.equal(duration(466_000), '7m 46s')
+  assert.equal(duration(3_720_000), '1h 2m')
+})
+
+test('every error code has words, and an unknown one falls back to gh_failed', () => {
+  assert.equal(problemOf('gh_logged_out').title, 'gh is not logged in')
+  assert.equal(problemOf('nope' as never).title, 'gh failed')
+})
+
+test('pageLine counts pages GitHub lets anyone reach', () => {
+  assert.equal(count(56789), '56,789')
+  assert.equal(pageLine(1, 8, 1000, 30), 'Page 1 of 1 · 8 total')
+  assert.equal(pageLine(2, 1234, 1000, 30), 'Page 2 of 34 · 1,234 total · first 1,000 shown')
+  assert.equal(pageLine(1, 5000, null, 30), 'Page 1 of 167 · 5,000 total')
+  assert.equal(pageLine(1, 0, null, 30), 'Page 1 of 1 · 0 total')
+})

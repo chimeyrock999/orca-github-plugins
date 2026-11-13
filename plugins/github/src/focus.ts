@@ -1,7 +1,7 @@
 // Finds the focused workspace's folder. workspace.readContext gives only its branch and name, and
 // workspace.list gives folders, so the two are matched. Orca names root clones after their branch,
 // so repos on `main` look alike; then a focused terminal decides, through the Orca CLI.
-import type { RepoError, ResolvedBy } from './protocol'
+import type { PanelError, ResolvedBy } from './protocol'
 
 export type WorkspaceEntry = {
   id: string
@@ -27,7 +27,7 @@ export type FocusDeps = {
 
 export type FocusResult =
   | { ok: true; workspace: WorkspaceEntry; resolvedBy: ResolvedBy }
-  | { ok: false; error: RepoError }
+  | { ok: false; error: PanelError }
 
 export function stripRef(branch: string): string {
   return branch.replace(/^refs\/heads\//, '')

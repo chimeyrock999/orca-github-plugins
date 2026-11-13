@@ -1,19 +1,14 @@
-// Runs src/worker.ts's activate(orca) with the orca object Orca passes, over a mock host.
+// Runs src/worker.ts's activate(orca) with the orca object Orca passes, over a mock host: the
+// focused repo's resolution, then the list requests on top of it.
 import { assert, hostError, mockHost, mountWorker, test } from 'orca/testing'
 import type { OrcaWorkerApi } from 'orca/worker'
+import { GhError, type Gh } from './gh'
 import * as main from './worker'
-import type { GhRepoAnswer } from './exec'
+import type { GhRepoAnswer } from './repo'
 
-test('adds to the stored total and tells open panels', async () => {
-  const host = mockHost({ storage: { total: 2 } })
-  const worker = await mountWorker(main, { host })
-  assert.deepEqual(await worker.request('counter.get'), { total: 2 })
-  assert.deepEqual(await worker.request('counter.add', { by: 3 }), { total: 5 })
-  assert.deepEqual(worker.posts.filter((p) => p.event === 'counter.changed'), [{ event: 'counter.changed', payload: { total: 5 } }])
-  assert.deepEqual(host.data().storage, { total: 5 })
-  assert.deepEqual(worker.refusals, [])
-  await worker.deactivate()
-})
+const noGh: Gh = async () => {
+  throw new Error('no gh call expected')
+}
 
 const workspaces = [
   { id: 'w-app', kind: 'worktree', name: 'main', project: 'app', path: '/code/app', branch: 'main', hostId: null },
@@ -23,8 +18,8 @@ const workspaces = [
   { id: 'w-out', kind: 'worktree', name: 'out', project: 'out', path: '/code/out', branch: 'main', hostId: null }
 ]
 const repos: Record<string, GhRepoAnswer> = {
-  '/code/app': { ok: true, nameWithOwner: 'octo/app' },
-  '/work/spike': { ok: true, nameWithOwner: 'octo/app' },
+  '/code/app': { ok: true, nameWithOwner: 'octo/app', url: 'https://github.com/octo/app' },
+  '/work/spike': { ok: true, nameWithOwner: 'octo/app', url: 'https://github.com/octo/app' },
   '/code/gl': { ok: false, error: { code: 'not_a_repo', message: 'none of the git remotes point to a known GitHub host' } },
   '/code/out': { ok: false, error: { code: 'gh_logged_out', message: 'gh auth login' } }
 }
@@ -33,6 +28,7 @@ function repoWorker(gh: string[] = []) {
   return {
     default: (orca: OrcaWorkerApi) =>
       main.activateWith(orca, {
+        gh: noGh,
         ghRepo: async (path) => {
           gh.push(path)
           return repos[path]
@@ -54,7 +50,7 @@ function hostFocused(context: { branch: string; displayName: string } | null) {
 
 test('repo.get answers the focused workspace repo and its path', async () => {
   const worker = await mountWorker(repoWorker(), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
-  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/app', path: '/work/spike', resolvedBy: 'context' })
+  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/app', url: 'https://github.com/octo/app', path: '/work/spike', resolvedBy: 'context' })
   assert.deepEqual(worker.refusals, [])
   await worker.deactivate()
 })
@@ -121,6 +117,7 @@ test('an answer for a focus that already moved on is dropped', async () => {
   const module = {
     default: (orca: OrcaWorkerApi) =>
       main.activateWith(orca, {
+        gh: noGh,
         ghRepo: async (path) => {
           if (path === '/code/gl') await slow
           return repos[path]
@@ -178,6 +175,7 @@ test('one gh run per folder and one CLI run per terminal, posting each answer on
   const module = {
     default: (orca: OrcaWorkerApi) =>
       main.activateWith(orca, {
+        gh: noGh,
         ghRepo: async (path) => {
           gh.push(path)
           return repos[path]
@@ -210,9 +208,10 @@ test('repo.get asks again after an error, with no focus change', async () => {
   const module = {
     default: (orca: OrcaWorkerApi) =>
       main.activateWith(orca, {
+        gh: noGh,
         ghRepo: async (path) => {
           gh.push(path)
-          return loggedIn ? { ok: true, nameWithOwner: 'octo/out' } : repos[path]
+          return loggedIn ? { ok: true, nameWithOwner: 'octo/out', url: 'https://github.com/octo/out' } : repos[path]
         },
         terminalPath: async () => null,
         exists: () => true
@@ -222,12 +221,69 @@ test('repo.get asks again after an error, with no focus change', async () => {
   const first = await worker.request('repo.get')
   assert.equal(!first.ok && first.error.code, 'gh_logged_out')
   loggedIn = true
-  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/out', path: '/code/out', resolvedBy: 'context' })
+  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/out', url: 'https://github.com/octo/out', path: '/code/out', resolvedBy: 'context' })
   // Other open panels hear the new answer too.
   const last = worker.posts.filter((p) => p.event === 'repo.changed').at(-1)
   assert.equal((last?.payload as { ok: boolean }).ok, true)
   // A found repo is served from cache.
   await worker.request('repo.get')
   assert.equal(gh.length, 3)
+  await worker.deactivate()
+})
+
+function listWorker(gh: Gh) {
+  return {
+    default: (orca: OrcaWorkerApi) =>
+      main.activateWith(orca, { gh, ghRepo: async (path) => repos[path], terminalPath: async () => null, exists: () => true })
+  }
+}
+
+test('issues.list runs one gh search in the focused repo and answers its page', async () => {
+  const calls: { args: string[]; cwd?: string; signal?: AbortSignal }[] = []
+  const gh: Gh = async (args, options) => {
+    calls.push({ args, cwd: options?.cwd, signal: options?.signal })
+    return {
+      data: {
+        page: { issueCount: 1, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        open: { issueCount: 1 },
+        closed: { issueCount: 0 }
+      }
+    }
+  }
+  const worker = await mountWorker(listWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
+  const answer = await worker.request('issues.list', { state: 'open', query: '', after: null })
+  assert.deepEqual(answer, { ok: true, rows: [], total: 1, open: 1, closed: 0, next: null, limit: 1000 })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].cwd, '/work/spike')
+  assert.ok(calls[0].args.includes('q=repo:octo/app is:issue is:open sort:created-desc'))
+  // The request's own signal reaches gh, so a closed panel stops it.
+  assert.ok(calls[0].signal instanceof AbortSignal)
+  await worker.deactivate()
+})
+
+test('a list asked with no repo answers the repo error and never runs gh', async () => {
+  const worker = await mountWorker(listWorker(noGh), { host: hostFocused({ branch: 'main', displayName: 'out' }) })
+  const answer = await worker.request('pulls.list', { state: 'open', query: '', after: null })
+  assert.equal(answer.ok, false)
+  if (answer.ok) return
+  assert.equal(answer.error.code, 'gh_logged_out')
+  assert.equal(answer.error.path, '/code/out')
+  await worker.deactivate()
+})
+
+test('a gh failure in a list is an answer, not a thrown error', async () => {
+  const gh: Gh = async () => {
+    throw new GhError('rate_limited', 'API rate limit exceeded for user ID 1.')
+  }
+  const worker = await mountWorker(listWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
+  const answer = await worker.request('runs.list', { query: '', after: null })
+  assert.deepEqual(answer, { ok: false, error: { code: 'rate_limited', message: 'API rate limit exceeded for user ID 1.' } })
+  await worker.deactivate()
+})
+
+test('runs.list with plain words answers bad_query without running gh', async () => {
+  const worker = await mountWorker(listWorker(noGh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
+  const answer = await worker.request('runs.list', { query: 'flaky test', after: null })
+  assert.equal(!answer.ok && answer.error.code, 'bad_query')
   await worker.deactivate()
 })
