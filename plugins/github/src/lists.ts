@@ -26,11 +26,15 @@ function quoted(value: string): string {
   return /\s/.test(value) ? `"${value.replace(/"/g, '')}"` : value
 }
 
-function filterWords(filters: ItemFilters = {}): string[] {
+const DRAFT: Record<string, string> = { draft: 'draft:true', ready: 'draft:false' }
+
+function filterWords(kind: 'issue' | 'pr', filters: ItemFilters = {}): string[] {
   const words: string[] = []
   if (filters.author?.trim()) words.push(`author:${quoted(filters.author.trim())}`)
   if (filters.label?.trim()) words.push(`label:${quoted(filters.label.trim())}`)
   if (filters.assignee?.trim()) words.push(`assignee:${quoted(filters.assignee.trim())}`)
+  if (kind === 'pr' && filters.review === 'me') words.push('review-requested:@me')
+  if (kind === 'pr' && filters.draft && DRAFT[filters.draft]) words.push(DRAFT[filters.draft])
   return words
 }
 
@@ -47,7 +51,7 @@ export function itemSearch(
 ): string {
   const order = sort ? [`sort:${sort}`] : []
   const states = state === 'all' ? [] : [`is:${state}`]
-  return [`repo:${repo.nameWithOwner}`, `is:${kind}`, ...states, ...filterWords(filters), ...order, words.trim()]
+  return [`repo:${repo.nameWithOwner}`, `is:${kind}`, ...states, ...filterWords(kind, filters), ...order, words.trim()]
     .filter(Boolean)
     .join(' ')
 }

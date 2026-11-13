@@ -358,6 +358,41 @@ test('issue requests run gh in the focused repo, and answer the repo error witho
   await out.deactivate()
 })
 
+test('pull request requests run gh pr in the focused repo, and answer the repo error without one', async () => {
+  const calls: { args: string[]; cwd?: string }[] = []
+  const gh: Gh = async (args, options) => {
+    calls.push({ args, cwd: options?.cwd })
+    return args[0] === 'api' ? { data: { repository: { pullRequest: null } } } : ''
+  }
+  const worker = await mountWorker(listWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
+  assert.deepEqual(await worker.request('pull.comment', { number: 13, body: 'Looks good.' }), { ok: true })
+  assert.deepEqual(await worker.request('pull.review', { number: 13, event: 'approve', body: '' }), { ok: true })
+  assert.deepEqual(await worker.request('pull.close', { number: 13 }), { ok: true })
+  assert.deepEqual(await worker.request('pull.reopen', { number: 13, comment: 'Back on.' }), { ok: true })
+  assert.deepEqual(await worker.request('pull.edit', { number: 13, addLabels: ['bug'] }), { ok: true })
+  const missing = await worker.request('pull.get', { number: 13 })
+  assert.equal(!missing.ok && missing.error.code, 'not_found')
+  const page = await worker.request('pull.timeline', { number: 13, after: 'c1' })
+  assert.equal(!page.ok && page.error.code, 'not_found')
+  assert.deepEqual(calls.map((c) => [c.cwd, c.args.slice(0, 2)]), [
+    ['/work/spike', ['pr', 'comment']],
+    ['/work/spike', ['pr', 'review']],
+    ['/work/spike', ['pr', 'close']],
+    ['/work/spike', ['pr', 'reopen']],
+    ['/work/spike', ['pr', 'edit']],
+    ['/work/spike', ['api', 'graphql']],
+    ['/work/spike', ['api', 'graphql']]
+  ])
+  const empty = await worker.request('pull.review', { number: 13, event: 'request_changes', body: '' })
+  assert.equal(!empty.ok && empty.error.code, 'gh_failed')
+  await worker.deactivate()
+
+  const out = await mountWorker(listWorker(noGh), { host: hostFocused({ branch: 'main', displayName: 'out' }) })
+  const answer = await out.request('pull.get', { number: 13 })
+  assert.equal(!answer.ok && answer.error.code, 'gh_logged_out')
+  await out.deactivate()
+})
+
 test('repo.links answers what Orca links to the workspace, only for its own repo', async () => {
   let project: string | null = 'github:Octo/App'
   const module = {

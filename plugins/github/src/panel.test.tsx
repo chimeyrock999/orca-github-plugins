@@ -69,16 +69,16 @@ test('search and Closed start the list over from page 1', async () => {
   await view.unmount()
 })
 
-test('a row opens its detail, Back returns to the same page, and Open on GitHub opens the row', async () => {
+test('a run opens its detail, Back returns to the same page, and Open on GitHub opens the row', async () => {
   const h = host()
-  const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'pulls' } } })
+  const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'runs' } } })
   await view.press({ type: 'ListItem', text: /Fix token refresh loop/ })
-  assert.ok(view.find({ text: '← Back to pull requests' }))
+  assert.ok(view.find({ text: '← Back to runs' }))
   assert.ok(view.find({ type: 'Text', text: 'Fix token refresh loop' }))
   await view.press({ text: 'Open on GitHub' })
-  assert.deepEqual(h.callsOf('shell.openExternal'), [{ url: 'https://github.com/octo/app/pull/124' }])
-  await view.press({ text: '← Back to pull requests' })
-  assert.equal(view.findAll({ type: 'ListItem' }).length, 2)
+  assert.deepEqual(h.callsOf('shell.openExternal'), [{ url: 'https://github.com/octo/app/actions/runs/9001' }])
+  await view.press({ text: '← Back to runs' })
+  assert.equal(view.findAll({ type: 'ListItem' }).length, 3)
   assert.deepEqual(view.refusals, [])
   await view.unmount()
 })

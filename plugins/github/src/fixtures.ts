@@ -1,5 +1,5 @@
 // Sample answers the panel tests and check scenarios stand in for the worker with.
-import type { Answer, IssueDetail, IssueRow, ItemPage, Page, PullRow, RepoAnswer, RunRow, TimelineComment, TimelineItem } from './protocol'
+import type { Answer, Check, IssueDetail, IssueRow, ItemPage, Page, PullDetail, PullRow, RepoAnswer, RunRow, TimelineComment, TimelineItem, TimelineReview } from './protocol'
 
 const now = Date.UTC(2026, 10, 12, 9, 0)
 const hour = 3_600_000
@@ -123,6 +123,72 @@ export function issueDetail(change: Partial<IssueDetail> = {}): IssueDetail {
     next: null,
     tail: [],
     viewer: 'chimeyrock999',
+    ...change
+  }
+}
+
+export function reviewItem(n: number, change: Partial<TimelineReview> = {}): TimelineReview {
+  return {
+    kind: 'review',
+    id: `PRR_${n}`,
+    url: `https://github.com/octo/app/pull/131#pullrequestreview-${5000 + n}`,
+    author: 'ana',
+    state: 'commented',
+    body: `Review ${n}`,
+    truncated: false,
+    createdAt: now - (30 - n) * hour,
+    comments: 0,
+    reactions: [],
+    ...change
+  }
+}
+
+export const checks: Check[] = [
+  { name: 'CI / test (ubuntu)', state: 'fail', url: 'https://github.com/octo/app/actions/runs/1/job/2', durationMs: 192_000 },
+  { name: 'CI / test (macos)', state: 'pending', url: 'https://github.com/octo/app/actions/runs/1/job/3', durationMs: null },
+  { name: 'CI / lint', state: 'pass', url: 'https://github.com/octo/app/actions/runs/1/job/4', durationMs: 41_000 },
+  { name: 'netlify/deploy-preview', state: 'skipped', url: null, durationMs: null }
+]
+
+export const pullTimelineItems: TimelineItem[] = [
+  commentItem(1, { body: 'Does this keep the header row when the first page is empty?', url: 'https://github.com/octo/app/pull/131#issuecomment-1001' }),
+  reviewItem(2, { author: 'lucia', body: 'Looks right. Two nits inline.', comments: 2 }),
+  reviewItem(3, { state: 'changes_requested', body: 'The writer is never closed when the request fails.', comments: 1 }),
+  reviewItem(4, { state: 'approved', author: 'olu', body: '' }),
+  commentItem(5, { author: 'chimeyrock999', body: 'Fixed in the last push.', canEdit: true, canDelete: true })
+]
+
+export function pullDetail(change: Partial<PullDetail> = {}): PullDetail {
+  return {
+    id: 'PR_131',
+    number: 131,
+    title: 'fix: stream CSV export past 10k rows',
+    url: 'https://github.com/octo/app/pull/131',
+    state: 'open',
+    author: 'kenji',
+    body: 'Streams the rows to the CSV writer. Closes #120.',
+    truncated: false,
+    createdAt: now - 52 * hour,
+    closedAt: null,
+    mergedAt: null,
+    labels: ['bug', 'export'],
+    assignees: ['kenji'],
+    milestone: 'v1.9',
+    canEdit: true,
+    reactions: [{ content: 'ROCKET', count: 2, viewerHasReacted: false, users: ['ana', 'olu'] }],
+    comments: 2,
+    total: pullTimelineItems.length,
+    head: pullTimelineItems,
+    next: null,
+    tail: [],
+    viewer: 'chimeyrock999',
+    baseRef: 'dev',
+    headRef: 'kenji:stream-export',
+    merge: 'unstable',
+    review: 'changes_requested',
+    reviewers: ['ana'],
+    checks,
+    checksTotal: checks.length,
     ...change
   }
 }

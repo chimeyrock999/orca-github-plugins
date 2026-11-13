@@ -103,7 +103,9 @@ export type RunRow = {
 
 /** Search orders GitHub offers for issues and pull requests. */
 export type ItemSort = 'created-desc' | 'created-asc' | 'updated-desc' | 'comments-desc'
-export type ItemFilters = { author?: string; label?: string; assignee?: string }
+/** `review: 'me'` keeps pull requests whose review is asked of the viewer; `draft` is `draft` or
+ *  `ready`. Issues take neither. */
+export type ItemFilters = { author?: string; label?: string; assignee?: string; review?: string; draft?: string }
 
 /** Issues and pull requests: `state` picks the list (`all` is both), `open` and `closed` count both. */
 export type ItemListInput = {
@@ -173,10 +175,36 @@ export type TimelineState = {
   id: string
   actor: string | null
   createdAt: number
-  /** Closed events only. */
+  /** Closed events of issues only; null for a reopened event or a pull request. */
   reason: 'completed' | 'not_planned' | 'duplicate' | null
 }
-export type TimelineItem = TimelineComment | TimelineMention | TimelineState
+export type TimelineItem = TimelineComment | TimelineMention | TimelineState | TimelineReview | TimelineMerged
+
+export type ReviewState = 'approved' | 'changes_requested' | 'commented' | 'dismissed'
+/** A submitted pull request review: its body, and how many comments it left on the diff (shown
+ *  on GitHub only). */
+export type TimelineReview = {
+  kind: 'review'
+  id: string
+  url: string
+  author: string | null
+  state: ReviewState
+  body: string
+  truncated: boolean
+  createdAt: number
+  /** Comments on the diff. */
+  comments: number
+  reactions: ReactionGroup[]
+}
+export type TimelineMerged = {
+  kind: 'merged'
+  id: string
+  actor: string | null
+  createdAt: number
+  /** Short sha of the merge commit, and the branch it went into. */
+  commit: string
+  into: string
+}
 
 /** What an issue and a pull request share: the body, labels, assignees and milestone, and the start
  *  and the end of the timeline, as GitHub shows a long one: `head` from the start, `next` the cursor
@@ -208,6 +236,35 @@ export type ThreadDetail = {
 }
 
 export type IssueDetail = ThreadDetail & { state: IssueState }
+
+/** Whether a pull request can be merged now, from GitHub's merge state: `unstable` is a passing
+ *  required set with other checks failing, `unknown` while GitHub is still working it out. */
+export type MergeState = 'clean' | 'conflicts' | 'behind' | 'blocked' | 'unstable' | 'draft' | 'unknown'
+export type ReviewDecision = 'approved' | 'changes_requested' | 'review_required' | null
+/** `skipped` is skipped, neutral or stale; cancelled and timed-out checks fail. */
+export type CheckState = 'pass' | 'fail' | 'pending' | 'skipped'
+/** One check run or commit status on the head commit; `url` opens its run. */
+export type Check = { name: string; state: CheckState; url: string | null; durationMs: number | null }
+
+export type PullDetail = ThreadDetail & {
+  state: PullState
+  /** The branch it merges into. */
+  baseRef: string
+  /** The branch it merges from, as `owner:branch` when that is in a fork. */
+  headRef: string
+  mergedAt: number | null
+  merge: MergeState
+  review: ReviewDecision
+  /** Reviews asked for and not given yet: logins, or team names. */
+  reviewers: string[]
+  /** Failing first, then pending, passed and skipped; at most 100. */
+  checks: Check[]
+  /** Checks in all, which may be more than `checks` holds. */
+  checksTotal: number
+}
+
+/** The review `gh pr review` submits. */
+export type ReviewEvent = 'approve' | 'request_changes' | 'comment'
 
 export type IssueEdit = {
   number: number
@@ -257,6 +314,16 @@ declare module 'orca' {
     'issue.create': { input: IssueCreate; output: Answer<{ number: number; url: string }> }
     /** Adds or removes the viewer's reaction on an issue or comment, by its node id. */
     'reaction.set': { input: { subjectId: string; content: Reaction; on: boolean }; output: Done }
+    /** One pull request with its checks, body and the start and end of its timeline. */
+    'pull.get': { input: { number: number }; output: Answer<{ pull: PullDetail }> }
+    'pull.timeline': { input: { number: number; after: string }; output: Answer<{ items: TimelineItem[]; next: string | null }> }
+    'pull.comment': { input: { number: number; body: string }; output: Done }
+    'pull.edit': { input: IssueEdit; output: Done }
+    /** Closes or reopens, posting `comment` first when there is one. */
+    'pull.close': { input: { number: number; comment?: string }; output: Done }
+    'pull.reopen': { input: { number: number; comment?: string }; output: Done }
+    /** Approve, request changes (with a body) or comment (with a body). */
+    'pull.review': { input: { number: number; event: ReviewEvent; body: string }; output: Done }
     /** Logins that can be assigned in the focused repo. */
     'assignees.list': { output: Answer<{ logins: string[] }> }
     /** The focused repo's workflows, for the workflow filter. */

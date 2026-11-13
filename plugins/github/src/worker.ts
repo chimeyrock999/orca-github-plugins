@@ -19,6 +19,7 @@ import {
 } from './issues'
 import { listIssues, listLabels, listPulls, listRuns, listWorkflows, type RepoRef } from './lists'
 import type { Answer } from './protocol'
+import { closePull, commentOnPull, editPull, getPull, pullTimeline, reopenPull, reviewPull } from './pulls'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './repo'
 
 export type WorkerDeps = RepoDeps & { gh: Gh; links?: (path: string) => Promise<WorkspaceLinks | null> }
@@ -78,6 +79,14 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   orca.panels.handle('issue.reopen', (input, { signal }) => inRepo(tracker, (repo) => reopenIssue(deps.gh, repo, input, signal)))
   orca.panels.handle('issue.edit', (input, { signal }) => inRepo(tracker, (repo) => editIssue(deps.gh, repo, input, signal)))
   orca.panels.handle('issue.create', (input, { signal }) => inRepo(tracker, (repo) => createIssue(deps.gh, repo, input, signal)))
+
+  orca.panels.handle('pull.get', ({ number }, { signal }) => inRepo(tracker, (repo) => getPull(deps.gh, repo, number, signal)))
+  orca.panels.handle('pull.timeline', ({ number, after }, { signal }) => inRepo(tracker, (repo) => pullTimeline(deps.gh, repo, number, after, signal)))
+  orca.panels.handle('pull.comment', ({ number, body }, { signal }) => inRepo(tracker, (repo) => commentOnPull(deps.gh, repo, number, body, signal)))
+  orca.panels.handle('pull.edit', (input, { signal }) => inRepo(tracker, (repo) => editPull(deps.gh, repo, input, signal)))
+  orca.panels.handle('pull.close', (input, { signal }) => inRepo(tracker, (repo) => closePull(deps.gh, repo, input, signal)))
+  orca.panels.handle('pull.reopen', (input, { signal }) => inRepo(tracker, (repo) => reopenPull(deps.gh, repo, input, signal)))
+  orca.panels.handle('pull.review', (input, { signal }) => inRepo(tracker, (repo) => reviewPull(deps.gh, repo, input, signal)))
   orca.panels.handle('reaction.set', (input, { signal }) => inRepo(tracker, (repo) => setReaction(deps.gh, repo, input, signal)))
 }
 

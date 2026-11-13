@@ -125,17 +125,20 @@ export async function issueTimeline(
 /** Writes get longer than gh's 15 s default: `gh issue create` makes several API calls. */
 const WRITE_MS = 60_000
 
-function run(gh: Gh, repo: RepoRef, args: string[], signal?: AbortSignal): Promise<unknown> {
+export function run(gh: Gh, repo: RepoRef, args: string[], signal?: AbortSignal): Promise<unknown> {
   return gh(args, { cwd: repo.path, signal, timeoutMs: WRITE_MS })
 }
 
-function needText(text: string, what: string): string {
+export function needText(text: string, what: string): string {
   if (!text.trim()) throw new GhError('gh_failed', `${what} is empty.`)
   return text
 }
 
-export async function commentOn(gh: Gh, repo: RepoRef, number: number, body: string, signal?: AbortSignal): Promise<object> {
-  await run(gh, repo, ['issue', 'comment', String(number), '--body', needText(body, 'The comment')], signal)
+/** gh's command group: `issue`, or `pr` for a pull request, which takes the same flags here. */
+export type Noun = 'issue' | 'pr'
+
+export async function commentOn(gh: Gh, repo: RepoRef, number: number, body: string, signal?: AbortSignal, noun: Noun = 'issue'): Promise<object> {
+  await run(gh, repo, [noun, 'comment', String(number), '--body', needText(body, 'The comment')], signal)
   return {}
 }
 
@@ -180,8 +183,8 @@ function each(flag: string, names: string[] | undefined): string[] {
   return (names ?? []).filter((n) => n.trim()).flatMap((n) => [flag, n.trim()])
 }
 
-export async function editIssue(gh: Gh, repo: RepoRef, input: IssueEdit, signal?: AbortSignal): Promise<object> {
-  const args = ['issue', 'edit', String(input.number)]
+export async function editIssue(gh: Gh, repo: RepoRef, input: IssueEdit, signal?: AbortSignal, noun: Noun = 'issue'): Promise<object> {
+  const args = [noun, 'edit', String(input.number)]
   if (input.title !== undefined) args.push('--title', needText(input.title, 'The title'))
   if (input.body !== undefined) args.push('--body', input.body)
   args.push(

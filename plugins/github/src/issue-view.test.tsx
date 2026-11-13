@@ -2,7 +2,7 @@
 // whose `requests` stand in for src/worker.ts.
 import { assert, hostError, mockHost, mount, test } from 'orca/testing'
 import * as panel from './panel'
-import { commentItem, failed, issueDetail, issueRows, itemPage, repoOk } from './fixtures'
+import { commentItem, failed, issueDetail, issueRows, itemPage, pullDetail, repoOk } from './fixtures'
 import { backToIssues, loadIssue, mergeTimeline, react } from './issue-store'
 import { setRepo } from './store'
 import type { IssueDetail, ItemListInput } from './protocol'
@@ -88,13 +88,22 @@ test('a row opens the issue: state, labels, assignees, milestone, body and timel
   await view.unmount()
 })
 
-test('a mention of an issue here opens it in the panel; a pull request opens on GitHub', async () => {
-  const h = host()
+test('a mention of an issue or pull request here opens it in its tab; another repo opens on GitHub', async () => {
+  const h = host({ 'pulls.list': itemPage([], 0, null), 'pull.get': () => ({ ok: true, pull: pullDetail() }) })
   const view = await openIssue120(h)
-  await view.press({ type: 'ListItem', text: /fix: stream CSV export past 10k rows/ })
-  assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/app/pull/131' })
+  await view.press({ type: 'ListItem', text: /docs: note the 10k export limit/ })
+  assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/docs/pull/412' })
   await view.press({ type: 'ListItem', text: /Excel export truncates long cells/ })
   assert.deepEqual(h.last('issue.get'), { number: 97 })
+  await view.press({ text: '← Back to issues' })
+  await view.press({ type: 'ListItem', text: /Login page loops/ })
+  await view.press({ type: 'ListItem', text: /fix: stream CSV export past 10k rows/ })
+  assert.deepEqual(h.last('pull.get'), { number: 131 })
+  assert.equal(view.find({ type: 'Tabs' })?.props.value, 'pulls')
+  assert.ok(view.find({ text: '← Back to pull requests' }))
+  // The Issues tab still holds its issue.
+  await view.select({ type: 'Tabs' }, 'issues')
+  assert.ok(view.find({ text: '← Back to issues' }))
   await view.unmount()
 })
 

@@ -16,34 +16,37 @@ import {
   Toolbar,
   type PanelContext
 } from 'orca'
-import { issue, loadIssue, newIssue, startIssues } from './issue-store'
+import { issue, issues, newIssue } from './issue-store'
+import { pull, pulls } from './pull-store'
 import { githubUrl, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
 import { Problem } from './parts'
 import { KindView } from './views'
 
-/** Runs `step`, then lets the Issues tab start on the workspace's issue if it has not yet. */
-async function thenIssues(step: Promise<void> | void): Promise<void> {
+/** Runs `step`, then lets the tab on screen start on the workspace's issue or pull request if it
+ *  has not yet (each thread starts only when its tab shows). */
+async function thenStart(step: Promise<void> | void): Promise<void> {
   await step
-  await startIssues()
+  await issues.start()
+  await pulls.start()
 }
 
 /** Runs once before the first render; what it pushes to `subscriptions` ends with the panel. */
 export function setup(ctx: PanelContext): void {
-  ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void thenIssues(setRepo(answer))))
+  ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void thenStart(setRepo(answer))))
   void plugin.request('repo.get').then(
-    (answer) => thenIssues(setRepo(answer)),
+    (answer) => thenStart(setRepo(answer)),
     (error: unknown) => setRepo(requestFailed(error))
   )
 }
 
-/** Refresh: the repo and the list, and the issue on screen. */
+/** Refresh: the repo and the list, and the issue or pull request on screen. */
 async function refreshAll(): Promise<void> {
-  await thenIssues(refresh())
+  await thenStart(refresh())
   // Refresh drops the label and assignee choices; an open picker asks for its own again.
-  const picking = read(issue).picking ?? read(newIssue).picking
+  const picking = read(issue).picking ?? read(newIssue).picking ?? read(pull).picking
   if (picking) void loadChoices(picking.kind)
-  const open = read(lists.issues).open
-  if (read(tab) === 'issues' && open === String(read(issue).number)) await loadIssue()
+  if (read(tab) === 'issues' && read(lists.issues).open === String(read(issue).number)) await issues.load()
+  if (read(tab) === 'pulls' && read(lists.pulls).open === String(read(pull).number)) await pulls.load()
 }
 
 function openOnGitHub(): unknown {
@@ -61,7 +64,7 @@ export default function Panel() {
     return (
       <Stack gap="md">
         <Heading level={3}>GitHub</Heading>
-        <Problem error={r.error} onRetry={refreshAll} onPick={(path) => thenIssues(pickRepo(path))} />
+        <Problem error={r.error} onRetry={refreshAll} onPick={(path) => thenStart(pickRepo(path))} />
       </Stack>
     )
   }
@@ -78,13 +81,13 @@ export default function Panel() {
         </Stack>
         <Toolbar label="Repository" gap="xs">
           {r.resolvedBy === 'picked' && (
-            <IconButton icon="folder" label="Change workspace" variant="ghost" onPress={() => thenIssues(unpickRepo())} />
+            <IconButton icon="folder" label="Change workspace" variant="ghost" onPress={() => thenStart(unpickRepo())} />
           )}
           <IconButton icon="refresh" label="Refresh" variant="ghost" onPress={refreshAll} />
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" onPress={openOnGitHub} />
         </Toolbar>
       </Row>
-      <Tabs label="GitHub" value={read(tab)} onChange={(value) => thenIssues(selectTab(value as Kind))}>
+      <Tabs label="GitHub" value={read(tab)} onChange={(value) => thenStart(selectTab(value as Kind))}>
         <Tab value="issues" label="Issues" icon="bug" />
         <Tab value="pulls" label="Pull requests" icon="branch" />
         <Tab value="runs" label="Actions" icon="play" />

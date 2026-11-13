@@ -26,6 +26,8 @@ import { Glyph, Problem } from './parts'
 import { NewIssueView } from './issue-forms'
 import { openIssue, startNewIssue } from './issue-store'
 import { IssueView } from './issue-view'
+import { pulls } from './pull-store'
+import { PullView } from './pull-view'
 import { PAGE_SIZE, type IssueRow, type ItemSort, type PullRow, type RunRow } from './protocol'
 import {
   back,
@@ -88,9 +90,16 @@ function lookOf(kind: Kind, row: IssueRow | PullRow | RunRow): Look {
   return kind === 'pulls' ? pullLook(row as PullRow) : issueLook(row as IssueRow)
 }
 
+/** Issues and pull requests open by number in their own view; a run opens its short detail. */
+function openOf(kind: Kind, row: IssueRow | PullRow | RunRow): unknown {
+  if (kind === 'issues') return openIssue((row as IssueRow).number)
+  if (kind === 'pulls') return pulls.open((row as PullRow).number)
+  return openRow(kind, rowKey(row))
+}
+
 function RowItem({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow }) {
   return (
-    <ListItem key={rowKey(row)} onPress={() => (kind === 'issues' ? openIssue((row as IssueRow).number) : openRow(kind, rowKey(row)))}>
+    <ListItem key={rowKey(row)} onPress={() => openOf(kind, row)}>
       <Box direction="row" gap="md" align="center" paddingY="sm">
         <Glyph look={lookOf(kind, row)} />
         <Stack gap="xs">
@@ -236,6 +245,12 @@ function Strip({ kind, s }: { kind: Kind; s: ListState }) {
         <>
           <Typed kind={kind} s={s} name="author" label="Author" placeholder="login" />
           <Typed kind={kind} s={s} name="assignee" label="Assignee" placeholder="login or @me" />
+          {kind === 'pulls' && (
+            <>
+              <Choice kind={kind} s={s} name="review" label="Review" options={[{ value: 'me', label: 'Requested from me' }]} />
+              <Choice kind={kind} s={s} name="draft" label="Draft" options={[{ value: 'draft', label: 'Draft' }, { value: 'ready', label: 'Ready' }]} />
+            </>
+          )}
           <Choice kind={kind} s={s} name="label" label="Label" options={asOptions(c.labels)} />
         </>
       )}
@@ -300,42 +315,30 @@ function at(ms: number | null): string | null {
   return ms === null ? null : new Date(ms).toLocaleString()
 }
 
-function details(kind: Kind, row: IssueRow | PullRow | RunRow): KeyValueItem[] {
-  if (kind === 'runs') {
-    const run = row as RunRow
-    return [
-      { label: 'Workflow', value: `${run.workflow} #${run.runNumber}` },
-      { label: 'Started by', value: runCause(run) },
-      { label: 'Branch', value: run.branch, code: true },
-      { label: 'Commit', value: run.sha.slice(0, 7), code: true },
-      { label: 'Started', value: at(run.startedAt) },
-      { label: 'Duration', value: run.durationMs === null ? 'Running' : duration(run.durationMs) }
-    ]
-  }
-  const item = row as IssueRow | PullRow
-  const items: KeyValueItem[] = [
-    { label: 'Author', value: item.author },
-    { label: 'Labels', value: item.labels.join(', ') || 'None' }
+function details(run: RunRow): KeyValueItem[] {
+  return [
+    { label: 'Workflow', value: `${run.workflow} #${run.runNumber}` },
+    { label: 'Started by', value: runCause(run) },
+    { label: 'Branch', value: run.branch, code: true },
+    { label: 'Commit', value: run.sha.slice(0, 7), code: true },
+    { label: 'Started', value: at(run.startedAt) },
+    { label: 'Duration', value: run.durationMs === null ? 'Running' : duration(run.durationMs) }
   ]
-  if ('branch' in item) items.push({ label: 'Branch', value: item.branch, code: true })
-  items.push({ label: 'Opened', value: at(item.createdAt) })
-  if ('mergedAt' in item && item.mergedAt) items.push({ label: 'Merged', value: at(item.mergedAt) })
-  else if (item.closedAt) items.push({ label: 'Closed', value: at(item.closedAt) })
-  return items
 }
 
-function Detail({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow }) {
-  const look = lookOf(kind, row)
+/** A run in short: what started it, where and how long; the rest is on GitHub. */
+function RunDetail({ run }: { run: RunRow }) {
+  const look = runLook(run)
   return (
     <Stack gap="sm">
       <Row>
-        <Button size="sm" variant="outline" onPress={() => back(kind)}>
-          {`← Back to ${NAMES[kind].plural}`}
+        <Button size="sm" variant="outline" onPress={() => back('runs')}>
+          ← Back to runs
         </Button>
       </Row>
       {/* Heading level 3 draws as a small caps label; the title reads as a title. */}
       <Text size="md" weight="semibold">
-        {row.title}
+        {run.title}
       </Text>
       <Row gap="xs" align="center">
         <Glyph look={look} />
@@ -343,12 +346,12 @@ function Detail({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow })
           {look.label}
         </Text>
         <Text size="sm" muted>
-          {kind === 'runs' ? (row as RunRow).workflow : `#${(row as IssueRow).number}`}
+          {run.workflow}
         </Text>
       </Row>
-      <KeyValue items={details(kind, row)} />
+      <KeyValue items={details(run)} />
       <Row>
-        <Button size="sm" icon="open-external" onPress={() => shell.openExternal(row.url)}>
+        <Button size="sm" icon="open-external" onPress={() => shell.openExternal(run.url)}>
           Open on GitHub
         </Button>
       </Row>
@@ -358,8 +361,9 @@ function Detail({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow })
 
 export function KindView({ kind }: { kind: Kind }) {
   const s = read(lists[kind])
-  // An issue opens by number, so it shows whether or not it is on the page.
+  // Issues and pull requests open by number, so they show whether or not they are on the page.
   if (kind === 'issues' && s.open) return s.open === 'new' ? <NewIssueView /> : <IssueView />
+  if (kind === 'pulls' && s.open) return <PullView />
   const row = s.open && s.answer?.ok ? s.answer.rows.find((r) => rowKey(r) === s.open) : undefined
-  return row ? <Detail kind={kind} row={row} /> : <ListView kind={kind} s={s} />
+  return row ? <RunDetail run={row as RunRow} /> : <ListView kind={kind} s={s} />
 }

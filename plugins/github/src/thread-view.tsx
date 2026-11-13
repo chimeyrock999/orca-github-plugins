@@ -24,11 +24,12 @@ import {
   type OrcaNode
 } from 'orca'
 import { issues } from './issue-store'
-import { count, EMOJI, reactionTip, sourceLook, stateWords } from './look'
+import { count, EMOJI, pullLook, reactionTip, reviewLook, sourceLook, stateWords, type Look } from './look'
 import { Glyph } from './parts'
-import { REACTIONS, type ReactionGroup, type ThreadDetail, type TimelineComment, type TimelineItem, type TimelineMention } from './protocol'
+import { pulls } from './pull-store'
+import { REACTIONS, type ReactionGroup, type ThreadDetail, type TimelineComment, type TimelineItem, type TimelineMention, type TimelineReview } from './protocol'
 import { hasImage, linkRefs } from './refs'
-import { choices, repo } from './store'
+import { choices, repo, selectTab } from './store'
 import { hiddenCount, type AnyThread, type Picking, type PickerOps, type ThreadState } from './thread-store'
 
 function repoUrl(): string {
@@ -188,11 +189,18 @@ function CommentItem({ t, c, s }: { t: AnyThread; c: TimelineComment; s: ThreadS
   )
 }
 
+/** Opens an issue or pull request of this repo in its tab. */
+function openHere(type: 'issue' | 'pull', number: number): Promise<void> {
+  const t = type === 'issue' ? issues : pulls
+  void selectTab(t.kind)
+  return t.open(number)
+}
+
 function Mention({ item }: { item: TimelineMention }) {
   const r = read(repo)
   const own = r?.ok && item.source.repo.toLowerCase() === r.nameWithOwner.toLowerCase()
-  // Issues of this repo open here; pull requests and other repos open on GitHub.
-  const go = () => (own && item.source.type === 'issue' ? issues.open(item.source.number) : shell.openExternal(item.source.url))
+  // Issues and pull requests of this repo open here, in their own tab; other repos on GitHub.
+  const go = () => (own ? openHere(item.source.type, item.source.number) : shell.openExternal(item.source.url))
   // One row, the whole of it pressable: what links here first, who and when under it.
   return (
     <ListItem onPress={go}>
@@ -220,24 +228,57 @@ function Mention({ item }: { item: TimelineMention }) {
   )
 }
 
-function Item({ t, item, s }: { t: AnyThread; item: TimelineItem; s: ThreadState<ThreadDetail> }) {
-  if (item.kind === 'comment') return <CommentItem t={t} c={item} s={s} />
-  if (item.kind === 'mention') return <List label="Mentioned in"><Mention item={item} /></List>
-  const { words, look } = stateWords(item)
+/** An event in one line: glyph, who, what and when. */
+function EventLine({ look, actor, words, at }: { look: Look; actor: string | null; words: string; at: number }) {
   return (
     <Box direction="row" gap="sm" align="center" paddingX="sm">
       <Glyph look={look} />
       <Text size="sm">
         <Text size="sm" weight="semibold">
-          {item.actor ?? 'ghost'}
+          {actor ?? 'ghost'}
         </Text>
         <Text size="sm" muted>
           {` ${words} `}
-          <RelativeTime at={item.createdAt} />
+          <RelativeTime at={at} />
         </Text>
       </Text>
     </Box>
   )
+}
+
+/** A review: a box when it says something (a body, or comments on the diff), else one line. */
+function ReviewItem({ t, r }: { t: AnyThread; r: TimelineReview }) {
+  const { words, look } = reviewLook(r.state)
+  if (!r.body.trim() && r.comments === 0) return <EventLine look={look} actor={r.author} words={words} at={r.createdAt} />
+  const head = (
+    <>
+      <Text size="sm" weight="semibold" tone={look.tone}>
+        {`${look.glyph} `}
+      </Text>
+      <Byline who={r.author} words={words} at={r.createdAt} />
+    </>
+  )
+  return (
+    <Post t={t} head={head} body={r.body} url={r.url} cut={r.truncated} subject={r.id} reactions={r.reactions} empty={null}>
+      {r.comments > 0 && (
+        <Text size="xs" muted>
+          {`${count(r.comments)} comment${r.comments === 1 ? '' : 's'} on the diff · `}
+          <Link onPress={() => shell.openExternal(r.url)}>View on GitHub</Link>
+        </Text>
+      )}
+    </Post>
+  )
+}
+
+function Item({ t, item, s }: { t: AnyThread; item: TimelineItem; s: ThreadState<ThreadDetail> }) {
+  if (item.kind === 'comment') return <CommentItem t={t} c={item} s={s} />
+  if (item.kind === 'mention') return <List label="Mentioned in"><Mention item={item} /></List>
+  if (item.kind === 'review') return <ReviewItem t={t} r={item} />
+  if (item.kind === 'merged') {
+    return <EventLine look={pullLook({ state: 'merged' })} actor={item.actor} words={`merged commit ${item.commit} into ${item.into}`} at={item.createdAt} />
+  }
+  const { words, look } = stateWords(item)
+  return <EventLine look={look} actor={item.actor} words={words} at={item.createdAt} />
 }
 
 /** Part of the timeline in order; mentions next to each other share one list. */

@@ -147,9 +147,9 @@ export function timelineItem(node: NodeJson | null): TimelineItem | null {
   }
 }
 
-/** Bytes of text an item brings: a comment's body; events bring none. */
+/** Bytes of text an item brings: a comment's or review's body; events bring none. */
 function itemBytes(item: TimelineItem | null): number {
-  return item?.kind === 'comment' ? jsonBytes(item.body) : 0
+  return item && 'body' in item ? jsonBytes(item.body) : 0
 }
 
 /** The items of `edges` while their comment text stays within `budget` bytes (at least one), and

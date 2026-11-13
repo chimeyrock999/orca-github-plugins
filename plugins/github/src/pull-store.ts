@@ -1,0 +1,61 @@
+// The open pull request: a thread (src/thread-store.ts) with what only pull requests have, a review
+// (approve, request changes or comment) and closing or reopening after a confirmation.
+import { plugin, read, update } from 'orca'
+import type { PullDetail, ReviewEvent } from './protocol'
+import { makeThread, WRITE, type ThreadState } from './thread-store'
+
+export type PullState = ThreadState<PullDetail> & {
+  /** The review being written; its body is the comment box's text. */
+  reviewing: ReviewEvent | null
+  /** Close or reopen, waiting for a yes. */
+  confirming: 'close' | 'reopen' | null
+}
+
+export const pulls = makeThread<PullDetail, Pick<PullState, 'reviewing' | 'confirming'>>(
+  'pulls',
+  {
+    get: (number) => plugin.request('pull.get', { number }).then((a) => (a.ok ? { ok: true as const, detail: a.pull } : a)),
+    timeline: (number, after) => plugin.request('pull.timeline', { number, after }),
+    comment: (number, body) => plugin.request('pull.comment', { number, body }, WRITE),
+    edit: (input) => plugin.request('pull.edit', input, WRITE)
+  },
+  () => ({ reviewing: null, confirming: null })
+)
+
+export const pull = pulls.state
+
+/** Whether the viewer wrote the pull request: GitHub lets no one approve or request changes on
+ *  their own. */
+export function ownPull(d: PullDetail): boolean {
+  return !!d.viewer && d.viewer === d.author
+}
+
+/** Whether a review of this kind can be sent with what is typed: only an approval may be empty. */
+export function canReview(d: PullDetail, event: ReviewEvent, body: string): boolean {
+  if (event !== 'comment' && ownPull(d)) return false
+  return event === 'approve' || !!body.trim()
+}
+
+export const startReview = () => update(pull, (s) => ({ ...s, reviewing: 'comment' as ReviewEvent, confirming: null }))
+export const setReview = (event: ReviewEvent) => update(pull, (s) => (s.reviewing ? { ...s, reviewing: event } : s))
+export const cancelReview = () => update(pull, (s) => ({ ...s, reviewing: null }))
+
+export function submitReview(): Promise<boolean> | void {
+  const { number, draft, reviewing } = read(pull)
+  const d = pulls.shown()
+  if (!reviewing || !d || !canReview(d, reviewing, draft)) return
+  const input = { number, event: reviewing, body: draft }
+  return pulls.write('review', () => plugin.request('pull.review', input, WRITE), (s) => ({ ...s, draft: '', reviewing: null }))
+}
+
+export const askState = (confirming: 'close' | 'reopen') => update(pull, (s) => ({ ...s, confirming, reviewing: null }))
+export const cancelState = () => update(pull, (s) => ({ ...s, confirming: null }))
+
+/** Closes or reopens as asked, posting what is typed as a comment first. */
+export function confirmState(): Promise<boolean> | void {
+  const { number, draft, confirming } = read(pull)
+  if (!confirming) return
+  const input = { number, ...(draft.trim() ? { comment: draft } : {}) }
+  const request = () => plugin.request(confirming === 'close' ? 'pull.close' : 'pull.reopen', input, WRITE)
+  return pulls.write(confirming, request, (s) => ({ ...s, draft: '', confirming: null }))
+}

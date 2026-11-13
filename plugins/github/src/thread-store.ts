@@ -5,7 +5,7 @@
 // pages loaded with Load more stay.
 import { atom, plugin, read, set, update, type Atom } from 'orca'
 import type { Answer, IssueEdit, PanelError, Reaction, ReactionGroup, ThreadDetail, TimelineItem } from './protocol'
-import { back, lists, load, loadChoices, repo, requestFailed, tab } from './store'
+import { back, lists, load, loadChoices, repo, repoEpoch, requestFailed, tab } from './store'
 
 export type ThreadKind = 'issues' | 'pulls'
 export type Picking = { kind: 'labels' | 'assignees'; selected: string[]; query: string; login: string }
@@ -141,8 +141,9 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(ki
   const remember = (number: number | null) => update(seen, (m) => ({ ...m, [workspace()]: number }))
   // A newer load of the same thread makes an older one stale.
   let loads = 0
-  // A write changed a thread, so the list is asked for again on the way back.
-  let listStale = false
+  // A write changed a thread, so the list is asked for again on the way back. An atom, so a new
+  // panel run starts clean.
+  const listStale = atom(false)
 
   /** The thread on screen, once it has loaded. */
   function shown(): D | null {
@@ -176,15 +177,13 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(ki
   function backToList(): Promise<void> | void {
     leave()
     back(kind)
-    if (!listStale) return
-    listStale = false
+    if (!read(listStale)) return
+    set(listStale, false)
     update(lists[kind], (s) => ({ ...s, counts: null }))
     return load(kind)
   }
 
-  const markStale = () => {
-    listStale = true
-  }
+  const markStale = () => set(listStale, true)
 
   function changeShown(change: (detail: D) => D): void {
     update(state, (s) => (s.answer?.ok ? { ...s, answer: { ...s.answer, detail: change(s.answer.detail) } } : s))
@@ -209,7 +208,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(ki
     const view = here()
     update(state, (s) => ({ ...s, busy: name, error: null }))
     const answer = await request().catch(requestFailed)
-    if (answer.ok) listStale = true
+    if (answer.ok) markStale()
     if (view !== here()) return false
     if (!answer.ok) {
       const error = unsure(answer.error)
@@ -217,7 +216,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(ki
       // It may have gone through: show what GitHub has now, keeping what was typed. In-place
       // writes reload too; that drops pages from Load more, which is fine for a rare failure.
       if (error.code === 'unsure') {
-        listStale = true
+        markStale()
         await loadThread()
       }
       return false
@@ -340,7 +339,8 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(ki
     setReactions(subjectId, (g) => flip(g, content, !on, viewer))
   }
 
-  /** The workspace (repo and folder) the tab last started in, for this panel run. */
+  /** The workspace (repo and folder) the tab last started in, and since which repo change: a tab
+   *  that was not on screen when the focus went elsewhere and back starts again when shown. */
   const startedIn = atom<string | null>(null)
 
   /** When the tab shows for a workspace it is not showing yet: what the workspace showed last in
@@ -350,14 +350,15 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(ki
     const r = read(repo)
     if (!r?.ok || read(tab) !== kind) return
     const where = workspace()
-    if (read(startedIn) === where) return
-    set(startedIn, where)
+    const started = `${repoEpoch()}\n${where}`
+    if (read(startedIn) === started) return
+    set(startedIn, started)
     if (read(lists[kind]).open) return
     const last = read(seen)
     if (where in last) return last[where] === null ? undefined : open(last[where]!)
     const links = await plugin.request('repo.links').catch(() => null)
     // The person may have opened something, or moved to another workspace, meanwhile.
-    if (read(startedIn) !== where || read(lists[kind]).open || read(tab) !== kind) return
+    if (read(startedIn) !== started || read(lists[kind]).open || read(tab) !== kind) return
     const linked = links?.ok ? (kind === 'issues' ? links.issue : links.pull) : null
     if (linked) return open(linked)
   }

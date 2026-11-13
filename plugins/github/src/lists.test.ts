@@ -58,6 +58,16 @@ test('itemSearch: all leaves the state out, assignee is a qualifier quoted like 
   )
 })
 
+test('itemSearch: pull requests take review requested from me and draft or ready; issues take neither', () => {
+  assert.equal(
+    itemSearch(repo, 'pr', 'open', '', { review: 'me', draft: 'draft' }),
+    'repo:octo/app is:pr is:open review-requested:@me draft:true sort:created-desc'
+  )
+  assert.equal(itemSearch(repo, 'pr', 'open', '', { draft: 'ready' }), 'repo:octo/app is:pr is:open draft:false sort:created-desc')
+  assert.equal(itemSearch(repo, 'pr', 'open', '', { review: '', draft: 'maybe' }), 'repo:octo/app is:pr is:open sort:created-desc')
+  assert.equal(itemSearch(repo, 'issue', 'open', '', { review: 'me', draft: 'draft' }), 'repo:octo/app is:issue is:open sort:created-desc')
+})
+
 test('issues: all still counts open and closed apart', async () => {
   const gh = fakeGh(searchAnswer([issueNode]))
   const page = await listIssues(gh, repo, { state: 'all', query: '', after: null, filters: { assignee: 'kenji' } })

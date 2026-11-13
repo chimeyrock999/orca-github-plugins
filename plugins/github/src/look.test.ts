@@ -89,3 +89,45 @@ test('state events read like GitHub', () => {
   assert.equal(stateWords(ev('closed', 'duplicate')).words, 'closed this as a duplicate')
   assert.equal(stateWords(ev('reopened', null)).look.tone, 'success')
 })
+
+test('pull requests: closed and merged events, reviews, checks, merge state and review decision', async () => {
+  const { checkLook, checkSummary, decisionLook, mergeLook, reviewLook } = await import('./look')
+  assert.deepEqual(stateWords({ kind: 'closed', id: 'c', actor: 'a', createdAt: 1, reason: null }), { words: 'closed this', look: pullLook({ state: 'closed' }) })
+  assert.deepEqual(
+    (['approved', 'changes_requested', 'commented', 'dismissed'] as const).map((s) => [reviewLook(s).words, reviewLook(s).look.tone]),
+    [
+      ['approved these changes', 'success'],
+      ['requested changes', 'danger'],
+      ['reviewed', 'neutral'],
+      ['reviewed (dismissed)', 'neutral']
+    ]
+  )
+  assert.deepEqual(
+    (['pass', 'fail', 'pending', 'skipped'] as const).map((s) => checkLook(s).tone),
+    ['success', 'danger', 'warning', 'neutral']
+  )
+  const check = (state: 'pass' | 'fail' | 'pending' | 'skipped') => ({ name: 'x', state, url: null, durationMs: null })
+  assert.equal(checkSummary([check('pass'), check('fail'), check('pending'), check('pass'), check('skipped')], 5), '1 failing · 1 pending · 2 passed · 1 skipped')
+  assert.equal(checkSummary([check('pass')], 120), '1 passed · 119 more on GitHub')
+  assert.deepEqual(
+    (['clean', 'conflicts', 'behind', 'blocked', 'unstable', 'draft', 'unknown'] as const).map((m) => [mergeLook(m).label, mergeLook(m).tone]),
+    [
+      ['Ready to merge', 'success'],
+      ['Conflicts with the base branch', 'danger'],
+      ['Behind the base branch', 'warning'],
+      ['Blocked: reviews or checks are required', 'warning'],
+      ['Some checks are not passing', 'warning'],
+      ['Draft: not ready for review', 'neutral'],
+      ['Checking…', 'neutral']
+    ]
+  )
+  assert.deepEqual(
+    (['approved', 'changes_requested', 'review_required', null] as const).map((d) => [decisionLook(d).label, decisionLook(d).tone]),
+    [
+      ['Approved', 'success'],
+      ['Changes requested', 'danger'],
+      ['Review required', 'warning'],
+      ['No review required', 'neutral']
+    ]
+  )
+})
