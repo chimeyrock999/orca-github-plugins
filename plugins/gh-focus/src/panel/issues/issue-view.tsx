@@ -129,12 +129,15 @@ export function IssueView() {
   const back = backLabel(issues)
   return (
     <Box grow minHeight={0} gap="sm">
-      <Row justify="between" align="center">
+      <Row justify="between" align="center" wrap>
         <TasksButton kind="issues" back />
-        <Toolbar label="Issue" gap="xs">
-          {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={issues.startEdit} />}
-          <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
-        </Toolbar>
+        {/* Kept whole, so the two buttons do not stack; narrower still, they wrap under Tasks. */}
+        <Box shrink={false}>
+          <Toolbar label="Issue" gap="xs">
+            {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={issues.startEdit} />}
+            <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
+          </Toolbar>
+        </Box>
       </Row>
       {back && (
         <Row>

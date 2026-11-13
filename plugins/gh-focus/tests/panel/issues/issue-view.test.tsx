@@ -97,6 +97,11 @@ test('← Back to Orca Tasks heads the issue with Edit and Open on GitHub beside
   const inRow = (label: string) => view.findAll({ type: 'IconButton', label }).some((b) => b.path.startsWith(`${row}/`))
   assert.ok(inRow('Open on GitHub'))
   assert.ok(inRow('Edit title and body'))
+  // In a narrow sidebar Edit and Open on GitHub keep their row instead of stacking under each other.
+  const bar = view.findAll({ type: 'Toolbar' }).find((b) => b.props.label === 'Issue')
+  assert.equal(view.findAll({ type: 'Box' }).find((b) => b.path === rowOf(bar!.path))?.props.shrink, false)
+  // Narrower still, they move under Back to Orca Tasks rather than push it past the edge.
+  assert.equal(view.findAll({ type: 'Row' }).find((r) => r.path === row)?.props.wrap, true)
   assert.ok(!back.path.startsWith(`${row}/`))
   assert.ok(before(tasks.path, back.path))
   await view.unmount()

@@ -10,6 +10,7 @@
   },
   "repository": "https://github.com/chimeyrock999/orca-github-plugins",
   "license": "MIT",
+  "icon": "images/icon.png",
   "cover": {
     "path": "images/issue.png",
     "alt": "gh Focus in Orca's right sidebar, showing the workspace's linked issue with its labels, milestone and description"

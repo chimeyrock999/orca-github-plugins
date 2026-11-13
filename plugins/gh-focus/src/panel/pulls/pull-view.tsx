@@ -58,8 +58,11 @@ function ChecksLine({ d }: { d: PullDetail }) {
   const own = d.number === workspacePull() && read(pull).repo === null
   return (
     <MetaLine label="Checks" empty="">
-      <Glyph look={checksLook(d.checks)} />
-      <Link onPress={() => (own ? handOff('checks') : shell.openExternal(`${d.url}/checks`))}>{checkSummary(d.checks)}</Link>
+      {/* One unwrapped row: the glyph stays beside the line when its words wrap. */}
+      <Row gap="xs" align="center">
+        <Glyph look={checksLook(d.checks)} />
+        <Link onPress={() => (own ? handOff('checks') : shell.openExternal(`${d.url}/checks`))}>{checkSummary(d.checks)}</Link>
+      </Row>
     </MetaLine>
   )
 }
@@ -210,12 +213,15 @@ export function PullView() {
   const back = backLabel(pulls)
   return (
     <Box grow minHeight={0} gap="sm">
-      <Row justify="between" align="center">
+      <Row justify="between" align="center" wrap>
         <TasksButton kind="pulls" back />
-        <Toolbar label="Pull request" gap="xs">
-          {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={pulls.startEdit} />}
-          <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
-        </Toolbar>
+        {/* Kept whole, so the two buttons do not stack; narrower still, they wrap under Tasks. */}
+        <Box shrink={false}>
+          <Toolbar label="Pull request" gap="xs">
+            {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={pulls.startEdit} />}
+            <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
+          </Toolbar>
+        </Box>
       </Row>
       {back && (
         <Row>

@@ -135,9 +135,9 @@ export default function Panel() {
           return Promise.all([shown, tabShown()])
         }}
       >
-        <Tab value="issues" label="Issues" icon="bug" />
-        <Tab value="pulls" label="Pull requests" icon="branch" />
-        <Tab value="runs" label="Actions" icon="play" />
+        <Tab value="issues" label="Issues" />
+        <Tab value="pulls" label="Pull requests" />
+        <Tab value="runs" label="Actions" />
       </Tabs>
       <KindView kind={read(tab)} />
     </Box>
