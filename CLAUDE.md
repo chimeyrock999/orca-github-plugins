@@ -6,7 +6,8 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
 ## Layout
 
 - `plugins/github/`: the only plugin so far, **gh Focus** (id `gh-focus`), a `trusted-worker` with one
-  components panel. The folder keeps its name: the catalog pins it as `source.path`.
+  components panel. The folder and the panel id become `gh-focus` before the first release (#27),
+  since the catalog pins the folder as `source.path`.
   - `src/worker.ts`: Node worker, wires the panel requests (`orca.panels.handle`) to the modules below.
   - `src/gh.ts`: `runGh` and `GhError` codes; every GitHub call goes through it.
   - `src/repo.ts` (+ `src/focus.ts`, `src/exec.ts`): the focused workspace's repo, `repo.get`, `repo.changed`.
@@ -98,8 +99,8 @@ Fixes go `hotfix/*` → `main`, then are tagged the same way and merged back int
 set once (`gh repo edit chimeyrock999/orca-github-plugins --add-topic orca-plugin`).
 
 Never change after the first release: the id `gh-focus` (a new id is a new plugin, with new
-approval and empty storage), the folder `plugins/github` (moving it counts as a new repository),
-or a pushed tag. Raising `engines.orca` is fine; Orca keeps offering the older release to older
+approval and empty storage), the plugin's folder (moving it counts as a new repository), or a
+pushed tag. Raising `engines.orca` is fine; Orca keeps offering the older release to older
 Orca. Adding a capability, panel, command or event makes users approve the update again. The name
 and listing text must not suggest GitHub or Orca made the plugin.
 
