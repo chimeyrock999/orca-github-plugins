@@ -429,6 +429,8 @@ declare module 'orca' {
     'pull.edit': { input: IssueEdit & { repo?: string }; output: Done }
     /** Approve, request changes (with a body) or comment (with a body). */
     'pull.review': { input: { number: number; event: ReviewEvent; body: string; repo?: string }; output: Done }
+    /** Marks a draft ready for review, or converts an open pull request back to draft. */
+    'pull.ready': { input: { number: number; ready: boolean; repo?: string }; output: Done }
     /** Shows one of Orca's own views: its Tasks page, or the Checks tab of the right sidebar. */
     'orca.show': { input: { view: OrcaView }; output: Done }
     /** Logins that can be assigned in the focused repo. */

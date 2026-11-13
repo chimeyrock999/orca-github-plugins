@@ -26,6 +26,7 @@ function host(overrides: Record<string, unknown> = {}, detail: (number: number) 
     'pull.get': ({ number }: { number: number }) => ({ ok: true, pull: { ...detail(number), number, url: `https://github.com/octo/app/pull/${number}` } }),
     'pull.comment': () => ok,
     'pull.review': () => ok,
+    'pull.ready': () => ok,
     'pull.edit': () => ok,
     'orca.show': () => ok,
     'comment.edit': () => ok,
@@ -54,6 +55,7 @@ async function until(done: () => boolean): Promise<void> {
   for (let waited = 0; !done() && waited < 1000; waited += 10) await new Promise((resolve) => setTimeout(resolve, 10))
 }
 
+const draftBox = (view: Awaited<ReturnType<typeof mount>>) => view.findAll({ type: 'Callout' }).find((c) => c.props.title === 'Convert #124 to draft?') ?? null
 const says = (view: Awaited<ReturnType<typeof mount>>, text: RegExp) => view.summary().some((l) => text.test(l))
 const mentionOf = (number: number): TimelineItem => ({
   kind: 'mention',
@@ -396,6 +398,52 @@ test('on your own pull request only a comment review is offered', async () => {
   await view.unmount()
 })
 
+test('your own draft is marked ready for review in one press, and loads again', async () => {
+  const h = host({}, () => pullDetail({ author: 'chimeyrock999', state: 'draft', merge: 'draft' }))
+  const view = await openPull(h)
+  assert.equal(view.find({ type: 'Button', text: 'Convert to draft…' }), null)
+  await view.press({ type: 'Button', text: 'Ready for review' })
+  assert.deepEqual(h.last('pull.ready'), { number: 124, ready: true })
+  assert.equal(h.count('pull.get'), 2)
+  await view.unmount()
+})
+
+test('your own open pull request goes back to draft only once confirmed', async () => {
+  const h = host({}, () => pullDetail({ author: 'chimeyrock999' }))
+  const view = await openPull(h)
+  assert.equal(view.find({ type: 'Button', text: 'Ready for review' }), null)
+  await view.press({ type: 'Button', text: 'Convert to draft…' })
+  assert.ok(draftBox(view))
+  await view.press({ type: 'Button', text: 'Cancel' })
+  assert.equal(draftBox(view), null)
+  assert.equal(h.count('pull.ready'), 0)
+  await view.press({ type: 'Button', text: 'Convert to draft…' })
+  await view.press({ type: 'Button', text: 'Convert to draft' })
+  assert.deepEqual(h.last('pull.ready'), { number: 124, ready: false })
+  assert.equal(draftBox(view), null)
+  assert.equal(h.count('pull.get'), 2)
+  await view.unmount()
+})
+
+test('draft and ready are offered only on your own pull request while it is open', async () => {
+  const buttons = (view: Awaited<ReturnType<typeof mount>>) =>
+    [view.find({ type: 'Button', text: 'Ready for review' }), view.find({ type: 'Button', text: 'Convert to draft…' })].filter(Boolean).length
+  for (const change of [{}, { state: 'draft' as const }, { author: 'chimeyrock999', state: 'closed' as const }, { author: 'chimeyrock999', state: 'merged' as const }]) {
+    const view = await openPull(host({}, () => pullDetail(change)))
+    assert.equal(buttons(view), 0, JSON.stringify(change))
+    await view.unmount()
+  }
+})
+
+test('a refused convert keeps the box and says why', async () => {
+  const view = await openPull(host({ 'pull.ready': failed('gh_failed', 'Pull request is in the merge queue') }, () => pullDetail({ author: 'chimeyrock999' })))
+  await view.press({ type: 'Button', text: 'Convert to draft…' })
+  await view.press({ type: 'Button', text: 'Convert to draft' })
+  assert.ok(says(view, /gh failed/))
+  assert.ok(draftBox(view))
+  await view.unmount()
+})
+
 test('a refused review keeps the text and the box, and says why', async () => {
   const view = await openPull(host({ 'pull.review': failed('gh_failed', 'Can not approve your own pull request') }))
   await view.type({ label: 'Comment' }, 'LGTM')
@@ -445,5 +493,14 @@ test('a pull request of another repo opens here in its own repo; its checks stay
   await view.select({ label: 'Review' }, 'approve')
   await view.press({ type: 'Button', text: 'Submit review' })
   assert.deepEqual(h.last('pull.review'), { number: 7, event: 'approve', body: '', repo: 'octo/sdk' })
+  await view.unmount()
+})
+
+test('your own pull request of another repo goes to draft in its own repo', async () => {
+  const h = host({ 'repo.links': links([], ['octo/sdk#7']) }, () => pullDetail({ author: 'chimeyrock999' }))
+  const view = await openPull(h)
+  await view.press({ type: 'Button', text: 'Convert to draft…' })
+  await view.press({ type: 'Button', text: 'Convert to draft' })
+  assert.deepEqual(h.last('pull.ready'), { number: 7, ready: false, repo: 'octo/sdk' })
   await view.unmount()
 })

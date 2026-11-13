@@ -10,6 +10,13 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+### Added
+
+**Issues and pull requests**
+
+- On your own open pull request: Ready for review marks a draft ready, and Convert to draft (asked
+  first) turns it back into one.
+
 ## 0.1.0 - 2026-11-13
 
 The first release: a right-sidebar panel with the issue, pull request and Actions runs of the
