@@ -9,7 +9,7 @@ export const KINDS: Kind[] = ['issues', 'pulls', 'runs']
 
 export type AnyRow = IssueRow | PullRow | RunRow
 /** A page of any tab; issues and pull requests also count open and closed. */
-export type ListPage = Page<AnyRow> & Partial<Pick<ItemPage<AnyRow>, 'open' | 'closed'>>
+export type ListPage = Page<AnyRow> & Partial<Pick<ItemPage<AnyRow>, 'open' | 'closed'>> & { branch?: string | null }
 
 export type ListState = {
   state: 'open' | 'closed' | 'all'
@@ -29,10 +29,27 @@ export type ListState = {
   counts: { open: number; closed: number } | null
   /** What the search and text filter boxes hold before Enter, by name (`query`, `author`, `branch`). */
   drafts: Record<string, string>
+  /** Runs: the focused workspace's branch only (where the tab starts), or every branch. */
+  scope: 'branch' | 'all'
+  /** Runs: the workspace branch the last page was narrowed to, so All branches can come back to it. */
+  branch: string | null
 }
 
 function fresh(): ListState {
-  return { state: 'open', query: '', cursors: [null], answer: null, open: null, filters: {}, sort: 'created-desc', tool: null, counts: null, drafts: {} }
+  return {
+    state: 'open',
+    query: '',
+    cursors: [null],
+    answer: null,
+    open: null,
+    filters: {},
+    sort: 'created-desc',
+    tool: null,
+    counts: null,
+    drafts: {},
+    scope: 'branch',
+    branch: null
+  }
 }
 
 /** What the worker last answered for the focused repo; null until it answers. */
@@ -71,11 +88,17 @@ export function requestFailed(error: unknown): { ok: false; error: PanelError } 
   return { ok: false, error: { code: e?.code === 'timeout' ? 'timeout' : 'host_failed', message: String(e?.message ?? error) } }
 }
 
+/** A write with no answer may still have landed on GitHub. */
+export function unsure(error: PanelError): PanelError {
+  if (error.code !== 'timeout' && error.code !== 'host_failed') return error
+  return { code: 'unsure', message: error.message }
+}
+
 function ask(kind: Kind, s: ListState): Promise<Answer<ListPage>> {
   const after = s.cursors[s.cursors.length - 1]
   const answer =
     kind === 'runs'
-      ? plugin.request('runs.list', { query: s.query, after, filters: s.filters })
+      ? plugin.request('runs.list', { query: s.query, after, filters: s.filters, scope: s.scope })
       : plugin.request('issues.list', {
           state: s.state,
           query: s.query,
@@ -98,7 +121,8 @@ export async function load(kind: Kind): Promise<void> {
   if (mine !== loads[kind]) return
   update(list, (s) => {
     const counted = answer.ok && typeof answer.open === 'number' && typeof answer.closed === 'number'
-    return { ...s, answer, counts: counted ? { open: answer.open!, closed: answer.closed! } : s.counts }
+    const branch = answer.ok && answer.branch ? answer.branch : s.branch
+    return { ...s, answer, branch, counts: counted ? { open: answer.open!, closed: answer.closed! } : s.counts }
   })
 }
 
@@ -111,6 +135,8 @@ export const search = (kind: Kind, query: string) => restart(kind, { query: quer
 export const setDraft = (kind: Kind, name: string, value: string) =>
   update(lists[kind], (s) => ({ ...s, drafts: { ...s.drafts, [name]: value } }))
 export const setSort = (kind: Kind, sort: ItemSort) => restart(kind, { sort })
+/** Runs of the workspace's branch, or of every branch. */
+export const setScope = (scope: ListState['scope']) => restart('runs', { scope })
 export function setFilter(kind: Kind, name: string, value: string): Promise<void> {
   const s = read(lists[kind])
   return restart(kind, { filters: { ...s.filters, [name]: value.trim() }, drafts: { ...s.drafts, [name]: value.trim() } })

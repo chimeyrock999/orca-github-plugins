@@ -17,7 +17,7 @@ so the plugin holds no tokens of its own.
 
 | Plugin | Folder | Type | Status |
 | :--- | :--- | :--- | :--- |
-| gh Focus (`gh-focus`) | [`plugins/github`](plugins/github) | `trusted-worker` | Tabs; issues: list, paging, search, detail, comments, close/reopen, edit, create, reactions; the workspace's pull request: detail, checks line, comments, review, edit, reactions; hand-offs to Orca's Tasks page and Checks tab |
+| gh Focus (`gh-focus`) | [`plugins/github`](plugins/github) | `trusted-worker` | Tabs; issues: list, paging, search, detail, comments, close/reopen, edit, create, reactions; the workspace's pull request: detail, checks line, comments, review, edit, reactions; hand-offs to Orca's Tasks page and Checks tab; Actions: the focused branch's runs, run detail, logs, rerun, cancel, Run workflow, live runs |
 
 ## Install
 

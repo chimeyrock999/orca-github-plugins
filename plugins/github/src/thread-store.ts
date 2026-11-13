@@ -5,7 +5,7 @@
 // pages loaded with Load more stay.
 import { atom, plugin, read, set, update, type Atom } from 'orca'
 import type { Answer, IssueEdit, PanelError, Reaction, ReactionGroup, ThreadDetail, TimelineItem } from './protocol'
-import { back, lists, load, loadChoices, repo, repoEpoch, requestFailed, tab } from './store'
+import { back, lists, load, loadChoices, repo, repoEpoch, requestFailed, tab, unsure } from './store'
 
 export type ThreadKind = 'issues' | 'pulls'
 export type Picking = { kind: 'labels' | 'assignees'; selected: string[]; query: string; login: string }
@@ -39,11 +39,6 @@ export type ThreadRequests<D extends ThreadDetail> = {
 /** Writes wait longer than reads: gh issue create makes several API calls. The worker gives gh 60 s. */
 export const WRITE = { timeoutMs: 90_000 }
 
-/** A write with no answer may still have landed on GitHub. */
-export function unsure(error: PanelError): PanelError {
-  if (error.code !== 'timeout' && error.code !== 'host_failed') return error
-  return { code: 'unsure', message: error.message }
-}
 
 /** The focused workspace: its repo and folder. */
 export function workspace(): string {

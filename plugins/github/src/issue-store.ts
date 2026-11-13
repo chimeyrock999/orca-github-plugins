@@ -2,8 +2,8 @@
 // issues have: closing with a reason, and the new issue form.
 import { atom, plugin, read, set, update } from 'orca'
 import type { CloseReason, IssueDetail, PanelError } from './protocol'
-import { lists, requestFailed } from './store'
-import { makeThread, pickerOps, startPicking, unsure, WRITE, type Picking, type ThreadState } from './thread-store'
+import { lists, requestFailed, unsure } from './store'
+import { makeThread, pickerOps, startPicking, WRITE, type Picking, type ThreadState } from './thread-store'
 
 export type IssueState = ThreadState<IssueDetail> & { closing: { reason: CloseReason; duplicateOf: string } | null }
 

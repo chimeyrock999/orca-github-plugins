@@ -25,6 +25,8 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
     and state; `src/pull-view.tsx`, `src/pull-store.ts`: the workspace's pull request (no list),
     its review, and the hand-offs to Orca's Tasks page and Checks tab.
   - `src/refs.ts`, `src/parts.tsx`: `#N` links, shared pieces.
+  - `src/runs.ts` (+ `src/logs.ts`, `src/workflow-inputs.ts`): one run, its logs, rerun, cancel, the
+    `run.watch` lease, and the Run workflow form; `src/run-store.ts`, `src/run-view.tsx`: their panel side.
   - `src/protocol.ts`: the panel ↔ worker contract (`PluginRequests`, `PluginPanelEvents`).
   - `src/*.test.ts(x)`, `src/panel.check.ts`: tests and render scenarios; `src/manifest.test.ts` checks
     the listing rules (name, engines, metadata).

@@ -7,40 +7,38 @@ import {
   EmptyState,
   IconButton,
   Input,
-  KeyValue,
   List,
   ListItem,
   read,
   RelativeTime,
   Row,
   Select,
-  shell,
   Skeleton,
   Stack,
   Text,
-  Toolbar,
-  type KeyValueItem
+  Toolbar
 } from 'orca'
 import { count, duration, issueLook, itemEvent, pageLine, runCause, runLook, type Look } from './look'
 import { Glyph, Problem } from './parts'
 import { NewIssueView } from './issue-forms'
 import { openIssue, startNewIssue } from './issue-store'
 import { IssueView } from './issue-view'
+import { DISPATCH, openRun, startDispatch } from './run-store'
+import { DispatchView, Requested, RunView } from './run-view'
 import { PullsTab } from './pull-view'
 import { PAGE_SIZE, type IssueRow, type ItemSort, type PullRow, type RunRow } from './protocol'
 import {
-  back,
   choices,
   clearFilters,
   filterCount,
   lists,
   next,
-  openRow,
   previous,
   rowKey,
   search,
   setDraft,
   setFilter,
+  setScope,
   setSort,
   showState,
   toggleTool,
@@ -88,14 +86,14 @@ function lookOf(kind: Kind, row: IssueRow | PullRow | RunRow): Look {
   return kind === 'runs' ? runLook(row as RunRow) : issueLook(row as IssueRow)
 }
 
-/** An issue opens by number in its own view; a run opens its short detail. */
-function openOf(kind: Kind, row: IssueRow | PullRow | RunRow): unknown {
-  return kind === 'issues' ? openIssue((row as IssueRow).number) : openRow(kind, rowKey(row))
+/** An issue opens by number, a run by id; the Pull requests tab has no list. */
+function press(kind: Kind, row: IssueRow | PullRow | RunRow): unknown {
+  return kind === 'issues' ? openIssue((row as IssueRow).number) : openRun((row as RunRow).id)
 }
 
 function RowItem({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow }) {
   return (
-    <ListItem key={rowKey(row)} onPress={() => openOf(kind, row)}>
+    <ListItem key={rowKey(row)} onPress={() => press(kind, row)}>
       <Box direction="row" gap="md" align="center" paddingY="sm">
         <Glyph look={lookOf(kind, row)} />
         <Stack gap="xs">
@@ -129,10 +127,25 @@ function Body({ kind, s }: { kind: Kind; s: ListState }) {
 function Counts({ kind, s }: { kind: Kind; s: ListState }) {
   const answer = s.answer?.ok ? s.answer : null
   if (kind === 'runs') {
+    // The tab starts on the workspace's branch; every branch is one press away.
+    const on = answer?.branch ?? null
     return (
-      <Text size="sm" weight="semibold">
-        {answer ? `${count(answer.total)} workflow runs` : 'Workflow runs'}
-      </Text>
+      <Row gap="xs" align="center" wrap>
+        <Text size="sm" weight="semibold">
+          {answer ? `${count(answer.total)} ${on ? (answer.total === 1 ? 'run on' : 'runs on') : 'workflow runs'}` : 'Workflow runs'}
+        </Text>
+        {on && <Code>{on}</Code>}
+        {s.scope === 'branch' && on && (
+          <Button size="sm" variant="ghost" onPress={() => setScope('all')}>
+            All branches
+          </Button>
+        )}
+        {s.scope === 'all' && s.branch && (
+          <Button size="sm" variant="ghost" onPress={() => setScope('branch')}>
+            {`Only ${s.branch}`}
+          </Button>
+        )}
+      </Row>
     )
   }
   const counts = s.counts
@@ -188,6 +201,7 @@ function Tools({ kind, s }: { kind: Kind; s: ListState }) {
         <IconButton icon="expand" label={`Sort: ${sort}`} variant={s.tool === 'sort' ? 'outline' : 'ghost'} onPress={() => toggleTool(kind, 'sort')} />
       )}
       {kind === 'issues' && <IconButton icon="add" label="New issue" variant="ghost" onPress={startNewIssue} />}
+      {kind === 'runs' && <IconButton icon="play" label="Run workflow" variant="ghost" onPress={startDispatch} />}
     </Toolbar>
   )
 }
@@ -293,59 +307,12 @@ function ListView({ kind, s }: { kind: Kind; s: ListState }) {
         <Tools kind={kind} s={s} />
       </Row>
       {s.tool && <Strip kind={kind} s={s} />}
+      {kind === 'runs' && <Requested />}
       <Box grow minHeight={0} scroll="y">
         <Body kind={kind} s={s} />
       </Box>
       <Pager kind={kind} s={s} />
     </Box>
-  )
-}
-
-function at(ms: number | null): string | null {
-  return ms === null ? null : new Date(ms).toLocaleString()
-}
-
-function details(run: RunRow): KeyValueItem[] {
-  return [
-    { label: 'Workflow', value: `${run.workflow} #${run.runNumber}` },
-    { label: 'Started by', value: runCause(run) },
-    { label: 'Branch', value: run.branch, code: true },
-    { label: 'Commit', value: run.sha.slice(0, 7), code: true },
-    { label: 'Started', value: at(run.startedAt) },
-    { label: 'Duration', value: run.durationMs === null ? 'Running' : duration(run.durationMs) }
-  ]
-}
-
-/** A run in short: what started it, where and how long; the rest is on GitHub. */
-function RunDetail({ run }: { run: RunRow }) {
-  const look = runLook(run)
-  return (
-    <Stack gap="sm">
-      <Row>
-        <Button size="sm" variant="outline" onPress={() => back('runs')}>
-          ← Back to runs
-        </Button>
-      </Row>
-      {/* Heading level 3 draws as a small caps label; the title reads as a title. */}
-      <Text size="md" weight="semibold">
-        {run.title}
-      </Text>
-      <Row gap="xs" align="center">
-        <Glyph look={look} />
-        <Text size="sm" tone={look.tone}>
-          {look.label}
-        </Text>
-        <Text size="sm" muted>
-          {run.workflow}
-        </Text>
-      </Row>
-      <KeyValue items={details(run)} />
-      <Row>
-        <Button size="sm" icon="open-external" onPress={() => shell.openExternal(run.url)}>
-          Open on GitHub
-        </Button>
-      </Row>
-    </Stack>
   )
 }
 
@@ -355,6 +322,7 @@ export function KindView({ kind }: { kind: Kind }) {
   if (kind === 'pulls') return <PullsTab />
   // An issue opens by number, so it shows whether or not it is on the page.
   if (kind === 'issues' && s.open) return s.open === 'new' ? <NewIssueView /> : <IssueView />
-  const row = s.open && s.answer?.ok ? s.answer.rows.find((r) => rowKey(r) === s.open) : undefined
-  return row ? <RunDetail run={row as RunRow} /> : <ListView kind={kind} s={s} />
+  // A run opens by id, so it shows while the page is loading again too.
+  if (kind === 'runs' && s.open) return s.open === DISPATCH ? <DispatchView /> : <RunView />
+  return <ListView kind={kind} s={s} />
 }

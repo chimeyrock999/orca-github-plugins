@@ -20,6 +20,7 @@ import { issue, issues, newIssue } from './issue-store'
 import { findPull, pull, pulls } from './pull-store'
 import { githubUrl, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
 import { Problem } from './parts'
+import { DISPATCH, loadForm, loadRun, progress, tabShown } from './run-store'
 import { KindView } from './views'
 
 /** Runs `step`, then lets the tab on screen start on the workspace's issue or pull request if it
@@ -33,6 +34,7 @@ async function thenStart(step: Promise<void> | void): Promise<void> {
 /** Runs once before the first render; what it pushes to `subscriptions` ends with the panel. */
 export function setup(ctx: PanelContext): void {
   ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void thenStart(setRepo(answer))))
+  ctx.subscriptions.push(plugin.on('run.progress', ({ run }) => progress(run)))
   void plugin.request('repo.get').then(
     (answer) => thenStart(setRepo(answer)),
     (error: unknown) => setRepo(requestFailed(error))
@@ -46,6 +48,9 @@ async function refreshAll(): Promise<void> {
   const picking = read(issue).picking ?? read(newIssue).picking ?? read(pull).picking
   if (picking) void loadChoices(picking.kind)
   if (read(tab) === 'issues' && read(lists.issues).open === String(read(issue).number)) await issues.load()
+  const run = read(lists.runs).open
+  if (read(tab) === 'runs' && run === DISPATCH) await Promise.all([loadChoices('workflows'), loadForm()])
+  else if (read(tab) === 'runs' && run) await loadRun()
   if (read(tab) !== 'pulls') return
   // The one on screen loads again; with none, the branch may have one by now.
   const shown = read(lists.pulls).open === String(read(pull).number)
@@ -91,7 +96,14 @@ export default function Panel() {
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" onPress={openOnGitHub} />
         </Toolbar>
       </Row>
-      <Tabs label="GitHub" value={read(tab)} onChange={(value) => thenStart(selectTab(value as Kind))}>
+      <Tabs
+        label="GitHub"
+        value={read(tab)}
+        onChange={(value) => {
+          const shown = thenStart(selectTab(value as Kind))
+          return Promise.all([shown, tabShown()])
+        }}
+      >
         <Tab value="issues" label="Issues" icon="bug" />
         <Tab value="pulls" label="Pull requests" icon="branch" />
         <Tab value="runs" label="Actions" icon="play" />

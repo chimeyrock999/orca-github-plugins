@@ -7,7 +7,8 @@ import { commentItem, failed, issueDetail, issueRows, itemPage, pullDetail, repo
 const lists = {
   'repo.get': repoOk,
   'issues.list': itemPage(issueRows(30), 72, 'p2', 5),
-  'runs.list': runPage(runRows, 296, '2')
+  // The Actions tab starts on the workspace's branch.
+  'runs.list': runPage(runRows, 296, '2', 1000, 'fix/token-refresh')
 }
 const empty = itemPage([], 0, null)
 // A workspace made from issue 120 opens on it, which is how these scenarios show an issue.
@@ -67,7 +68,13 @@ export default defineCheck({
   }),
   'pull-not-found': pullScenario(failed('not_found', 'Could not resolve to a PullRequest with the number of 131.')),
   actions: { requests: lists, persisted: { plugin: { tab: 'runs' } } },
-  'empty-repo': { requests: { 'repo.get': repoOk, 'issues.list': empty, 'runs.list': empty } },
+  // Scenarios cannot press, so a run's detail and the Run workflow form are covered by
+  // src/run-view.test.tsx; this one shows the list with a run waiting to start.
+  'actions-queued': {
+    requests: { ...lists, 'runs.list': runPage([{ ...runRows[0], id: 9002, runNumber: 297, state: 'queued', startedAt: runRows[0].startedAt + 60_000 }, ...runRows], 297, '2') },
+    persisted: { plugin: { tab: 'runs' } }
+  },
+  'empty-repo': { requests: { 'repo.get': repoOk, 'issues.list': empty, 'runs.list': runPage([]) } },
   'no-workspace': { requests: { 'repo.get': failed('no_workspace', 'No workspace is focused in Orca.') } },
   'not-a-github-repo': {
     requests: { 'repo.get': failed('not_a_repo', 'none of the git remotes configured for this repository point to a known GitHub host') }

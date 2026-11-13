@@ -68,20 +68,6 @@ test('search and Closed start the list over from page 1', async () => {
   await view.unmount()
 })
 
-test('a run opens its detail, Back returns to the same page, and Open on GitHub opens the row', async () => {
-  const h = host()
-  const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'runs' } } })
-  await view.press({ type: 'ListItem', text: /Fix token refresh loop/ })
-  assert.ok(view.find({ text: '← Back to runs' }))
-  assert.ok(view.find({ type: 'Text', text: 'Fix token refresh loop' }))
-  await view.press({ text: 'Open on GitHub' })
-  assert.deepEqual(h.callsOf('shell.openExternal'), [{ url: 'https://github.com/octo/app/actions/runs/9001' }])
-  await view.press({ text: '← Back to runs' })
-  assert.equal(view.findAll({ type: 'ListItem' }).length, 3)
-  assert.deepEqual(view.refusals, [])
-  await view.unmount()
-})
-
 test('the toolbar opens the tab page of the repo', async () => {
   const h = host()
   const view = await mount(panel, { host: h })
@@ -227,7 +213,7 @@ test('runs: workflow and status filters, and no sort', async () => {
   // Picked by name, sent by id: no name lookup on every page.
   await view.select({ label: 'Workflow' }, '8')
   await view.select({ label: 'Status' }, 'failure')
-  assert.deepEqual(h.asked.at(-1), { name: 'runs.list', input: { query: '', after: null, filters: { workflow: '8', status: 'failure' } } })
+  assert.deepEqual(h.asked.at(-1), { name: 'runs.list', input: { query: '', after: null, filters: { workflow: '8', status: 'failure' }, scope: 'branch' } })
   await view.unmount()
 })
 
