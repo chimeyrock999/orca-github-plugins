@@ -1,7 +1,7 @@
 // One pull request: its body, checks and timeline (comments, reviews, mentions, closes, reopens and
-// the merge) through GraphQL, as for an issue; writes through gh's pr commands. Closing, reopening
-// and merging are left to Orca's own pull request views. Comments are edited
-// and deleted, and reactions set, by the same requests as an issue's.
+// the merge) through GraphQL, as for an issue; writes through gh's pr commands (comment, edit, review,
+// ready or back to draft). Closing, reopening and merging are left to Orca's own pull request views.
+// Comments are edited and deleted, and reactions set, by the same requests as an issue's.
 import { GhError, type Gh } from '../gh'
 import { commentOn, editIssue, needText, run } from '../issues/issues'
 import { pullState, type RepoRef } from '../lists'
@@ -297,6 +297,14 @@ export async function findBranchPull(gh: Gh, repo: RepoRef, signal?: AbortSignal
     if (error instanceof GhError && /no (open )?pull requests? found/i.test(error.message)) return null
     throw error
   }
+}
+
+/** Marks a draft ready for review (`ready`), or converts the pull request back to draft. */
+export async function readyPull(gh: Gh, repo: RepoRef, input: { number: number; ready: boolean }, signal?: AbortSignal): Promise<object> {
+  const args = ['pr', 'ready', String(input.number)]
+  if (!input.ready) args.push('--undo')
+  await run(gh, repo, args, signal)
+  return {}
 }
 
 const REVIEW_FLAGS: Record<ReviewEvent, string> = { approve: '--approve', request_changes: '--request-changes', comment: '--comment' }

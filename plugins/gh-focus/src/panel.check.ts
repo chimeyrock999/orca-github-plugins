@@ -70,6 +70,9 @@ export default defineCheck({
   'pull-ready': showPull({ merge: 'clean', review: 'approved', reviewers: [], checks: { passed: 5, failed: 0, cancelled: 0, needsAction: 0, pending: 0, neutral: 0 } }),
   'pull-conflicts': showPull({ merge: 'conflicts' }),
   'pull-draft': showPull({ state: 'draft', merge: 'draft', review: null, checks: null, head: [], total: 0, comments: 0 }),
+  // One you may not edit offers neither Ready for review (as pull-draft does) nor Convert to draft
+  // (as pull-detail does).
+  'pull-read-only': showPull({ canEdit: false }),
   'pull-closed': showPull({
     state: 'closed',
     closedAt: mergedAt,

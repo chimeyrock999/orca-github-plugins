@@ -26,6 +26,7 @@ function host(overrides: Record<string, unknown> = {}, detail: (number: number) 
     'pull.get': ({ number }: { number: number }) => ({ ok: true, pull: { ...detail(number), number, url: `https://github.com/octo/app/pull/${number}` } }),
     'pull.comment': () => ok,
     'pull.review': () => ok,
+    'pull.ready': () => ok,
     'pull.edit': () => ok,
     'orca.show': () => ok,
     'comment.edit': () => ok,
@@ -54,6 +55,7 @@ async function until(done: () => boolean): Promise<void> {
   for (let waited = 0; !done() && waited < 1000; waited += 10) await new Promise((resolve) => setTimeout(resolve, 10))
 }
 
+const draftBox = (view: Awaited<ReturnType<typeof mount>>) => view.findAll({ type: 'Callout' }).find((c) => c.props.title === 'Convert #124 to draft?') ?? null
 const says = (view: Awaited<ReturnType<typeof mount>>, text: RegExp) => view.summary().some((l) => text.test(l))
 const mentionOf = (number: number): TimelineItem => ({
   kind: 'mention',
@@ -72,8 +74,8 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
   assert.equal(h.count('items.get'), 0)
   assert.ok(view.find({ type: 'Text', text: 'fix: stream CSV export past 10k rows' }))
   // Its own pull request: no Back, and Tasks for the rest of the repo's.
-  assert.equal(view.find({ type: 'Button', text: /^← Back(?! to Orca Tasks)/ }), null)
-  assert.ok(view.find({ type: 'Button', text: '← Back to Orca Tasks' }))
+  assert.equal(view.find({ type: 'Button', text: /^← Back/ }), null)
+  assert.ok(view.find({ type: 'Button', text: 'Orca Tasks →' }))
   assert.deepEqual(view.findAll({ type: 'Code' }).map((c) => c.text), ['dev', 'kenji:stream-export'])
   assert.ok(view.find({ text: 'Changes requested' }))
   // Mergeable, but a check fails: Orca's words.
@@ -107,14 +109,14 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
 test('Tasks hands off to the Orca Tasks page; when Orca will not, it says why', async () => {
   const h = host()
   const view = await openPull(h)
-  await view.press({ type: 'Button', text: '← Back to Orca Tasks' })
+  await view.press({ type: 'Button', text: 'Orca Tasks →' })
   assert.deepEqual(h.last('orca.show'), { view: 'tasks' })
   assert.ok(!says(view, /Orca did not answer/))
   await view.unmount()
 
   // The worker answers a refused commands.run with Orca's code.
   const refused = await openPull(host({ 'orca.show': () => failed('unavailable', 'Not the desktop app') }))
-  await refused.press({ type: 'Button', text: '← Back to Orca Tasks' })
+  await refused.press({ type: 'Button', text: 'Orca Tasks →' })
   assert.ok(says(refused, /Not available in Orca/))
   assert.ok(!says(refused, /Orca did not answer/))
   await refused.press({ type: 'Button', text: 'Dismiss' })
@@ -126,6 +128,8 @@ test('the review threads of the workspace pull request open in the Orca Checks t
   const h = host()
   const view = await openPull(h)
   assert.equal(view.findAll({ type: 'Button', text: 'Open in Checks' }).length, 2)
+  // Orca's Checks tab opens a comment's file at its line, so the panel does not (#17).
+  assert.match(String(view.findAll({ type: 'Button', text: 'Open in Checks' })[0].props.tooltip), /opens a comment's file at its line/)
   await view.press(view.findAll({ type: 'Button', text: 'Open in Checks' })[0])
   assert.deepEqual(h.last('orca.show'), { view: 'checks' })
   await view.unmount()
@@ -172,24 +176,26 @@ test('another pull request opened from a mention leads back to the workspace one
   assert.equal(view.find({ type: 'Button', text: 'Open in Checks' }), null)
   await view.press({ type: 'Link', text: '1 failing · 1 pending · 4 passed' })
   assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/app/pull/131/checks' })
-  // ← Back to Orca Tasks heads it with Edit and Open on GitHub beside it; Back has a row of its own below.
-  const tasks = view.find({ type: 'Button', text: '← Back to Orca Tasks' })
+  // Back and Orca Tasks share the top row; Edit and Open on GitHub sit beside the title.
+  const tasks = view.find({ type: 'Button', text: 'Orca Tasks →' })
   const back = view.find({ type: 'Button', text: '← Back to #124' })
   assert.ok(tasks && back)
-  const row = rowOf(tasks.path)
-  const inRow = (label: string) => view.findAll({ type: 'IconButton', label }).some((b) => b.path.startsWith(`${row}/`))
-  assert.ok(inRow('Open on GitHub'))
-  assert.ok(inRow('Edit title and body'))
-  // In a narrow sidebar Edit and Open on GitHub keep their row instead of stacking under each other.
+  assert.equal(rowOf(back.path), rowOf(tasks.path))
+  assert.ok(before(back.path, tasks.path))
+  assert.equal(view.findAll({ type: 'Row' }).find((r) => r.path === rowOf(tasks.path))?.props.justify, 'between')
   const bar = view.findAll({ type: 'Toolbar' }).find((b) => b.props.label === 'Pull request')
-  assert.equal(view.findAll({ type: 'Box' }).find((b) => b.path === rowOf(bar!.path))?.props.shrink, false)
-  // Narrower still, they move under Back to Orca Tasks rather than push it past the edge.
-  assert.equal(view.findAll({ type: 'Row' }).find((r) => r.path === row)?.props.wrap, true)
-  assert.ok(!back.path.startsWith(`${row}/`))
-  assert.ok(before(tasks.path, back.path))
+  assert.ok(bar)
+  const holder = rowOf(bar.path)
+  assert.equal(view.findAll({ type: 'Box' }).find((b) => b.path === holder)?.props.shrink, false)
+  const title = view.findAll({ type: 'Text' }).find((t) => t.path.startsWith(`${rowOf(holder)}/`) && !t.path.startsWith(`${holder}/`))
+  assert.equal(title?.text, 'fix: stream CSV export past 10k rows')
+  assert.ok(title && before(title.path, bar.path))
+  const inBar = (label: string) => view.findAll({ type: 'IconButton', label }).some((b) => b.path.startsWith(`${bar.path}/`))
+  assert.ok(inBar('Open on GitHub'))
+  assert.ok(inBar('Edit title and body'))
   await view.press({ type: 'Button', text: '← Back to #124' })
   assert.deepEqual(h.last('pull.get'), { number: 124 })
-  assert.equal(view.find({ type: 'Button', text: /^← Back(?! to Orca Tasks)/ }), null)
+  assert.equal(view.find({ type: 'Button', text: /^← Back/ }), null)
   await view.unmount()
 })
 
@@ -396,6 +402,52 @@ test('on your own pull request only a comment review is offered', async () => {
   await view.unmount()
 })
 
+test("a draft is marked ready for review in one press, and loads again, someone else's too", async () => {
+  const h = host({}, () => pullDetail({ state: 'draft', merge: 'draft' }))
+  const view = await openPull(h)
+  assert.equal(view.find({ type: 'Button', text: 'Convert to draft…' }), null)
+  await view.press({ type: 'Button', text: 'Ready for review' })
+  assert.deepEqual(h.last('pull.ready'), { number: 124, ready: true })
+  assert.equal(h.count('pull.get'), 2)
+  await view.unmount()
+})
+
+test('an open pull request goes back to draft only once confirmed', async () => {
+  const h = host({}, () => pullDetail({ author: 'chimeyrock999' }))
+  const view = await openPull(h)
+  assert.equal(view.find({ type: 'Button', text: 'Ready for review' }), null)
+  await view.press({ type: 'Button', text: 'Convert to draft…' })
+  assert.ok(draftBox(view))
+  await view.press({ type: 'Button', text: 'Cancel' })
+  assert.equal(draftBox(view), null)
+  assert.equal(h.count('pull.ready'), 0)
+  await view.press({ type: 'Button', text: 'Convert to draft…' })
+  await view.press({ type: 'Button', text: 'Convert to draft' })
+  assert.deepEqual(h.last('pull.ready'), { number: 124, ready: false })
+  assert.equal(draftBox(view), null)
+  assert.equal(h.count('pull.get'), 2)
+  await view.unmount()
+})
+
+test('draft and ready are offered only on a pull request you may edit, while it is open', async () => {
+  const buttons = (view: Awaited<ReturnType<typeof mount>>) =>
+    [view.find({ type: 'Button', text: 'Ready for review' }), view.find({ type: 'Button', text: 'Convert to draft…' })].filter(Boolean).length
+  for (const change of [{ canEdit: false }, { canEdit: false, state: 'draft' as const }, { state: 'closed' as const }, { state: 'merged' as const }]) {
+    const view = await openPull(host({}, () => pullDetail(change)))
+    assert.equal(buttons(view), 0, JSON.stringify(change))
+    await view.unmount()
+  }
+})
+
+test('a refused convert keeps the box and says why', async () => {
+  const view = await openPull(host({ 'pull.ready': failed('gh_failed', 'Pull request is in the merge queue') }, () => pullDetail({ author: 'chimeyrock999' })))
+  await view.press({ type: 'Button', text: 'Convert to draft…' })
+  await view.press({ type: 'Button', text: 'Convert to draft' })
+  assert.ok(says(view, /gh failed/))
+  assert.ok(draftBox(view))
+  await view.unmount()
+})
+
 test('a refused review keeps the text and the box, and says why', async () => {
   const view = await openPull(host({ 'pull.review': failed('gh_failed', 'Can not approve your own pull request') }))
   await view.type({ label: 'Comment' }, 'LGTM')
@@ -445,5 +497,14 @@ test('a pull request of another repo opens here in its own repo; its checks stay
   await view.select({ label: 'Review' }, 'approve')
   await view.press({ type: 'Button', text: 'Submit review' })
   assert.deepEqual(h.last('pull.review'), { number: 7, event: 'approve', body: '', repo: 'octo/sdk' })
+  await view.unmount()
+})
+
+test('your own pull request of another repo goes to draft in its own repo', async () => {
+  const h = host({ 'repo.links': links([], ['octo/sdk#7']) }, () => pullDetail({ author: 'chimeyrock999' }))
+  const view = await openPull(h)
+  await view.press({ type: 'Button', text: 'Convert to draft…' })
+  await view.press({ type: 'Button', text: 'Convert to draft' })
+  assert.deepEqual(h.last('pull.ready'), { number: 7, ready: false, repo: 'octo/sdk' })
   await view.unmount()
 })

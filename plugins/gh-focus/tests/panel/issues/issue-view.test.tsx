@@ -86,24 +86,33 @@ test('a mention of an issue or pull request here opens it in its tab; another re
   await view.unmount()
 })
 
-test('← Back to Orca Tasks heads the issue with Edit and Open on GitHub beside it; Back has a row of its own below', async () => {
+test('Back and Orca Tasks share the top row; Edit and Open on GitHub sit beside the title', async () => {
   const view = await openIssue120(host({ 'pull.get': () => ({ ok: true, pull: pullDetail() }) }))
   await view.press({ type: 'ListItem', text: /Excel export truncates long cells/ })
-  const tasks = view.find({ type: 'Button', text: '← Back to Orca Tasks' })
+  const tasks = view.find({ type: 'Button', text: 'Orca Tasks →' })
   const back = view.find({ type: 'Button', text: '← Back to linked issues' })
   assert.ok(tasks && back)
-  const row = rowOf(tasks.path)
-  // The panel's header has an Open on GitHub of its own (the repo); the issue's sits in this row.
-  const inRow = (label: string) => view.findAll({ type: 'IconButton', label }).some((b) => b.path.startsWith(`${row}/`))
-  assert.ok(inRow('Open on GitHub'))
-  assert.ok(inRow('Edit title and body'))
-  // In a narrow sidebar Edit and Open on GitHub keep their row instead of stacking under each other.
+  // Back on the left, Orca Tasks on the right; a narrow sidebar wraps them onto two lines.
+  const top = rowOf(tasks.path)
+  assert.equal(rowOf(back.path), top)
+  assert.ok(before(back.path, tasks.path))
+  const topRow = view.findAll({ type: 'Row' }).find((r) => r.path === top)
+  assert.equal(topRow?.props.justify, 'between')
+  assert.equal(topRow?.props.wrap, true)
+  // A little room between it, the tabs above and the title below.
+  assert.equal(view.findAll({ type: 'Box' }).find((b) => b.path === rowOf(top))?.props.paddingY, 'xs')
+  // The panel's header has an Open on GitHub of its own (the repo); the issue's sits beside its title,
+  // kept whole so the two buttons do not stack.
   const bar = view.findAll({ type: 'Toolbar' }).find((b) => b.props.label === 'Issue')
-  assert.equal(view.findAll({ type: 'Box' }).find((b) => b.path === rowOf(bar!.path))?.props.shrink, false)
-  // Narrower still, they move under Back to Orca Tasks rather than push it past the edge.
-  assert.equal(view.findAll({ type: 'Row' }).find((r) => r.path === row)?.props.wrap, true)
-  assert.ok(!back.path.startsWith(`${row}/`))
-  assert.ok(before(tasks.path, back.path))
+  assert.ok(bar)
+  const holder = rowOf(bar.path)
+  assert.equal(view.findAll({ type: 'Box' }).find((b) => b.path === holder)?.props.shrink, false)
+  const title = view.find({ type: 'Text', text: 'Export CSV drops rows past 10k' })
+  assert.ok(title && title.path.startsWith(`${rowOf(holder)}/`))
+  assert.ok(before(title.path, bar.path))
+  const inBar = (label: string) => view.findAll({ type: 'IconButton', label }).some((b) => b.path.startsWith(`${bar.path}/`))
+  assert.ok(inBar('Open on GitHub'))
+  assert.ok(inBar('Edit title and body'))
   await view.unmount()
 })
 
@@ -215,6 +224,12 @@ test('Edit sends only what changed', async () => {
   const h = host()
   const view = await openIssue120(h)
   await view.press({ label: 'Edit title and body' })
+  // Only the Title box sits beside Open on GitHub; Body and Save take the panel's whole width.
+  const bar = view.findAll({ type: 'Toolbar' }).find((b) => b.props.label === 'Issue')
+  const titleRow = rowOf(rowOf(bar!.path))
+  assert.ok(view.find({ label: 'Title' })?.path.startsWith(`${titleRow}/`))
+  assert.ok(!view.find({ label: 'Body' })?.path.startsWith(`${titleRow}/`))
+  assert.ok(!view.find({ type: 'Button', text: 'Save' })?.path.startsWith(`${titleRow}/`))
   await view.type({ label: 'Title' }, 'CSV export stops at 10k rows', { replace: true })
   await view.press({ text: 'Save' })
   assert.deepEqual(h.last('issue.edit'), { number: 120, title: 'CSV export stops at 10k rows' })
@@ -400,8 +415,11 @@ test('a workspace with one linked issue opens on it, with no Back; tab switches 
   // GitHub for a list it does not show.
   assert.deepEqual(h.last('repo.links'), {})
   assert.equal(h.last('items.get'), undefined)
-  assert.equal(view.find({ text: /← Back(?! to Orca Tasks)/ }), null)
-  assert.ok(view.find({ type: 'Button', text: '← Back to Orca Tasks' }))
+  assert.equal(view.find({ text: /← Back/ }), null)
+  // Orca Tasks alone, on the right.
+  const tasks = view.find({ type: 'Button', text: 'Orca Tasks →' })
+  assert.ok(tasks)
+  assert.equal(view.findAll({ type: 'Row' }).find((r) => r.path === rowOf(tasks.path))?.props.justify, 'end')
   await view.select({ type: 'Tabs' }, 'pulls')
   await view.select({ type: 'Tabs' }, 'issues')
   assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, 1)
@@ -425,8 +443,8 @@ test('several linked issues make a list, newest activity first, and none opens b
   assert.deepEqual(h.last('items.get'), { kind: 'issues', items: [ref(118), ref('octo/sdk#45'), ref(120)] })
   assert.equal(h.last('issue.get'), undefined)
   assert.ok(view.find({ text: '3 linked issues' }))
-  // ← Back to Orca Tasks on a row of its own above the count.
-  const tasks = view.find({ type: 'Button', text: '← Back to Orca Tasks' })
+  // Orca Tasks on a row of its own above the count, on the right.
+  const tasks = view.find({ type: 'Button', text: 'Orca Tasks →' })
   const count = view.find({ type: 'Text', text: '3 linked issues' })
   assert.ok(tasks && count)
   assert.ok(!count.path.startsWith(`${rowOf(tasks.path)}/`))

@@ -21,7 +21,7 @@ import {
 import { agentName, freeAgent, linkedRefs, linkedRows, linkPrompt, type AgentRow } from './worker/linked/linked'
 import { listLabels, listRuns, listWorkflows, type RepoRef } from './worker/lists'
 import { isRepoName, type Answer, type GitHubBudget, type LinkedKind, type LinkedRef, type OrcaView, type RunState } from './shared/protocol'
-import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, reviewPull } from './worker/pulls/pulls'
+import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, readyPull, reviewPull } from './worker/pulls/pulls'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './worker/repo/repo'
 import { cancelRun, dispatchWorkflow, getRun, rerunRun, reviewDeployments, runLogs, watchRun, workflowForm, type WatchDeps } from './worker/runs/runs'
 
@@ -261,6 +261,7 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   )
   orca.panels.handle('pull.edit', (input, { signal }) => inRepo(tracker, (repo) => inItems(repo, () => editPull(gh, repo, input, signal)), input.repo))
   orca.panels.handle('pull.review', (input, { signal }) => inRepo(tracker, (repo) => inItems(repo, () => reviewPull(gh, repo, input, signal)), input.repo))
+  orca.panels.handle('pull.ready', (input, { signal }) => inRepo(tracker, (repo) => inItems(repo, () => readyPull(gh, repo, input, signal)), input.repo))
   // A reaction names its subject by node id only, which may be of any repo's item.
   orca.panels.handle('reaction.set', (input, { signal }) =>
     inRepo(tracker, (repo) => written(() => reads.dropPrefix('items:'), () => setReaction(gh, repo, input, signal)))

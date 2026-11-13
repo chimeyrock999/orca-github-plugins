@@ -1,12 +1,12 @@
 // One pull request as GitHub shows it: title, state, base ← head, its review decision, merge state
 // and checks in one line each (Orca's words), reviewers, labels and assignees, the body, the timeline
-// of comments, reviews and events, and a box to comment or review.
+// of comments, reviews and events, and a box to comment or review; one you may edit goes ready or
+// back to draft.
 import {
   Box,
   Button,
   Callout,
   Code,
-  IconButton,
   Link,
   RadioGroup,
   read,
@@ -18,28 +18,31 @@ import {
   Spinner,
   Stack,
   Text,
-  Textarea,
-  Toolbar
+  Textarea
 } from 'orca'
 import { checkSummary, checksLook, count, decisionLook, mergeLook, pullLook, type Look } from '../../shared/look'
 import { Glyph, Problem } from '../parts'
 import type { PullDetail, ReviewEvent } from '../../shared/protocol'
 import { backFrom, handOff } from '../linked/link-store'
-import { backLabel, HandOffProblem, LinkedView, TasksButton } from '../linked/linked-view'
+import { backLabel, HandOffProblem, LinkedView, ThreadTop } from '../linked/linked-view'
 import {
   canReview,
+  canToggleDraft,
+  cancelDraft,
   cancelReview,
   ownPull,
   pull,
   pulls,
+  setReady,
   setReview,
+  startDraft,
   startReview,
   submitReview,
   workspacePull,
   type PullState
 } from './pull-store'
 import { lists } from '../store'
-import { Byline, EditTitle, LabelsAndAssignees, MetaLine, Post, Timeline } from '../thread/thread-view'
+import { Byline, LabelsAndAssignees, MetaLine, Post, Timeline, TitleRow } from '../thread/thread-view'
 
 /** A state's glyph and its words. */
 function Status({ look }: { look: Look }) {
@@ -140,6 +143,46 @@ function ReviewBox({ d, s }: { d: PullDetail; s: PullState }) {
   )
 }
 
+/** Asks before the pull request goes back to draft. */
+function DraftBox({ d, s }: { d: PullDetail; s: PullState }) {
+  return (
+    <Callout tone="warning" title={`Convert #${d.number} to draft?`}>
+      <Stack gap="sm">
+        <Text size="xs" muted>
+          It cannot be merged until it is marked ready for review again.
+        </Text>
+        <Row gap="xs" align="center" wrap>
+          <Button size="sm" variant="solid" disabled={!!s.busy} onPress={() => setReady(false)}>
+            Convert to draft
+          </Button>
+          <Button size="sm" variant="ghost" onPress={cancelDraft}>
+            Cancel
+          </Button>
+          {s.busy === 'draft' && <Spinner label="Converting" labelHidden />}
+        </Row>
+      </Stack>
+    </Callout>
+  )
+}
+
+/** A pull request you may edit: a draft is marked ready in one press, an open one goes back to draft
+ *  once confirmed. */
+function DraftButton({ d, s }: { d: PullDetail; s: PullState }) {
+  if (!canToggleDraft(d)) return <Box />
+  return d.state === 'draft' ? (
+    <Row gap="xs" align="center">
+      <Button size="sm" variant="outline" disabled={!!s.busy || !!s.reviewing} onPress={() => setReady(true)}>
+        Ready for review
+      </Button>
+      {s.busy === 'ready' && <Spinner label="Marking ready" labelHidden />}
+    </Row>
+  ) : (
+    <Button size="sm" variant="outline" disabled={!!s.busy || !!s.reviewing || s.toDraft} onPress={startDraft}>
+      Convert to draft…
+    </Button>
+  )
+}
+
 function Composer({ d, s }: { d: PullDetail; s: PullState }) {
   const typed = !!s.draft.trim()
   const open = d.state === 'open' || d.state === 'draft'
@@ -148,19 +191,23 @@ function Composer({ d, s }: { d: PullDetail; s: PullState }) {
     <Stack gap="sm">
       {/* While a review is written, the text is its body: Enter sends nothing alone. */}
       <Textarea label="Comment" labelHidden placeholder="Leave a comment (Markdown)" rows={4} value={s.draft} disabled={!!s.busy} onChange={pulls.setDraft} onSubmit={() => (reviewing ? undefined : pulls.sendComment())} />
-      <Row justify="end" align="center" gap="xs">
-        {s.busy === 'comment' && <Spinner label="Sending" labelHidden />}
-        {open && (
-          <Button size="sm" variant="outline" disabled={!!s.busy || reviewing} onPress={startReview}>
-            Review…
+      <Row justify="between" align="center" gap="xs" wrap>
+        <DraftButton d={d} s={s} />
+        <Row gap="xs" align="center">
+          {s.busy === 'comment' && <Spinner label="Sending" labelHidden />}
+          {open && (
+            <Button size="sm" variant="outline" disabled={!!s.busy || reviewing || s.toDraft} onPress={startReview}>
+              Review…
+            </Button>
+          )}
+          <Button size="sm" variant="solid" disabled={!typed || !!s.busy || reviewing} onPress={pulls.sendComment}>
+            Comment
           </Button>
-        )}
-        <Button size="sm" variant="solid" disabled={!typed || !!s.busy || reviewing} onPress={pulls.sendComment}>
-          Comment
-        </Button>
+        </Row>
       </Row>
       {/* A reload may find it merged or closed meanwhile; then the review no longer fits. */}
       {reviewing && open && <ReviewBox d={d} s={s} />}
+      {s.toDraft && d.state === 'open' && canToggleDraft(d) && <DraftBox d={d} s={s} />}
     </Stack>
   )
 }
@@ -169,13 +216,7 @@ function Detail({ d, s }: { d: PullDetail; s: PullState }) {
   const look = pullLook(d)
   return (
     <Box grow minHeight={0} scroll="y" gap="md">
-      {s.editing ? (
-        <EditTitle t={pulls} d={d} s={s} />
-      ) : (
-        <Text size="md" weight="semibold">
-          {d.title}
-        </Text>
-      )}
+      <TitleRow t={pulls} d={d} s={s} label="Pull request" />
       <Row gap="xs" align="center" wrap>
         <Glyph look={look} />
         <Text size="sm" tone={look.tone}>
@@ -208,28 +249,11 @@ function Detail({ d, s }: { d: PullDetail; s: PullState }) {
 
 export function PullView() {
   const s = read(pull)
-  const d = s.answer?.ok ? s.answer.detail : null
   // A pull request opened from a mention or the list leads back to the workspace's own, or the list.
   const back = backLabel(pulls)
   return (
     <Box grow minHeight={0} gap="sm">
-      <Row justify="between" align="center" wrap>
-        <TasksButton kind="pulls" back />
-        {/* Kept whole, so the two buttons do not stack; narrower still, they wrap under Tasks. */}
-        <Box shrink={false}>
-          <Toolbar label="Pull request" gap="xs">
-            {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={pulls.startEdit} />}
-            <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
-          </Toolbar>
-        </Box>
-      </Row>
-      {back && (
-        <Row>
-          <Button size="sm" variant="outline" onPress={() => backFrom(pulls)}>
-            {back}
-          </Button>
-        </Row>
-      )}
+      <ThreadTop kind="pulls" back={back} onBack={() => backFrom(pulls)} />
       <HandOffProblem />
       {s.answer === null ? (
         <Skeleton lines={8} label={`Loading pull request ${s.number}`} />

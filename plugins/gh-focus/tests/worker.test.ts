@@ -324,6 +324,7 @@ test('pull request requests run gh pr in the focused repo, and answer the repo e
   assert.deepEqual(await worker.request('pull.comment', { number: 13, body: 'Looks good.' }), { ok: true, comment: null })
   assert.deepEqual(await worker.request('pull.review', { number: 13, event: 'approve', body: '' }), { ok: true })
   assert.deepEqual(await worker.request('pull.edit', { number: 13, addLabels: ['bug'] }), { ok: true })
+  assert.deepEqual(await worker.request('pull.ready', { number: 13, ready: false }), { ok: true })
   const missing = await worker.request('pull.get', { number: 13 })
   assert.equal(!missing.ok && missing.error.code, 'not_found')
   const page = await worker.request('pull.timeline', { number: 13, after: 'c1' })
@@ -332,6 +333,7 @@ test('pull request requests run gh pr in the focused repo, and answer the repo e
     ['/work/spike', ['api', '-X']],
     ['/work/spike', ['pr', 'review']],
     ['/work/spike', ['pr', 'edit']],
+    ['/work/spike', ['pr', 'ready']],
     ['/work/spike', ['api', 'graphql']],
     ['/work/spike', ['api', 'graphql']]
   ])
@@ -599,10 +601,13 @@ test('an item of another repo is read in that repo; a name that is not a repo is
   assert.deepEqual(calls[1], ['label', 'list', '--json', 'name', '--limit', '500'])
   await worker.request('labels.list', { repo: 'octo/sdk' })
   assert.deepEqual(calls[2].slice(-2), ['-R', 'octo/sdk'])
+  // A write too: your own pull request of another repo goes to draft there, not by its number here.
+  await worker.request('pull.ready', { number: 7, ready: false, repo: 'octo/sdk' })
+  assert.deepEqual(calls[3], ['pr', 'ready', '7', '--undo', '-R', 'octo/sdk'])
   for (const bad of ['octo/sdk; rm -rf', '../..', 'octo/..', 'octo/.', 'oc.to/sdk', 'oc_to/sdk', 'octo']) {
     const odd = await worker.request('issue.get', { number: 1, repo: bad })
     assert.equal(!odd.ok && odd.error.code, 'gh_failed', bad)
   }
-  assert.equal(calls.length, 3)
+  assert.equal(calls.length, 4)
   await worker.deactivate()
 })

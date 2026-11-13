@@ -40,6 +40,11 @@ export GH_TOKEN=$(gh auth token --user chimeyrock999)
      counts). Compare the `capabilities` and `contributes` that step 2's `release-entry` prints with
      the last release's (`git checkout vPREV` and run it there), and say what is new in the
      CHANGELOG.
+   - Add the release to the root `orca-catalog.json`. The indexer looks for `orca-plugin.json` only at
+     the root or in one folder, so this file is what points it at `plugins/gh-focus` (without it,
+     v0.1.0 was not listed). Commit the version bump first, run
+     `orca plugin release-entry plugins/gh-focus` on that commit, and put its entry first in
+     `releases` (newest first; keep the older ones), then `orca plugin validate orca-catalog.json`.
 2. **Check `dev`** from `plugins/gh-focus/`: `orca plugin validate .`, `orca plugin test .`,
    `orca plugin check .`, `npx tsc -p .`. Then `orca plugin release-entry plugins/gh-focus` from the
    root prints the catalog entry for `HEAD`: version, minimum Orca, capabilities, contributions,
@@ -85,7 +90,7 @@ The first release also:
 ## Hotfix
 
 1. Branch `hotfix/<short-name>` from `main`, fix, and bump the patch version (`0.1.0` → `0.1.1`)
-   with a CHANGELOG entry.
+   with a CHANGELOG entry and a new release in `orca-catalog.json` (step 1).
 2. Run step 2's checks on the `hotfix/*` branch before its PR merges. A hotfix is the release most
    likely to be rushed.
 3. PR into `main`, merge with a merge commit, then check, tag and release as in steps 5 to 7.
@@ -98,6 +103,7 @@ The first release also:
 - The plugin's folder `plugins/gh-focus`: the catalog pins it as `source.path`, and moving it
   counts as a new repository.
 - A pushed tag.
+- The root `orca-catalog.json` and its entry's id and `source.path`.
 - The name and listing text must not suggest that GitHub or Orca made the plugin. Ids starting
   `orca-`, and the publishers `stablyai`, `official`, `anthropic`, `openai`, `github` or any
   starting `orca`, install only from Orca's official catalog.
