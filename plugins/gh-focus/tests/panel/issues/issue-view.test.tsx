@@ -99,6 +99,8 @@ test('Back and Orca Tasks share the top row; Edit and Open on GitHub sit beside 
   const topRow = view.findAll({ type: 'Row' }).find((r) => r.path === top)
   assert.equal(topRow?.props.justify, 'between')
   assert.equal(topRow?.props.wrap, true)
+  // A little room between it, the tabs above and the title below.
+  assert.equal(view.findAll({ type: 'Box' }).find((b) => b.path === rowOf(top))?.props.paddingY, 'xs')
   // The panel's header has an Open on GitHub of its own (the repo); the issue's sits beside its title,
   // kept whole so the two buttons do not stack.
   const bar = view.findAll({ type: 'Toolbar' }).find((b) => b.props.label === 'Issue')

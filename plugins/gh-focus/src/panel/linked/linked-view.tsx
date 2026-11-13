@@ -29,17 +29,19 @@ export function TasksButton({ kind, top = false }: { kind: LinkedKind; top?: boo
 }
 
 /** The top of an open issue or pull request: Back (when there is one) on the left, Orca Tasks on the
- *  right; a narrow sidebar wraps them onto two lines. */
+ *  right, with a little room above and below; a narrow sidebar wraps them onto two lines. */
 export function ThreadTop({ kind, back, onBack }: { kind: LinkedKind; back: string | null; onBack: () => unknown }) {
   return (
-    <Row justify={back ? 'between' : 'end'} align="center" wrap>
-      {back && (
-        <Button size="sm" variant="outline" onPress={onBack}>
-          {back}
-        </Button>
-      )}
-      <TasksButton kind={kind} top />
-    </Row>
+    <Box paddingY="xs">
+      <Row justify={back ? 'between' : 'end'} align="center" wrap>
+        {back && (
+          <Button size="sm" variant="outline" onPress={onBack}>
+            {back}
+          </Button>
+        )}
+        <TasksButton kind={kind} top />
+      </Row>
+    </Box>
   )
 }
 
