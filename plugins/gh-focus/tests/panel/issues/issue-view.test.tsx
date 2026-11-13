@@ -86,10 +86,10 @@ test('a mention of an issue or pull request here opens it in its tab; another re
   await view.unmount()
 })
 
-test('← Tasks heads the issue with Edit and Open on GitHub beside it; Back has a row of its own below', async () => {
+test('← Back to Orca Tasks heads the issue with Edit and Open on GitHub beside it; Back has a row of its own below', async () => {
   const view = await openIssue120(host({ 'pull.get': () => ({ ok: true, pull: pullDetail() }) }))
   await view.press({ type: 'ListItem', text: /Excel export truncates long cells/ })
-  const tasks = view.find({ type: 'Button', text: '← Tasks' })
+  const tasks = view.find({ type: 'Button', text: '← Back to Orca Tasks' })
   const back = view.find({ type: 'Button', text: '← Back to linked issues' })
   assert.ok(tasks && back)
   const row = rowOf(tasks.path)
@@ -395,8 +395,8 @@ test('a workspace with one linked issue opens on it, with no Back; tab switches 
   // GitHub for a list it does not show.
   assert.deepEqual(h.last('repo.links'), {})
   assert.equal(h.last('items.get'), undefined)
-  assert.equal(view.find({ text: /← Back/ }), null)
-  assert.ok(view.find({ type: 'Button', text: '← Tasks' }))
+  assert.equal(view.find({ text: /← Back(?! to Orca Tasks)/ }), null)
+  assert.ok(view.find({ type: 'Button', text: '← Back to Orca Tasks' }))
   await view.select({ type: 'Tabs' }, 'pulls')
   await view.select({ type: 'Tabs' }, 'issues')
   assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, 1)
@@ -420,8 +420,8 @@ test('several linked issues make a list, newest activity first, and none opens b
   assert.deepEqual(h.last('items.get'), { kind: 'issues', items: [ref(118), ref('octo/sdk#45'), ref(120)] })
   assert.equal(h.last('issue.get'), undefined)
   assert.ok(view.find({ text: '3 linked issues' }))
-  // ← Tasks on a row of its own above the count.
-  const tasks = view.find({ type: 'Button', text: '← Tasks' })
+  // ← Back to Orca Tasks on a row of its own above the count.
+  const tasks = view.find({ type: 'Button', text: '← Back to Orca Tasks' })
   const count = view.find({ type: 'Text', text: '3 linked issues' })
   assert.ok(tasks && count)
   assert.ok(!count.path.startsWith(`${rowOf(tasks.path)}/`))
@@ -450,7 +450,7 @@ test('an issue of another repo reads and writes in that repo: opens alone, comme
   const view = await mount(panel, { host: h })
   // The only link opens by itself, whichever repo it is of.
   assert.deepEqual(h.last('issue.get'), { number: 45, repo: 'octo/sdk' })
-  assert.equal(view.find({ text: /← Back/ }), null)
+  assert.equal(view.find({ text: /← Back(?! to Orca Tasks)/ }), null)
   assert.ok(view.findAll({ type: 'Markdown' }).some((m) => /\[#44\]\(https:\/\/github\.com\/octo\/sdk\/issues\/44\)/.test(String(m.props.content))))
   await view.type({ label: 'Comment' }, 'Same here.')
   await view.press({ text: 'Comment' })
@@ -513,7 +513,7 @@ test('a mention opened from the only linked issue leads back to it', async () =>
   assert.deepEqual(h.last('issue.get'), { number: 97 })
   await view.press({ text: '← Back to #120' })
   assert.deepEqual(h.last('issue.get'), { number: 120 })
-  assert.equal(view.find({ text: /← Back/ }), null)
+  assert.equal(view.find({ text: /← Back(?! to Orca Tasks)/ }), null)
   await view.unmount()
 })
 

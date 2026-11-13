@@ -72,8 +72,8 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
   assert.equal(h.count('items.get'), 0)
   assert.ok(view.find({ type: 'Text', text: 'fix: stream CSV export past 10k rows' }))
   // Its own pull request: no Back, and Tasks for the rest of the repo's.
-  assert.equal(view.find({ type: 'Button', text: /^← Back/ }), null)
-  assert.ok(view.find({ type: 'Button', text: '← Tasks' }))
+  assert.equal(view.find({ type: 'Button', text: /^← Back(?! to Orca Tasks)/ }), null)
+  assert.ok(view.find({ type: 'Button', text: '← Back to Orca Tasks' }))
   assert.deepEqual(view.findAll({ type: 'Code' }).map((c) => c.text), ['dev', 'kenji:stream-export'])
   assert.ok(view.find({ text: 'Changes requested' }))
   // Mergeable, but a check fails: Orca's words.
@@ -102,14 +102,14 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
 test('Tasks hands off to the Orca Tasks page; when Orca will not, it says why', async () => {
   const h = host()
   const view = await openPull(h)
-  await view.press({ type: 'Button', text: '← Tasks' })
+  await view.press({ type: 'Button', text: '← Back to Orca Tasks' })
   assert.deepEqual(h.last('orca.show'), { view: 'tasks' })
   assert.ok(!says(view, /Orca did not answer/))
   await view.unmount()
 
   // The worker answers a refused commands.run with Orca's code.
   const refused = await openPull(host({ 'orca.show': () => failed('unavailable', 'Not the desktop app') }))
-  await refused.press({ type: 'Button', text: '← Tasks' })
+  await refused.press({ type: 'Button', text: '← Back to Orca Tasks' })
   assert.ok(says(refused, /Not available in Orca/))
   assert.ok(!says(refused, /Orca did not answer/))
   await refused.press({ type: 'Button', text: 'Dismiss' })
@@ -167,8 +167,8 @@ test('another pull request opened from a mention leads back to the workspace one
   assert.equal(view.find({ type: 'Button', text: 'Open in Checks' }), null)
   await view.press({ type: 'Link', text: '1 failing · 1 pending · 4 passed' })
   assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/app/pull/131/checks' })
-  // ← Tasks heads it with Edit and Open on GitHub beside it; Back has a row of its own below.
-  const tasks = view.find({ type: 'Button', text: '← Tasks' })
+  // ← Back to Orca Tasks heads it with Edit and Open on GitHub beside it; Back has a row of its own below.
+  const tasks = view.find({ type: 'Button', text: '← Back to Orca Tasks' })
   const back = view.find({ type: 'Button', text: '← Back to #124' })
   assert.ok(tasks && back)
   const row = rowOf(tasks.path)
@@ -179,7 +179,7 @@ test('another pull request opened from a mention leads back to the workspace one
   assert.ok(before(tasks.path, back.path))
   await view.press({ type: 'Button', text: '← Back to #124' })
   assert.deepEqual(h.last('pull.get'), { number: 124 })
-  assert.equal(view.find({ type: 'Button', text: /^← Back/ }), null)
+  assert.equal(view.find({ type: 'Button', text: /^← Back(?! to Orca Tasks)/ }), null)
   await view.unmount()
 })
 
