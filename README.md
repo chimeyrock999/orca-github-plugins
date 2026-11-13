@@ -19,7 +19,7 @@ so the plugin holds no tokens of its own.
 | :--- | :--- | :--- |
 | gh Focus (`gh-focus`) | [`plugins/gh-focus`](plugins/gh-focus) | `trusted-worker` |
 
-gh Focus has three tabs that follow the focused workspace:
+gh Focus follows the focused workspace, with three tabs and the hand-offs to Orca:
 
 - **Issues**: the issues Orca links to the workspace; read, comment, react, close or reopen, edit.
 - **Pull requests**: the workspace's pull request; its review state, merge state and checks in a
@@ -39,7 +39,8 @@ gh Focus is not affiliated with GitHub.
 
 ## Develop
 
-Needs Orca `1.4.256`+ (`orca` on PATH), Node.js 18+, and `gh` logged in.
+Needs Orca `1.4.256`+ with its `orca` CLI on PATH for the commands below, Node.js 18+, and `gh`
+logged in.
 
 ```sh
 cd plugins/gh-focus

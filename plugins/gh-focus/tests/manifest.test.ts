@@ -107,8 +107,8 @@ test('the icon fits the catalog limits', () => {
 // Users approve these before the plugin runs; the README says what each one is for.
 test('the README explains every capability the manifest asks for', () => {
   const readme = readFileSync(join(root, 'README.md'), 'utf8')
-  const permissions = readme.split(/^## Permissions$/m)[1]?.split(/^## /m)[0] ?? ''
+  const permissions = readme.split(/^## Permissions\r?$/m)[1]?.split(/^## /m)[0] ?? ''
   assert.ok(permissions.length > 0, 'no Permissions section')
-  const listed = [...permissions.matchAll(/^- `([a-z]+:[a-z]+)`/gm)].map((m) => m[1])
+  const listed = [...permissions.matchAll(/^- `([a-z0-9.-]+:[a-z0-9.-]+)`/gm)].map((m) => m[1])
   assert.deepEqual(listed.sort(), manifest.capabilities.map((c) => c.kind).sort())
 })

@@ -213,9 +213,9 @@ export function PullView() {
   const back = backLabel(pulls)
   return (
     <Box grow minHeight={0} gap="sm">
-      <Row justify="between" align="center">
+      <Row justify="between" align="center" wrap>
         <TasksButton kind="pulls" back />
-        {/* Kept whole, so the two buttons do not stack in a narrow sidebar. */}
+        {/* Kept whole, so the two buttons do not stack; narrower still, they wrap under Tasks. */}
         <Box shrink={false}>
           <Toolbar label="Pull request" gap="xs">
             {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={pulls.startEdit} />}
