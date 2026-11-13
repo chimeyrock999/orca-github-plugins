@@ -259,7 +259,7 @@ test('runs: workflow and status filters, and no sort', async () => {
   // Picked by name, sent by id: no name lookup on every page.
   await view.select({ label: 'Workflow' }, '8')
   await view.select({ label: 'Status' }, 'failure')
-  assert.deepEqual(h.asked.at(-1), { name: 'runs.list', input: { query: '', after: null, filters: { workflow: '8', status: 'failure' } } })
+  assert.deepEqual(h.asked.at(-1), { name: 'runs.list', input: { query: '', after: null, filters: { workflow: '8', status: 'failure' }, scope: 'branch' } })
   await view.unmount()
 })
 

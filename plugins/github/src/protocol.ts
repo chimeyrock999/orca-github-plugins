@@ -66,8 +66,9 @@ export const SEARCH_LIMIT = 1000
 
 export type IssueState = 'open' | 'done' | 'not_planned'
 export type PullState = 'open' | 'draft' | 'merged' | 'closed'
-/** `waiting`: a deployment or approval holds it. `skipped`: skipped, neutral or stale. */
-export type RunState = 'success' | 'failure' | 'running' | 'waiting' | 'cancelled' | 'skipped'
+/** `queued`: not started yet. `waiting`: a deployment or approval holds it. `skipped`: skipped,
+ *  neutral or stale. Runs, jobs and steps share it. */
+export type RunState = 'success' | 'failure' | 'running' | 'queued' | 'waiting' | 'cancelled' | 'skipped'
 
 export type IssueRow = {
   number: number
@@ -133,8 +134,66 @@ export type ItemPage<Row> = Page<Row> & { open: number | null; closed: number | 
 export type RunFilters = { workflow?: string; status?: string; event?: string; branch?: string }
 
 /** Runs: `query` takes GitHub's run qualifiers (`branch:`, `status:`, `actor:`, `event:`, `workflow:`);
- *  `filters` win over the same qualifier. The runs API has no order: newest first. */
-export type RunListInput = { query: string; after: string | null; filters?: RunFilters }
+ *  `filters` win over the same qualifier. The runs API has no order: newest first. `scope: 'branch'`
+ *  lists the runs of the focused workspace's branch unless a branch is asked for already. */
+export type RunListInput = { query: string; after: string | null; filters?: RunFilters; scope?: 'branch' | 'all' }
+/** `branch`: the workspace branch the page was narrowed to by `scope`, else null. */
+export type RunPage = Page<RunRow> & { branch: string | null }
+
+export type RunStep = {
+  number: number
+  name: string
+  state: RunState
+  /** Finished steps only. */
+  durationMs: number | null
+}
+
+export type RunJob = {
+  id: number
+  name: string
+  url: string
+  state: RunState
+  startedAt: number | null
+  /** Finished jobs only. */
+  durationMs: number | null
+  steps: RunStep[]
+  /** The steps were left out so a big run fits one panel message. */
+  stepsCut?: boolean
+}
+
+/** One run with the jobs of its latest attempt. `done` once it is completed: nothing changes after.
+ *  `waitingFor`: the environments a waiting run needs a deployment approval for. */
+export type RunDetail = RunRow & { attempt: number; workflowId: number; done: boolean; jobs: RunJob[]; waitingFor: string[] }
+
+/** One step's log: its last lines, `dropped` the lines cut before them. */
+export type LogStep = {
+  job: string
+  /** The job's id, when the log was asked for by job. */
+  jobId: number | null
+  step: string
+  lines: string[]
+  dropped: number
+  /** The step failed (a failed-steps log has only those). */
+  failed: boolean
+}
+/** A run's failed steps, or one job's whole log. `url` is where the full log is on GitHub;
+ *  `skippedJobs` how many failed jobs were not read (a failed-steps log reads a few jobs only);
+ *  `unread` the failed jobs whose log gh could not read, and why. */
+export type RunLogs = { steps: LogStep[]; url: string; skippedJobs: number; unread: { job: string; message: string }[] }
+
+/** One `workflow_dispatch` input as the workflow file declares it. */
+export type DispatchInput = {
+  name: string
+  type: 'string' | 'boolean' | 'choice' | 'number' | 'environment'
+  description: string | null
+  required: boolean
+  default: string | boolean | null
+  /** A choice's options, or the repo's environments for an `environment` input. */
+  options: string[]
+}
+/** What the Run workflow form needs: the ref the file was read from, whether the workflow can be run
+ *  by hand, and its inputs (null when the file could not be read: name and value fields instead). */
+export type DispatchForm = { ref: string; dispatch: boolean; inputs: DispatchInput[] | null }
 
 /** The reactions GitHub offers, by its enum name. */
 export const REACTIONS = ['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY', 'CONFUSED', 'HEART', 'ROCKET', 'EYES'] as const
@@ -247,7 +306,7 @@ declare module 'orca' {
     /** One page of the focused repo's pull requests, newest first. */
     'pulls.list': { input: ItemListInput; output: Answer<ItemPage<PullRow>> }
     /** One page of the focused repo's workflow runs, newest first. */
-    'runs.list': { input: RunListInput; output: Answer<Page<RunRow>> }
+    'runs.list': { input: RunListInput; output: Answer<RunPage> }
     /** The focused repo's label names, for the label filter. */
     'labels.list': { output: Answer<{ names: string[] }> }
     /** One issue with its body and the start and end of its timeline. */
@@ -269,9 +328,33 @@ declare module 'orca' {
     'assignees.list': { output: Answer<{ logins: string[] }> }
     /** The focused repo's workflows, for the workflow filter. */
     'workflows.list': { output: Answer<{ workflows: { id: number; name: string }[] }> }
+    /** One run and the jobs and steps of its latest attempt. */
+    'run.get': { input: { id: number }; output: Answer<{ run: RunDetail }> }
+    /** A finished run's failed steps, or with `job` that job's whole log; trimmed to fit a panel
+     *  message. */
+    'run.logs': { input: { id: number; job?: number }; output: Answer<{ logs: RunLogs }> }
+    /** Reruns every job, or only the failed ones (and those that depend on them). */
+    'run.rerun': { input: { id: number; failed: boolean }; output: Done }
+    'run.cancel': { input: { id: number }; output: Done }
+    /** Holds while the run goes on, posting `run.progress` to the asking panel: every 10 s while it
+     *  changes, backing off to 60 s while it does not. Answers once the run is done (`done`; with
+     *  `attempt`, once that attempt is), or after a while so the panel asks again (a request cannot
+     *  outlive 120 s) with `every` and `mark` to carry the cadence on; closing the panel ends it. */
+    'run.watch': {
+      input: { id: number; attempt?: number; every?: number; mark?: string }
+      output: Answer<{ done: boolean; every: number; mark: string | null }>
+    }
+    /** The Run workflow form of a workflow, read at `ref` (default: the workspace's branch when
+     *  GitHub has it, else the repo's default branch). */
+    'workflow.form': { input: { workflow: number; ref?: string }; output: Answer<{ form: DispatchForm }> }
+    /** Runs a workflow by hand (`workflow_dispatch`) on `ref` with these inputs; `run` is the run it
+     *  started once GitHub shows it (a few seconds), else null. */
+    'workflow.run': { input: { workflow: number; ref: string; inputs: Record<string, string> }; output: Answer<{ run: number | null }> }
   }
   interface PluginPanelEvents {
     /** Posted to every open panel when the focused workspace's repo answer changes. */
     'repo.changed': RepoAnswer
+    /** A watched run as it is now, to the panel that watches it. */
+    'run.progress': { run: RunDetail }
   }
 }

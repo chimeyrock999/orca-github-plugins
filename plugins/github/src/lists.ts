@@ -15,6 +15,7 @@ import {
   type PullRow,
   type PullState,
   type RunListInput,
+  type RunPage,
   type RunRow,
   type RunState
 } from './protocol'
@@ -201,7 +202,7 @@ export function parseRunQuery(query: string): RunQuery {
   return parsed
 }
 
-type RunJson = {
+export type RunJson = {
   id: number
   name: string | null
   display_title: string
@@ -219,10 +220,12 @@ type RunJson = {
   pull_requests?: { number: number }[]
 }
 
-function runState(run: RunJson): RunState {
-  if (run.status === 'waiting' || run.conclusion === 'action_required') return 'waiting'
-  if (run.status !== 'completed') return 'running'
-  switch (run.conclusion) {
+/** A run's, job's or step's state from GitHub's status and conclusion. */
+export function runState(status: string, conclusion: string | null): RunState {
+  if (status === 'waiting' || conclusion === 'action_required') return 'waiting'
+  if (status === 'queued' || status === 'pending' || status === 'requested') return 'queued'
+  if (status !== 'completed') return 'running'
+  switch (conclusion) {
     case 'success':
       return 'success'
     case 'failure':
@@ -237,7 +240,7 @@ function runState(run: RunJson): RunState {
   }
 }
 
-function runRow(run: RunJson): RunRow {
+export function runRow(run: RunJson): RunRow {
   const startedAt = Date.parse(run.run_started_at ?? run.created_at ?? run.updated_at)
   return {
     id: run.id,
@@ -245,7 +248,7 @@ function runRow(run: RunJson): RunRow {
     workflow: run.name ?? '',
     title: run.display_title,
     url: run.html_url,
-    state: runState(run),
+    state: runState(run.status, run.conclusion),
     event: run.event,
     branch: run.head_branch,
     sha: run.head_sha,
@@ -283,10 +286,20 @@ async function workflowPath(gh: Gh, repo: RepoRef, workflow: string, signal?: Ab
   return String(found.id)
 }
 
-export async function listRuns(gh: Gh, repo: RepoRef, input: RunListInput, signal?: AbortSignal): Promise<Page<RunRow>> {
+/** One page of runs. `workspaceBranch` is the focused workspace's branch, which `scope: 'branch'`
+ *  narrows to when no branch is asked for. */
+export async function listRuns(
+  gh: Gh,
+  repo: RepoRef,
+  input: RunListInput,
+  signal?: AbortSignal,
+  workspaceBranch: string | null = null
+): Promise<RunPage> {
   const query = parseRunQuery(input.query)
   const { workflow, ...params } = input.filters ?? {}
   for (const [key, value] of Object.entries(params)) if (value?.trim()) query.params[key as keyof RunQuery['params']] = value.trim()
+  const narrowed = input.scope === 'branch' && !query.params.branch && workspaceBranch ? workspaceBranch : null
+  if (narrowed) query.params.branch = narrowed
   if (workflow?.trim()) query.workflow = workflow.trim()
   const page = Math.max(1, Number.parseInt(input.after ?? '1', 10) || 1)
   const base = `repos/${repo.nameWithOwner}/actions`
@@ -304,6 +317,7 @@ export async function listRuns(gh: Gh, repo: RepoRef, input: RunListInput, signa
     rows: out.workflow_runs.map(runRow),
     total: out.total_count,
     next: page * PAGE_SIZE < reachable ? String(page + 1) : null,
-    limit
+    limit,
+    branch: narrowed
   }
 }

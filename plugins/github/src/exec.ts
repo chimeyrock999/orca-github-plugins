@@ -7,7 +7,7 @@ export type RunResult = { code: number; stdout: string; stderr: string }
 export type Run = (
   cmd: string,
   args: string[],
-  options: { cwd?: string; timeoutMs?: number; signal?: AbortSignal }
+  options: { cwd?: string; timeoutMs?: number; signal?: AbortSignal; maxBuffer?: number }
 ) => Promise<RunResult>
 
 // Orca 1.4.256 hands workers the login shell's PATH. Homebrew's folders go after it, for a launch
@@ -23,7 +23,7 @@ export const run: Run = (cmd, args, options) =>
     execFile(
       cmd,
       args,
-      { cwd: options.cwd, env: ENV, signal: options.signal, timeout: options.timeoutMs ?? 15_000, maxBuffer: 4 * 1024 * 1024 },
+      { cwd: options.cwd, env: ENV, signal: options.signal, timeout: options.timeoutMs ?? 15_000, maxBuffer: options.maxBuffer ?? 4 * 1024 * 1024 },
       (error, stdout, stderr) => {
         const code = (error as { code?: unknown } | null)?.code
         if (error && typeof code !== 'number') return reject(error)
@@ -87,4 +87,20 @@ export function parseWorktreeShow(stdout: string): WorkspaceLinks | null {
 export async function workspaceLinks(path: string, runner: Run = run): Promise<WorkspaceLinks | null> {
   const stdout = await orcaCli(['worktree', 'show', `--worktree=path:${path}`, '--json'], runner)
   return stdout === null ? null : parseWorktreeShow(stdout)
+}
+
+/** The branch checked out in `path` as GitHub names it: the branch it pushes to when it tracks one
+ *  (local `fix` tracking `origin/user/fix` is `user/fix`), else its own name. Null when detached or
+ *  git fails. */
+export async function currentBranch(path: string, runner: Run = run): Promise<string | null> {
+  try {
+    const head = await runner('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: path, timeoutMs: 5_000 })
+    const branch = head.code === 0 ? head.stdout.trim() : ''
+    if (!branch || branch === 'HEAD') return null
+    const merge = await runner('git', ['config', '--get', `branch.${branch}.merge`], { cwd: path, timeoutMs: 5_000 })
+    const upstream = merge.code === 0 ? merge.stdout.trim().replace(/^refs\/heads\//, '') : ''
+    return upstream || branch
+  } catch {
+    return null
+  }
 }

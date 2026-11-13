@@ -13,7 +13,8 @@ export class GhError extends Error {
   }
 }
 
-export type GhOptions = { cwd?: string; signal?: AbortSignal; timeoutMs?: number; json?: boolean }
+/** `maxBuffer`: bytes of output read before gh is stopped (default 4 MiB). */
+export type GhOptions = { cwd?: string; signal?: AbortSignal; timeoutMs?: number; json?: boolean; maxBuffer?: number }
 /** runGh with the runner bound: what handlers take, so tests hand them a fake. */
 export type Gh = (args: string[], options?: GhOptions) => Promise<unknown>
 
@@ -41,7 +42,7 @@ function spawnFailure(error: unknown): GhError {
 export async function runGh(args: string[], options: GhOptions = {}, runner: Run = run): Promise<unknown> {
   let result: RunResult
   try {
-    result = await runner('gh', args, { cwd: options.cwd, signal: options.signal, timeoutMs: options.timeoutMs })
+    result = await runner('gh', args, { cwd: options.cwd, signal: options.signal, timeoutMs: options.timeoutMs, maxBuffer: options.maxBuffer })
   } catch (error) {
     throw spawnFailure(error)
   }
