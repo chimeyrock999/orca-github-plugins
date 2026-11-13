@@ -1,7 +1,20 @@
 // How rows and errors read in the panel: a glyph and tone per state, the words around them. Pure,
 // so tests pin it without drawing. Tones only, never colours: Orca maps them to the theme.
 import type { Tone } from 'orca'
-import type { ErrorCode, IssueRow, PullRow, Reaction, ReactionGroup, RunRow, TimelineMention, TimelineState } from './protocol'
+import type {
+  CheckCounts,
+  ErrorCode,
+  IssueRow,
+  MergeState,
+  PullRow,
+  Reaction,
+  ReactionGroup,
+  ReviewDecision,
+  ReviewState,
+  RunRow,
+  TimelineMention,
+  TimelineState
+} from './protocol'
 
 export type Look = { glyph: string; tone: Tone; label: string }
 
@@ -35,11 +48,70 @@ export function sourceLook(source: TimelineMention['source']): Look {
   return source.type === 'pull' ? pullLook({ state: source.state as PullRow['state'] }) : issueLook({ state: source.state as IssueRow['state'] })
 }
 
-/** What a closed or reopened event says after its actor: "closed this as not planned". */
+/** What a closed or reopened event says after its actor: "closed this as not planned". A pull
+ *  request's close has no reason. */
 export function stateWords(item: TimelineState): { words: string; look: Look } {
   if (item.kind === 'reopened') return { words: 'reopened this', look: ISSUE.open }
+  if (item.reason === null) return { words: 'closed this', look: PULL.closed }
   if (item.reason === 'completed') return { words: 'closed this as completed', look: ISSUE.done }
   return { words: `closed this as ${item.reason === 'duplicate' ? 'a duplicate' : 'not planned'}`, look: ISSUE.not_planned }
+}
+
+const REVIEW: Record<ReviewState, { words: string; look: Look }> = {
+  approved: { words: 'approved these changes', look: { glyph: '✓', tone: 'success', label: 'Approved' } },
+  changes_requested: { words: 'requested changes', look: { glyph: '±', tone: 'danger', label: 'Changes requested' } },
+  commented: { words: 'reviewed', look: { glyph: '◎', tone: 'neutral', label: 'Reviewed' } },
+  dismissed: { words: 'reviewed (dismissed)', look: { glyph: '⊘', tone: 'neutral', label: 'Dismissed' } }
+}
+/** What a review says after its author, and its glyph. */
+export const reviewLook = (state: ReviewState) => REVIEW[state]
+
+// What Orca's Checks tab and pull request page say, so the panel reads alike
+// (github-pr-merge-state.ts, pr-check-counts.ts).
+const CHECK_WORDS: [keyof CheckCounts, string][] = [
+  ['failed', 'failing'],
+  ['cancelled', 'cancelled'],
+  ['needsAction', 'need action'],
+  ['pending', 'pending'],
+  ['passed', 'passed'],
+  ['neutral', 'neutral']
+]
+
+/** "1 failing · 2 pending · 4 passed", by Orca's counting. */
+export function checkSummary(counts: CheckCounts): string {
+  return CHECK_WORDS.flatMap(([key, words]) => (counts[key] ? [`${count(counts[key])} ${words}`] : [])).join(' · ')
+}
+
+/** The glyph of the checks as a whole: failing (or waiting on an action) red, running amber, all
+ *  cancelled grey, else green. */
+export function checksLook(counts: CheckCounts): Look {
+  if (counts.failed || counts.needsAction) return { glyph: '✕', tone: 'danger', label: 'Checks failed' }
+  if (counts.pending) return { glyph: '●', tone: 'warning', label: 'Checks pending' }
+  if (counts.cancelled) return { glyph: '⊘', tone: 'neutral', label: 'Cancelled' }
+  return { glyph: '✓', tone: 'success', label: 'Checks passed' }
+}
+
+const MERGE: Record<Exclude<MergeState, 'unstable'>, Look> = {
+  clean: { glyph: '✓', tone: 'success', label: 'Able to merge' },
+  conflicts: { glyph: '✕', tone: 'danger', label: 'Conflicts' },
+  behind: { glyph: '●', tone: 'warning', label: 'Behind' },
+  blocked: { glyph: '✕', tone: 'danger', label: 'Blocked' },
+  draft: { glyph: '◌', tone: 'neutral', label: 'Draft' },
+  unknown: { glyph: '◌', tone: 'neutral', label: 'Checking' }
+}
+
+/** Whether it can merge, in Orca's words; `unstable` (mergeable, checks not passing) says how the
+ *  checks stand. */
+export function mergeLook(state: MergeState, checks: CheckCounts | null = null): Look {
+  if (state !== 'unstable') return MERGE[state]
+  return checks ? checksLook(checks) : { glyph: '✕', tone: 'danger', label: 'Checks failed' }
+}
+
+/** A review decision in Orca's words; with none (no review needed) there is no line. */
+export function decisionLook(decision: Exclude<ReviewDecision, null>): Look {
+  if (decision === 'approved') return { glyph: '✓', tone: 'success', label: 'Approved' }
+  if (decision === 'changes_requested') return { glyph: '±', tone: 'danger', label: 'Changes requested' }
+  return { glyph: '●', tone: 'warning', label: 'Approval required' }
 }
 
 export const EMOJI: Record<Reaction, string> = {
@@ -131,7 +203,7 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
   gh_failed: { title: 'gh failed', hint: 'Press Retry. The message below is what gh said.', tone: 'danger' },
   unsure: {
     title: 'It may have gone through',
-    hint: 'GitHub did not answer in time. Check the issue (or the list) before you try again, so nothing is posted twice.',
+    hint: 'GitHub did not answer in time. Check what is on screen (or the list) before you try again, so nothing is posted twice.',
     tone: 'warning'
   }
 }

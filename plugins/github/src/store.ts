@@ -77,6 +77,10 @@ export function rowKey(row: AnyRow): string {
 const loads: Record<Kind, number> = { issues: 0, pulls: 0, runs: 0 }
 // Tabs whose first page was asked for since the repo was set.
 const started = new Set<Kind>()
+// Goes up each time the repo answer changes, so what started for a workspace starts again.
+let repoChanges = 0
+/** How many times the repo answer has changed in this panel run. */
+export const repoEpoch = () => repoChanges
 
 /** A rejected plugin.request as a failed answer: a timeout says so, anything else is Orca's. */
 export function requestFailed(error: unknown): { ok: false; error: PanelError } {
@@ -95,7 +99,7 @@ function ask(kind: Kind, s: ListState): Promise<Answer<ListPage>> {
   const answer =
     kind === 'runs'
       ? plugin.request('runs.list', { query: s.query, after, filters: s.filters, scope: s.scope })
-      : plugin.request(kind === 'issues' ? 'issues.list' : 'pulls.list', {
+      : plugin.request('issues.list', {
           state: s.state,
           query: s.query,
           after,
@@ -106,8 +110,10 @@ function ask(kind: Kind, s: ListState): Promise<Answer<ListPage>> {
   return (answer as Promise<Answer<ListPage>>).catch(requestFailed)
 }
 
-/** Asks for the page the list's cursors point at, dropping it if a newer load started. */
+/** Asks for the page the list's cursors point at, dropping it if a newer load started. The Pull
+ *  requests tab has no list: it shows the workspace's pull request, and Orca's Tasks page the rest. */
 export async function load(kind: Kind): Promise<void> {
+  if (kind === 'pulls') return
   const mine = ++loads[kind]
   const list = lists[kind]
   update(list, (s) => ({ ...s, answer: null }))
@@ -198,6 +204,7 @@ export function setRepo(answer: RepoAnswer): Promise<void> | void {
   const same = sameRepo(read(repo), answer)
   set(repo, answer)
   if (same) return
+  repoChanges++
   started.clear()
   choicesFor++
   set(choices, noChoices())
@@ -237,8 +244,8 @@ export function githubUrl(): string | null {
   if (!r?.ok) return null
   const kind = read(tab)
   const s = read(lists[kind])
-  // An issue opens by number, so it need not be on the page.
-  if (kind === 'issues' && s.open && /^\d+$/.test(s.open)) return `${r.url}/issues/${s.open}`
+  // Issues and pull requests open by number, so they need not be on the page.
+  if (kind !== 'runs' && s.open && /^\d+$/.test(s.open)) return `${r.url}/${kind === 'issues' ? 'issues' : 'pull'}/${s.open}`
   if (s.open && s.answer?.ok) {
     const row = s.answer.rows.find((x) => rowKey(x) === s.open)
     if (row) return row.url

@@ -1,18 +1,24 @@
 // `orca plugin check` renders the panel once per scenario. `requests` stand in for the worker, so
 // no scenario reaches the real gh.
 import { defineCheck } from 'orca/testing'
-import { commentItem, failed, issueDetail, issueRows, itemPage, pullRows, repoOk, runPage, runRows } from './fixtures'
+import type { Answer, PullDetail } from './protocol'
+import { commentItem, failed, issueDetail, issueRows, itemPage, pullDetail, repoOk, runPage, runRows } from './fixtures'
 
 const lists = {
   'repo.get': repoOk,
   'issues.list': itemPage(issueRows(30), 72, 'p2', 5),
-  'pulls.list': itemPage(pullRows, 2, null, 1),
   // The Actions tab starts on the workspace's branch.
   'runs.list': runPage(runRows, 296, '2', 1000, 'fix/token-refresh')
 }
 const empty = itemPage([], 0, null)
 // A workspace made from issue 120 opens on it, which is how these scenarios show an issue.
 const linked = { 'repo.links': { ok: true as const, issue: 120, pull: null } }
+// The workspace's pull request (here 131) opens in the Pull requests tab.
+const linkedPull = { 'repo.links': { ok: true as const, issue: null, pull: 131 } }
+const onPulls = { persisted: { plugin: { tab: 'pulls' } } }
+const mergedAt = Date.UTC(2026, 10, 12, 8, 0)
+const pullScenario = (answer: Answer<{ pull: PullDetail }>) => ({ requests: { ...lists, ...linkedPull, 'pull.get': answer }, ...onPulls })
+const showPull = (change: Partial<PullDetail> = {}) => pullScenario({ ok: true, pull: pullDetail(change) })
 const longTimeline = issueDetail({
   head: Array.from({ length: 3 }, (_, i) => commentItem(i + 1)),
   tail: [commentItem(40, { body: 'Shipped in 1.9.', reactions: [{ content: 'ROCKET', count: 3, viewerHasReacted: true, users: ['ana', 'olu'] }] })],
@@ -41,7 +47,26 @@ export default defineCheck({
   'issue-long-timeline': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: longTimeline } } },
   'issue-read-only': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: issueDetail({ canEdit: false }) } } },
   'issue-not-found': { requests: { ...lists, ...linked, 'issue.get': failed('not_found', 'Could not resolve to an Issue with the number of 120.') } },
-  'pull-requests': { requests: lists, persisted: { plugin: { tab: 'pulls' } } },
+  'pull-none': { requests: { ...lists, 'repo.links': { ok: true, issue: null, pull: null } }, ...onPulls },
+  'pull-detail': showPull(),
+  'pull-own': showPull({ author: 'chimeyrock999', review: 'review_required', reviewers: ['ana', 'core'] }),
+  'pull-ready': showPull({ merge: 'clean', review: 'approved', reviewers: [], checks: { passed: 5, failed: 0, cancelled: 0, needsAction: 0, pending: 0, neutral: 0 } }),
+  'pull-conflicts': showPull({ merge: 'conflicts' }),
+  'pull-draft': showPull({ state: 'draft', merge: 'draft', review: null, checks: null, head: [], total: 0, comments: 0 }),
+  'pull-closed': showPull({
+    state: 'closed',
+    closedAt: mergedAt,
+    head: [...pullDetail().head, { kind: 'closed', id: 'CE_1', actor: 'kenji', createdAt: mergedAt, reason: null }]
+  }),
+  'pull-merged': showPull({
+    state: 'merged',
+    merge: 'unknown',
+    review: 'approved',
+    mergedAt,
+    closedAt: mergedAt,
+    head: [...pullDetail().head, { kind: 'merged', id: 'ME_1', actor: 'ana', createdAt: mergedAt, commit: 'a1935b0', into: 'dev' }]
+  }),
+  'pull-not-found': pullScenario(failed('not_found', 'Could not resolve to a PullRequest with the number of 131.')),
   actions: { requests: lists, persisted: { plugin: { tab: 'runs' } } },
   // Scenarios cannot press, so a run's detail and the Run workflow form are covered by
   // src/run-view.test.tsx; this one shows the list with a run waiting to start.
@@ -49,7 +74,7 @@ export default defineCheck({
     requests: { ...lists, 'runs.list': runPage([{ ...runRows[0], id: 9002, runNumber: 297, state: 'queued', startedAt: runRows[0].startedAt + 60_000 }, ...runRows], 297, '2') },
     persisted: { plugin: { tab: 'runs' } }
   },
-  'empty-repo': { requests: { 'repo.get': repoOk, 'issues.list': empty, 'pulls.list': empty, 'runs.list': runPage([]) } },
+  'empty-repo': { requests: { 'repo.get': repoOk, 'issues.list': empty, 'runs.list': runPage([]) } },
   'no-workspace': { requests: { 'repo.get': failed('no_workspace', 'No workspace is focused in Orca.') } },
   'not-a-github-repo': {
     requests: { 'repo.get': failed('not_a_repo', 'none of the git remotes configured for this repository point to a known GitHub host') }

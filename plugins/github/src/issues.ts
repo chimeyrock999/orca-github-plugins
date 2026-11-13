@@ -2,41 +2,29 @@
 // may do; writes through gh's own issue commands, which take label and login names. Comments are
 // edited and deleted through the REST API by id, reactions through GraphQL by node id.
 import { GhError, type Gh } from './gh'
-import { issueState, pullState, type RepoRef } from './lists'
+import { issueState, type RepoRef } from './lists'
+import { PAGE_SIZE, REACTIONS, type CloseReason, type IssueCreate, type IssueDetail, type IssueEdit, type Reaction, type TimelineItem } from './protocol'
 import {
-  PAGE_SIZE,
-  REACTIONS,
-  type CloseReason,
-  type IssueCreate,
-  type IssueDetail,
-  type IssueEdit,
-  type Reaction,
-  type ReactionGroup,
-  type TimelineItem
-} from './protocol'
+  BODY_BYTES,
+  bothEnds,
+  clip,
+  COMMON_NODES,
+  graphqlData,
+  laterPage,
+  queryArgs,
+  reactionGroups,
+  REACTORS,
+  TAIL_SIZE,
+  viewerOf,
+  type Connection,
+  type GroupJson,
+  type Login
+} from './timeline'
 
-/** The latest timeline items shown below a long issue's Load more, as GitHub does. */
-export const TAIL_SIZE = 10
-/** Bytes, as JSON, one body or comment may take; past it the text is cut. The issue body gets more. */
-export const BODY_BYTES = 40_000
-export const COMMENT_BYTES = 20_000
-/** Bytes of comment text in a page, and in the tail, so the body, both and the rest stay under the
- *  256 KiB panel message limit. A page ends early once its comments reach it. */
-export const PAGE_BYTES = 90_000
-export const TAIL_BYTES = 50_000
+export { clip, COMMENT_BYTES, PAGE_BYTES } from './timeline'
 
-const REACTORS = `reactionGroups { content viewerHasReacted reactors(first: 3) { totalCount nodes {
-  ... on User { login } ... on Bot { login } ... on Organization { login } ... on Mannequin { login } } } }`
-
-const SOURCE = `__typename
-  ... on Issue { number title url state stateReason repository { nameWithOwner } }
-  ... on PullRequest { number title url state isDraft merged repository { nameWithOwner } }`
-
-const TIMELINE_NODE = `__typename
-  ... on IssueComment { id databaseId url body createdAt lastEditedAt viewerCanUpdate viewerCanDelete author { login } ${REACTORS} }
-  ... on CrossReferencedEvent { id createdAt actor { login } source { ${SOURCE} } }
-  ... on ClosedEvent { id createdAt actor { login } stateReason }
-  ... on ReopenedEvent { id createdAt actor { login } }`
+const TIMELINE_NODE = `${COMMON_NODES}
+  ... on ClosedEvent { id createdAt actor { login } stateReason }`
 
 const TIMELINE_TYPES = 'itemTypes: [ISSUE_COMMENT, CROSS_REFERENCED_EVENT, CLOSED_EVENT, REOPENED_EVENT]'
 
@@ -72,36 +60,6 @@ const TIMELINE_QUERY = `query($owner: String!, $name: String!, $number: Int!, $f
   }
 }`
 
-type Login = { login: string } | null
-type GroupJson = { content: string; viewerHasReacted: boolean; reactors: { totalCount: number; nodes: Login[] } }
-type NodeJson = {
-  __typename: string
-  id: string
-  createdAt: string
-  databaseId?: number
-  url?: string
-  body?: string
-  lastEditedAt?: string | null
-  viewerCanUpdate?: boolean
-  viewerCanDelete?: boolean
-  author?: Login
-  actor?: Login
-  reactionGroups?: GroupJson[]
-  stateReason?: string | null
-  source?: {
-    __typename: string
-    number: number
-    title: string
-    url: string
-    state: string
-    stateReason?: string | null
-    isDraft?: boolean
-    merged?: boolean
-    repository: { nameWithOwner: string }
-  } | null
-}
-type Edge = { cursor: string; node: NodeJson | null }
-type Connection = { edges: Edge[]; totalCount?: number; pageInfo?: { hasNextPage: boolean; endCursor: string | null } }
 type IssueJson = {
   id: string
   number: number
@@ -123,140 +81,11 @@ type IssueJson = {
   tail: Connection
 }
 
-function ownerName(repo: RepoRef): [string, string] {
-  const [owner, name] = repo.nameWithOwner.split('/')
-  return [owner, name]
-}
-
-/** Bytes `text` takes in a JSON message. */
-function jsonBytes(text: string): number {
-  return new TextEncoder().encode(JSON.stringify(text)).length
-}
-
-/** `text` cut so it takes at most `limit` JSON bytes. */
-export function clip(text: string, limit: number): { text: string; truncated: boolean } {
-  if (jsonBytes(text) <= limit) return { text, truncated: false }
-  let low = 0
-  let high = text.length
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2)
-    if (jsonBytes(text.slice(0, mid)) <= limit) low = mid
-    else high = mid - 1
-  }
-  return { text: text.slice(0, low), truncated: true }
-}
-
-export function reactionGroups(groups: GroupJson[] | undefined): ReactionGroup[] {
-  return (groups ?? [])
-    .filter((g) => g.reactors.totalCount > 0 && (REACTIONS as readonly string[]).includes(g.content))
-    .map((g) => ({
-      content: g.content as Reaction,
-      count: g.reactors.totalCount,
-      viewerHasReacted: g.viewerHasReacted,
-      users: g.reactors.nodes.flatMap((n) => (n?.login ? [n.login] : []))
-    }))
-}
-
-function closeReason(reason: string | null | undefined): 'completed' | 'not_planned' | 'duplicate' {
-  if (reason === 'NOT_PLANNED') return 'not_planned'
-  return reason === 'DUPLICATE' ? 'duplicate' : 'completed'
-}
-
-/** A timeline node as the panel shows it; null for one it does not (a mention by a deleted item). */
-export function timelineItem(node: NodeJson | null): TimelineItem | null {
-  if (!node) return null
-  const base = { id: node.id, createdAt: Date.parse(node.createdAt) }
-  switch (node.__typename) {
-    case 'IssueComment': {
-      const body = clip(node.body ?? '', COMMENT_BYTES)
-      return {
-        ...base,
-        kind: 'comment',
-        databaseId: node.databaseId ?? 0,
-        url: node.url ?? '',
-        author: node.author?.login ?? null,
-        body: body.text,
-        truncated: body.truncated,
-        edited: !!node.lastEditedAt,
-        canEdit: !!node.viewerCanUpdate,
-        canDelete: !!node.viewerCanDelete,
-        reactions: reactionGroups(node.reactionGroups)
-      }
-    }
-    case 'CrossReferencedEvent': {
-      const s = node.source
-      if (!s || (s.__typename !== 'Issue' && s.__typename !== 'PullRequest')) return null
-      const pull = s.__typename === 'PullRequest'
-      return {
-        ...base,
-        kind: 'mention',
-        actor: node.actor?.login ?? null,
-        source: {
-          type: pull ? 'pull' : 'issue',
-          number: s.number,
-          title: s.title,
-          url: s.url,
-          state: pull ? pullState(s) : issueState(s),
-          repo: s.repository.nameWithOwner
-        }
-      }
-    }
-    case 'ClosedEvent':
-      return { ...base, kind: 'closed', actor: node.actor?.login ?? null, reason: closeReason(node.stateReason) }
-    case 'ReopenedEvent':
-      return { ...base, kind: 'reopened', actor: node.actor?.login ?? null, reason: null }
-    default:
-      return null
-  }
-}
-
-/** The items of `edges` while their comment text stays within `budget` bytes (at least one), and
- *  the cursor of the last one taken. */
-export function takeWithin(edges: Edge[], budget: number): { items: TimelineItem[]; cursor: string | null; all: boolean } {
-  const items: TimelineItem[] = []
-  let cursor: string | null = null
-  let used = 0
-  for (const [i, edge] of edges.entries()) {
-    const item = timelineItem(edge.node)
-    const size = item?.kind === 'comment' ? jsonBytes(item.body) : 0
-    if (i > 0 && used + size > budget) return { items, cursor, all: false }
-    used += size
-    if (item) items.push(item)
-    cursor = edge.cursor
-  }
-  return { items, cursor, all: true }
-}
-
-function graphqlData<T>(out: unknown, what: string): T {
-  const answer = out as { data?: { repository?: { issue?: T | null } | null }; errors?: { message: string }[] } | null
-  const issue = answer?.data?.repository?.issue
-  if (issue) return issue
-  const why = answer?.errors?.map((e) => e.message).join('; ')
-  throw new GhError(why ? 'gh_failed' : 'not_found', why ? `GitHub ${what} failed: ${why}` : `No issue answered the ${what}.`)
-}
-
-function queryArgs(query: string, repo: RepoRef, number: number): string[] {
-  const [owner, name] = ownerName(repo)
-  return ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${number}`]
-}
-
 export async function getIssue(gh: Gh, repo: RepoRef, number: number, signal?: AbortSignal): Promise<{ issue: IssueDetail }> {
   const args = [...queryArgs(ISSUE_QUERY, repo, number), '-F', `first=${PAGE_SIZE}`, '-F', `last=${TAIL_SIZE}`]
   const out = await gh(args, { cwd: repo.path, signal, json: true })
-  const issue = graphqlData<IssueJson>(out, 'issue query')
-  const viewer = (out as { data?: { viewer?: { login?: string } } }).data?.viewer?.login ?? null
+  const issue = graphqlData<IssueJson>(out, 'issue', 'issue query')
   const body = clip(issue.body ?? '', BODY_BYTES)
-  const head = takeWithin(issue.head.edges, PAGE_BYTES)
-  const headIds = new Set(head.items.map((i) => i.id))
-  const more = !head.all || !!issue.head.pageInfo?.hasNextPage
-  // On a short timeline the tail overlaps the head: the head and what the tail adds reach the end.
-  const tailEdges = more ? issue.tail.edges : []
-  const overlaps = tailEdges.some((e) => e.node && headIds.has(e.node.id))
-  const fresh = tailEdges.filter((e) => !(e.node && headIds.has(e.node.id)))
-  // The latest items are the ones to keep when the tail is over its budget.
-  const taken = takeWithin([...fresh].reverse(), TAIL_BYTES)
-  const tail = taken.items.reverse()
-  const meets = overlaps && head.all && taken.all
   return {
     issue: {
       id: issue.id,
@@ -275,12 +104,8 @@ export async function getIssue(gh: Gh, repo: RepoRef, number: number, signal?: A
       canEdit: issue.viewerCanUpdate,
       reactions: reactionGroups(issue.reactionGroups),
       comments: issue.comments.totalCount,
-      total: issue.head.totalCount ?? head.items.length,
-      // Once the head meets the tail they are one list, as Load more would leave them.
-      head: meets ? [...head.items, ...tail] : head.items,
-      next: more && !meets ? head.cursor : null,
-      tail: meets ? [] : tail,
-      viewer
+      ...bothEnds(issue.head, issue.tail),
+      viewer: viewerOf(out)
     }
   }
 }
@@ -293,26 +118,27 @@ export async function issueTimeline(
   signal?: AbortSignal
 ): Promise<{ items: TimelineItem[]; next: string | null }> {
   const args = [...queryArgs(TIMELINE_QUERY, repo, number), '-F', `first=${PAGE_SIZE}`, '-f', `after=${after}`]
-  const { page } = graphqlData<{ page: Connection }>(await gh(args, { cwd: repo.path, signal, json: true }), 'timeline query')
-  const taken = takeWithin(page.edges, PAGE_BYTES)
-  const more = !taken.all || !!page.pageInfo?.hasNextPage
-  return { items: taken.items, next: more ? taken.cursor : null }
+  const { page } = graphqlData<{ page: Connection }>(await gh(args, { cwd: repo.path, signal, json: true }), 'issue', 'timeline query')
+  return laterPage(page)
 }
 
 /** Writes get longer than gh's 15 s default: `gh issue create` makes several API calls. */
 const WRITE_MS = 60_000
 
-function run(gh: Gh, repo: RepoRef, args: string[], signal?: AbortSignal): Promise<unknown> {
+export function run(gh: Gh, repo: RepoRef, args: string[], signal?: AbortSignal): Promise<unknown> {
   return gh(args, { cwd: repo.path, signal, timeoutMs: WRITE_MS })
 }
 
-function needText(text: string, what: string): string {
+export function needText(text: string, what: string): string {
   if (!text.trim()) throw new GhError('gh_failed', `${what} is empty.`)
   return text
 }
 
-export async function commentOn(gh: Gh, repo: RepoRef, number: number, body: string, signal?: AbortSignal): Promise<object> {
-  await run(gh, repo, ['issue', 'comment', String(number), '--body', needText(body, 'The comment')], signal)
+/** gh's command group: `issue`, or `pr` for a pull request, which takes the same flags here. */
+export type Noun = 'issue' | 'pr'
+
+export async function commentOn(gh: Gh, repo: RepoRef, number: number, body: string, signal?: AbortSignal, noun: Noun = 'issue'): Promise<object> {
+  await run(gh, repo, [noun, 'comment', String(number), '--body', needText(body, 'The comment')], signal)
   return {}
 }
 
@@ -357,8 +183,8 @@ function each(flag: string, names: string[] | undefined): string[] {
   return (names ?? []).filter((n) => n.trim()).flatMap((n) => [flag, n.trim()])
 }
 
-export async function editIssue(gh: Gh, repo: RepoRef, input: IssueEdit, signal?: AbortSignal): Promise<object> {
-  const args = ['issue', 'edit', String(input.number)]
+export async function editIssue(gh: Gh, repo: RepoRef, input: IssueEdit, signal?: AbortSignal, noun: Noun = 'issue'): Promise<object> {
+  const args = [noun, 'edit', String(input.number)]
   if (input.title !== undefined) args.push('--title', needText(input.title, 'The title'))
   if (input.body !== undefined) args.push('--body', input.body)
   args.push(
