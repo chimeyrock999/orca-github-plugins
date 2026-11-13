@@ -14,6 +14,7 @@ import {
   POLL_MAX_MS,
   POLL_MIN_MS,
   rerunRun,
+  reviewDeployments,
   runLogs,
   sleep,
   watchRun,
@@ -77,8 +78,9 @@ const job = (id: number, name: string, conclusion: string | null, status = 'comp
 })
 const jobsPages = [{ total_count: 3, jobs: [job(11, 'lint', 'success'), job(12, 'test (ubuntu)', 'failure')] }, { jobs: [job(13, 'build', null, 'queued', [])] }]
 
-const runRoutes = (run = runJson(), pages: unknown = jobsPages): [RegExp, unknown][] => [
+const runRoutes = (run = runJson(), pages: unknown = jobsPages, artifacts: unknown = { total_count: 0, artifacts: [] }): [RegExp, unknown][] => [
   [/^api --paginate --slurp repos\/octo\/app\/actions\/runs\/43380486297\/jobs\?filter=latest&per_page=100$/, pages],
+  [/^api repos\/octo\/app\/actions\/runs\/43380486297\/artifacts\?per_page=100$/, artifacts],
   [/^api repos\/octo\/app\/actions\/runs\/43380486297$/, run]
 ]
 
@@ -295,7 +297,7 @@ test('workflow.run answers no run when GitHub has not shown it after a few looks
 function stateRoutes(states: string[]) {
   let n = 0
   return runRoutes(undefined, [{ jobs: [] }]).map(([pattern, answer]): [RegExp, unknown] =>
-    /jobs/.test(pattern.source) ? [pattern, answer] : [pattern, () => runJson({ status: states[Math.min(n++, states.length - 1)], conclusion: null })]
+    /jobs|artifacts/.test(pattern.source) ? [pattern, answer] : [pattern, () => runJson({ status: states[Math.min(n++, states.length - 1)], conclusion: null })]
   )
 }
 
@@ -325,16 +327,96 @@ test('run.watch backs off while the run does not change and comes back to 10 s w
   assert.deepEqual(next.slept.slice(0, 3), [POLL_MAX_MS, POLL_MIN_MS, 20_000])
 })
 
-test('a waiting run names the environments that need an approval', async () => {
+// As GET pending_deployments answers (abridged).
+const pending = (id: number, name: string, canApprove: boolean) => ({ environment: { id, name }, wait_timer: 0, current_user_can_approve: canApprove })
+
+test('a waiting run names the environments that need an approval, and which this login may review', async () => {
   const gh = routedGh([
     ...runRoutes(runJson({ status: 'waiting', conclusion: null }), [{ jobs: [] }]),
-    [/pending_deployments$/, [{ environment: { name: 'production' }, wait_timer: 0 }]]
+    [/pending_deployments$/, [pending(7, 'production', true), pending(8, 'staging-eu', false)]]
   ])
   const { run } = await getRun(gh, repo, 43380486297)
   assert.equal(run.state, 'waiting')
-  assert.deepEqual(run.waitingFor, ['production'])
+  assert.deepEqual(run.waitingFor, [
+    { id: 7, name: 'production', canApprove: true },
+    { id: 8, name: 'staging-eu', canApprove: false }
+  ])
   const done = await getRun(routedGh(runRoutes()), repo, 43380486297)
   assert.deepEqual(done.run.waitingFor, [])
+})
+
+test('run.review approves or rejects the environments it is given in one write, with an empty comment', async () => {
+  for (const [approve, state] of [
+    [true, 'approved'],
+    [false, 'rejected']
+  ] as const) {
+    const gh = routedGh([[/^api -X POST /, []]])
+    assert.deepEqual(await reviewDeployments(gh, repo, { id: 43380486297, approve, environments: [7, 9] }), {})
+    assert.deepEqual(gh.calls.map((c) => c.args), [
+      [
+        'api',
+        '-X',
+        'POST',
+        'repos/octo/app/actions/runs/43380486297/pending_deployments',
+        '-F',
+        'environment_ids[]=7',
+        '-F',
+        'environment_ids[]=9',
+        '-f',
+        `state=${state}`,
+        '-f',
+        'comment='
+      ]
+    ])
+    assert.equal(gh.calls[0].options?.cwd, '/code/app')
+  }
+})
+
+test('run.review with no environment, or a bad run id, fails before it writes', async () => {
+  for (const input of [
+    { id: 43380486297, approve: true, environments: [] },
+    { id: 43380486297, approve: true, environments: [0, -3] },
+    { id: -1, approve: true, environments: [7] },
+    // A request without the list, as `orca plugin dev request` could send.
+    { id: 43380486297, approve: true } as unknown as { id: number; approve: boolean; environments: number[] }
+  ]) {
+    const gh = routedGh([])
+    await assert.rejects(reviewDeployments(gh, repo, input), (e: unknown) => e instanceof GhError)
+    assert.equal(gh.calls.length, 0)
+  }
+})
+
+// As GET artifacts answers (abridged).
+const artifact = (id: number, name: string, size: number, expired: boolean, expires: string | null) => ({
+  id,
+  name,
+  size_in_bytes: size,
+  expired,
+  expires_at: expires,
+  archive_download_url: `https://api.github.com/repos/octo/app/actions/artifacts/${id}/zip`
+})
+
+test('a finished run lists its artifacts, expired ones too, and counts those past the first page', async () => {
+  const page = {
+    total_count: 103,
+    artifacts: [artifact(1, 'coverage', 4_404_019, false, '2027-02-11T06:46:02Z'), artifact(2, 'dist', 831_488, true, '2026-11-01T00:00:00Z'), artifact(3, 'sbom.json', 18_000, false, null)]
+  }
+  const { run } = await getRun(routedGh(runRoutes(runJson(), jobsPages, page)), repo, 43380486297)
+  assert.deepEqual(run.artifacts, [
+    { id: 1, name: 'coverage', bytes: 4_404_019, expired: false, expiresAt: Date.parse('2027-02-11T06:46:02Z') },
+    { id: 2, name: 'dist', bytes: 831_488, expired: true, expiresAt: Date.parse('2026-11-01T00:00:00Z') },
+    { id: 3, name: 'sbom.json', bytes: 18_000, expired: false, expiresAt: null }
+  ])
+  assert.equal(run.moreArtifacts, 100)
+})
+
+test('a run still going is not asked for artifacts, and artifacts that cannot be read leave the run whole', async () => {
+  const going = routedGh(runRoutes(runJson({ status: 'in_progress', conclusion: null })))
+  assert.deepEqual((await getRun(going, repo, 43380486297)).run.artifacts, [])
+  assert.ok(going.calls.every((c) => !c.args.join(' ').includes('artifacts')))
+  const refused = routedGh(runRoutes(runJson(), jobsPages, new GhError('gh_failed', 'HTTP 403: Resource not accessible')))
+  const { run } = await getRun(refused, repo, 43380486297)
+  assert.deepEqual([run.state, run.artifacts, run.moreArtifacts], ['failure', [], 0])
 })
 
 test('run.watch answers not done before its lease runs out, so the panel asks again', async () => {
@@ -352,7 +434,7 @@ test('run.watch after a re-run waits for the new attempt, not the finished one b
   let n = 0
   const gh = routedGh(
     runRoutes(undefined, [{ jobs: [] }]).map(([pattern, answer]): [RegExp, unknown] =>
-      /jobs/.test(pattern.source)
+      /jobs|artifacts/.test(pattern.source)
         ? [pattern, answer]
         : [pattern, () => (++n === 1 ? runJson({ run_attempt: 1 }) : runJson({ run_attempt: 2, status: n === 2 ? 'queued' : 'completed', conclusion: n === 2 ? null : 'success' }))]
     )

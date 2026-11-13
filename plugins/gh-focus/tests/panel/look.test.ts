@@ -1,6 +1,6 @@
 // The words and tones rows and errors show with.
 import { assert, test } from 'orca/testing'
-import { count, duration, pageLine, issueLook, itemEvent, problemOf, pullLook, reactionTip, runCause, runLook, stateWords } from '../../src/panel/look'
+import { bytes, count, duration, expiry, pageLine, issueLook, itemEvent, problemOf, pullLook, reactionTip, runCause, runLook, stateWords } from '../../src/panel/look'
 import type { IssueRow, PullRow, RunRow } from '../../src/shared/protocol'
 
 const issue: IssueRow = { number: 8, title: 't', url: 'u', state: 'open', author: 'mai-t', labels: [], createdAt: 1, closedAt: null }
@@ -168,4 +168,20 @@ test('pull requests: closed and merged events, reviews, checks, merge state and 
       ['Approval required', 'warning']
     ]
   )
+})
+
+test('artifact sizes and expiry read as GitHub writes them', () => {
+  assert.deepEqual([900, 831_488, 4_404_019, 52_428_800, 3 * 1024 ** 3].map(bytes), ['900 B', '812 KB', '4.2 MB', '50 MB', '3.0 GB'])
+  // Rounded before the unit is picked.
+  assert.deepEqual([1_023, 1_048_000, 1_048_575, 10_200].map(bytes), ['1023 B', '1023 KB', '1.0 MB', '10 KB'])
+  const now = Date.UTC(2026, 10, 13)
+  const hour = 3_600_000
+  assert.equal(expiry(true, now + 100 * hour, now), 'Expired')
+  assert.equal(expiry(true, null, now), 'Expired')
+  assert.equal(expiry(false, now - 1_000, now), 'Expired')
+  assert.equal(expiry(false, null, now), null)
+  assert.equal(expiry(false, now + (89 * 24 + 3) * hour, now), 'Expires in 89 days')
+  assert.equal(expiry(false, now + 30 * hour, now), 'Expires in 1 day')
+  assert.equal(expiry(false, now + 5 * hour, now), 'Expires in 5 hours')
+  assert.equal(expiry(false, now + 1_000, now), 'Expires soon')
 })
