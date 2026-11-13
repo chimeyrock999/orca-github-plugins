@@ -22,11 +22,11 @@ jobs:
       contents: write
     env:
       TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
-      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Test the check
         run: node --test .github/release-check.test.mjs
@@ -35,6 +35,8 @@ jobs:
         run: node .github/release-check.mjs "$TAG" origin/main > "$RUNNER_TEMP/notes.md"
 
       - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "$TAG already has a release; nothing to do."

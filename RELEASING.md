@@ -74,14 +74,21 @@ export GH_TOKEN=$(gh auth token --user chimeyrock999)
    the tagged commit (`.github/release-check.mjs`): `version` equals the tag, the commit is on
    `main`, `CHANGELOG.md` has a `## X.Y.Z` section, and `orca-catalog.json` has the release, whose
    commit is in the tag's history. Watch the run in the repo's Actions tab. A red run leaves no
-   Release, but the tag is already listed. The checks read the tagged commit, which cannot change:
-   when one names a problem in it (as a missing catalog entry would have for 0.1.1), fix that on
-   `dev` for the next release and create this Release by hand. When the run failed for another
-   reason, run it again (Actions → Release → Run workflow, with the tag), or check it by hand:
+   Release, but the tag is already listed. When the run failed for a reason outside the tagged
+   commit, run it again (Actions → Release → Run workflow, with the tag), or check and release by
+   hand:
    ```sh
-   node .github/release-check.mjs vX.Y.Z origin/main > notes.md    # the notes, or what is wrong
-   gh release create vX.Y.Z -R chimeyrock999/orca-github-plugins --verify-tag \
-     --title "gh Focus X.Y.Z" --notes-file notes.md
+   node .github/release-check.mjs vX.Y.Z origin/main > notes.md &&
+     gh release create vX.Y.Z -R chimeyrock999/orca-github-plugins --verify-tag \
+       --title "gh Focus X.Y.Z" --notes-file notes.md
+   ```
+   The checks read the tagged commit, which cannot change: when one names a problem in it (as a
+   missing catalog entry would have for 0.1.1), fix that on `dev` for the next release, and
+   create this Release from the CHANGELOG section alone:
+   ```sh
+   node .github/release-check.mjs --notes-only vX.Y.Z > notes.md &&
+     gh release create vX.Y.Z -R chimeyrock999/orca-github-plugins --verify-tag \
+       --title "gh Focus X.Y.Z" --notes-file notes.md
    ```
 7. **Check the listing** at https://orca.dev/plugins/chimeyrock999/orca-github-plugins once Orca
    has picked the tag up (usually within an hour). Then open the install link

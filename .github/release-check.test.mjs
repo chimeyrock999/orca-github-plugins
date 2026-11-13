@@ -5,7 +5,8 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { changelogSection, checkRelease } from './release-check.mjs'
+import { fileURLToPath } from 'node:url'
+import { changelogSection, checkRelease, releaseNotes } from './release-check.mjs'
 
 const CHANGELOG = `# Changelog
 
@@ -32,12 +33,17 @@ function git(dir, ...args) {
   ).trim()
 }
 
-function write(dir, { version = '0.2.0', changelog = CHANGELOG, releases = ['0.2.0'], entryCommit } = {}) {
+function write(
+  dir,
+  { version = '0.2.0', manifest, changelog = CHANGELOG, releases = ['0.2.0'], entryCommit, otherPlugin, path = 'plugins/gh-focus' } = {},
+) {
   mkdirSync(join(dir, 'plugins/gh-focus'), { recursive: true })
-  writeFileSync(join(dir, 'plugins/gh-focus/orca-plugin.json'), JSON.stringify({ id: 'gh-focus', version }))
+  writeFileSync(join(dir, 'plugins/gh-focus/orca-plugin.json'), manifest ?? JSON.stringify({ id: 'gh-focus', version }))
   writeFileSync(join(dir, 'CHANGELOG.md'), changelog)
-  const entries = releases.map((v) => ({ version: v, commit: entryCommit ?? '0'.repeat(40) }))
-  writeFileSync(join(dir, 'orca-catalog.json'), JSON.stringify({ plugins: [{ id: 'x.gh-focus', releases: entries }] }))
+  const entries = (versions) => versions.map((v) => ({ version: v, commit: entryCommit ?? '0'.repeat(40) }))
+  const plugins = [{ id: 'x.gh-focus', source: { kind: 'git', path }, releases: entries(releases) }]
+  if (otherPlugin) plugins.unshift({ id: 'x.other', source: { kind: 'git', path: 'plugins/other' }, releases: entries(otherPlugin) })
+  writeFileSync(join(dir, 'orca-catalog.json'), JSON.stringify({ plugins }))
 }
 
 // A repo whose main holds the version bump commit, then a commit that adds its catalog entry
@@ -111,6 +117,37 @@ test('a tagged commit without the catalog says which file is missing', () => {
   git(dir, 'commit', '-qm', 'drop')
   git(dir, 'tag', '-af', 'v0.2.0', '-m', 'tag')
   assert.throws(() => run(dir), (error) => error.message === 'orca-catalog.json is missing at v0.2.0')
+})
+
+test("another plugin's release of the same version does not count", () => {
+  assert.throws(
+    () => run(repo({ releases: [], otherPlugin: ['0.2.0'] })),
+    (error) => error.message === 'orca-catalog.json has no release 0.2.0',
+  )
+})
+
+test('a catalog without the plugin of plugins/gh-focus fails', () => {
+  assert.throws(
+    () => run(repo({ path: 'plugins/elsewhere' })),
+    (error) => error.message === 'orca-catalog.json has no plugin with source.path plugins/gh-focus',
+  )
+})
+
+test('a file that is not valid JSON is named, and the other problems still show', () => {
+  assert.throws(
+    () => run(repo({ manifest: '{"version":"0.2.0",}', changelog: '## 0.1.0\n\n- x\n' })),
+    (error) =>
+      /^plugins\/gh-focus\/orca-plugin\.json is not valid JSON at v0\.2\.0: /m.test(error.message) &&
+      /CHANGELOG\.md has no ## 0\.2\.0 section/.test(error.message),
+  )
+})
+
+test('the notes alone come without the other checks, for a Release made by hand', () => {
+  const dir = repo({ version: '0.1.9', releases: [] })
+  assert.equal(releaseNotes({ tag: 'v0.2.0', cwd: dir }), '### Added\n\n- A thing.')
+  const cli = execFileSync('node', [fileURLToPath(new URL('release-check.mjs', import.meta.url)), '--notes-only', 'v0.2.0'], { cwd: dir, encoding: 'utf8' })
+  assert.equal(cli, '### Added\n\n- A thing.\n')
+  assert.throws(() => releaseNotes({ tag: 'v0.2.0', cwd: repo({ changelog: '## 0.1.0\n\n- x\n' }) }), /no ## 0\.2\.0 section/)
 })
 
 test('a catalog entry whose commit is not in the tag history fails', () => {
