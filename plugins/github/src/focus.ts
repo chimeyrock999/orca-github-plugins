@@ -72,16 +72,18 @@ export async function resolveFocus(
   if (matches.length === 1) {
     found = { workspace: matches[0], resolvedBy: 'context' }
   }
-  if (!found && matches.length > 1 && deps.picked) {
-    // A pick only counts while it is still one of the matches: a removed clone is not chosen.
-    const path = await deps.picked(context)
-    const workspace = path ? matches.find((w) => samePath(w.path, path)) : undefined
-    if (workspace) found = { workspace, resolvedBy: 'picked' }
-  }
   if (!found) {
     // A terminal only picks among the matches when there are some; with none it may name any.
     const workspace = await byTerminal(context, matches.length > 1 ? matches : workspaces, deps.terminalPath)
     if (workspace) found = { workspace, resolvedBy: 'terminal' }
+  }
+  if (!found && matches.length > 1 && deps.picked) {
+    // A focused terminal belongs to this very workspace, while a pick is shared by every clone with
+    // its branch and name, so the pick only decides when no terminal did. It counts while it is
+    // still one of the matches: a removed clone is not chosen.
+    const path = await deps.picked(context)
+    const workspace = path ? matches.find((w) => samePath(w.path, path)) : undefined
+    if (workspace) found = { workspace, resolvedBy: 'picked' }
   }
 
   if (!found && matches.length > 1) {

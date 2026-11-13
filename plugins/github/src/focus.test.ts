@@ -101,11 +101,17 @@ test('a trailing slash on either path still matches', async () => {
   assert.equal(result.ok && result.workspace.id, 'w-lib')
 })
 
-test('a stored pick settles two repos on main before any terminal is asked', async () => {
+test('a focused terminal wins over a stored pick: the pick is shared by every same-named clone', async () => {
   const d = { ...deps({ t1: '/code/app' }), picked: async () => '/code/lib/' }
   const result = await resolveFocus({ branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }, [app, lib], d)
+  assert.deepEqual(result, { ok: true, workspace: app, resolvedBy: 'terminal' })
+})
+
+test('a stored pick settles two repos on main when no terminal tells', async () => {
+  const d = { ...deps(), picked: async () => '/code/lib/' }
+  const result = await resolveFocus({ branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }, [app, lib], d)
   assert.deepEqual(result, { ok: true, workspace: lib, resolvedBy: 'picked' })
-  assert.deepEqual(d.asked, [])
+  assert.deepEqual(d.asked, ['t1'])
 })
 
 test('a pick that is no longer among the matches is ignored', async () => {
