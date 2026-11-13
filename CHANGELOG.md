@@ -48,7 +48,4 @@ logged in.
 - When a request fails, the panel says why, with a hint and Retry (for example "GitHub rate limit
   reached": wait a few minutes, then press Retry).
 - Catalog icon.
-
-### Changed
-
 - Tabs are words only, and the panel fits a narrow sidebar (280 px) without scrolling sideways.
