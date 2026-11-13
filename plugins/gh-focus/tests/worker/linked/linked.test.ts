@@ -51,8 +51,8 @@ test('linkedQuery: one repository block per repo, one item per number', () => {
   assert.match(q, /r0: repository\(owner: "octo", name: "app"\)/)
   assert.match(q, /n120: issueOrPullRequest\(number: 120\)/)
   assert.match(q, /r1: repository\(owner: "octo", name: "sdk"\) \{\s+n45: issueOrPullRequest/)
-  assert.match(q, /\.\.\. on Issue \{ number title url state stateReason updatedAt \}/)
-  assert.match(q, /\.\.\. on PullRequest \{ number title url state isDraft merged updatedAt \}/)
+  assert.match(q, /\.\.\. on Issue \{ number title url state stateReason updatedAt author \{ login \} \}/)
+  assert.match(q, /\.\.\. on PullRequest \{ number title url state isDraft merged updatedAt author \{ login \} \}/)
 })
 
 const issueNode = (number: number, updatedAt: string, more: Record<string, unknown> = {}) => ({
@@ -63,6 +63,7 @@ const issueNode = (number: number, updatedAt: string, more: Record<string, unkno
   state: 'OPEN',
   stateReason: null,
   updatedAt,
+  author: { login: 'mai-t' },
   ...more
 })
 
@@ -75,7 +76,8 @@ test('linkedRows: one call in the repo folder, newest activity first, state as G
   const gh = fakeGh({
     data: {
       r0: {
-        n98: issueNode(98, '2026-11-10T08:00:00Z', { state: 'CLOSED', stateReason: 'COMPLETED' }),
+        // A deleted account leaves no author.
+        n98: issueNode(98, '2026-11-10T08:00:00Z', { state: 'CLOSED', stateReason: 'COMPLETED', author: null }),
         n120: issueNode(120, '2026-11-13T08:00:00Z')
       },
       r1: { n45: { ...issueNode(45, '2026-11-12T08:00:00Z', { state: 'CLOSED', stateReason: 'NOT_PLANNED' }), url: 'https://github.com/octo/sdk/issues/45' } }
@@ -88,11 +90,11 @@ test('linkedRows: one call in the repo folder, newest activity first, state as G
   assert.equal(gh.calls[0].partial, true)
   assert.match(query(gh), /r0: repository\(owner: "octo", name: "app"\) \{\s+n98: [^]*n120: /)
   assert.deepEqual(
-    rows.map((r) => [r.number, r.repo, r.state]),
+    rows.map((r) => [r.number, r.repo, r.state, r.author]),
     [
-      [120, null, 'open'],
-      [45, 'octo/sdk', 'not_planned'],
-      [98, null, 'done']
+      [120, null, 'open', 'mai-t'],
+      [45, 'octo/sdk', 'not_planned', 'mai-t'],
+      [98, null, 'done', null]
     ]
   )
   assert.equal(rows[0].updatedAt, Date.parse('2026-11-13T08:00:00Z'))
@@ -118,9 +120,9 @@ test('linkedRows: an item GitHub has no answer for keeps Orca title and no state
   const gh = fakeGh({ data: { r0: { n9: null, n120: issueNode(120, '2026-11-13T08:00:00Z') }, r1: null } })
   const { rows } = await linkedRows(gh, repo, 'pulls', items)
   assert.deepEqual(rows, [
-    { number: 120, repo: null, title: 'Issue 120', url: 'https://github.com/octo/app/issues/120', state: 'open', updatedAt: Date.parse('2026-11-13T08:00:00Z') },
-    { number: 9, repo: null, title: 'Gone issue', url: 'https://github.com/octo/app/pull/9', state: null, updatedAt: null },
-    { number: 4, repo: 'gone/repo', title: '#4', url: 'https://github.com/gone/repo/pull/4', state: null, updatedAt: null }
+    { number: 120, repo: null, title: 'Issue 120', url: 'https://github.com/octo/app/issues/120', state: 'open', updatedAt: Date.parse('2026-11-13T08:00:00Z'), author: 'mai-t' },
+    { number: 9, repo: null, title: 'Gone issue', url: 'https://github.com/octo/app/pull/9', state: null, updatedAt: null, author: null },
+    { number: 4, repo: 'gone/repo', title: '#4', url: 'https://github.com/gone/repo/pull/4', state: null, updatedAt: null, author: null }
   ])
 })
 

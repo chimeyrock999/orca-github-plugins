@@ -29,8 +29,8 @@ export function linkedRefs(links: WorkspaceLinks | null, repo: RepoRef & { url?:
 }
 
 const ITEM_FIELDS = `__typename
-  ... on Issue { number title url state stateReason updatedAt }
-  ... on PullRequest { number title url state isDraft merged updatedAt }`
+  ... on Issue { number title url state stateReason updatedAt author { login } }
+  ... on PullRequest { number title url state isDraft merged updatedAt author { login } }`
 
 type ItemNode = {
   __typename: string
@@ -42,6 +42,7 @@ type ItemNode = {
   isDraft?: boolean
   merged?: boolean
   updatedAt: string
+  author?: { login: string } | null
 }
 
 /** One GraphQL query for the items: a `repository` per repo, an `issueOrPullRequest` per number. */
@@ -88,10 +89,10 @@ export async function linkedRows(gh: Gh, repo: RepoRef, kind: LinkedKind, items:
     const node = r < 0 ? null : (data[`r${r}`]?.[`n${item.number}`] ?? null)
     if (!node) {
       const url = item.url ?? `https://github.com/${name}/${path}/${item.number}`
-      return { number: item.number, repo: item.repo, title: item.title ?? `#${item.number}`, url, state: null, updatedAt: null }
+      return { number: item.number, repo: item.repo, title: item.title ?? `#${item.number}`, url, state: null, updatedAt: null, author: null }
     }
     const state = node.__typename === 'PullRequest' ? pullState(node) : issueState(node)
-    return { number: node.number, repo: item.repo, title: node.title, url: node.url, state, updatedAt: Date.parse(node.updatedAt) || null }
+    return { number: node.number, repo: item.repo, title: node.title, url: node.url, state, updatedAt: Date.parse(node.updatedAt) || null, author: node.author?.login ?? null }
   })
   // A stable sort keeps Orca's order among items with no time.
   return { rows: rows.sort((a, b) => (b.updatedAt ?? -Infinity) - (a.updatedAt ?? -Infinity)) }

@@ -391,9 +391,9 @@ test('several linked issues make a list, newest activity first, and none opens b
     'items.get': () => ({
       ok: true,
       rows: [
-        { number: 120, repo: null, title: 'Login page loops after token refresh', url: 'https://github.com/octo/app/issues/120', state: 'open', updatedAt: Date.UTC(2026, 10, 12, 8) },
-        { number: 45, repo: 'octo/sdk', title: 'Stream writer drops the last chunk', url: 'https://github.com/octo/sdk/issues/45', state: 'not_planned', updatedAt: Date.UTC(2026, 10, 11) },
-        { number: 118, repo: null, title: 'Gone', url: 'https://github.com/octo/app/issues/118', state: null, updatedAt: null }
+        { number: 120, repo: null, title: 'Login page loops after token refresh', url: 'https://github.com/octo/app/issues/120', state: 'open', updatedAt: Date.UTC(2026, 10, 12, 8), author: 'mai-t' },
+        { number: 45, repo: 'octo/sdk', title: 'Stream writer drops the last chunk', url: 'https://github.com/octo/sdk/issues/45', state: 'not_planned', updatedAt: Date.UTC(2026, 10, 11), author: 'kenji' },
+        { number: 118, repo: null, title: 'Gone', url: 'https://github.com/octo/app/issues/118', state: null, updatedAt: null, author: null }
       ]
     })
   })
@@ -411,6 +411,9 @@ test('several linked issues make a list, newest activity first, and none opens b
     view.findAll({ type: 'ListItem' }).map((i) => i.text?.split('#')[0]),
     ['◉ Login page loops after token refresh ', '⊘ Stream writer drops the last chunk octo/sdk ', '◌ Gone ']
   )
+  // Who opened each, when GitHub names someone.
+  assert.match(view.find({ type: 'ListItem', text: /Login page loops/ })?.text ?? '', /#120 by mai-t · updated /)
+  assert.ok(!/ by /.test(view.find({ type: 'ListItem', text: /Gone/ })?.text ?? ''))
   // Another repo's is named, and opens here, read in its own repo.
   assert.ok(view.find({ type: 'Badge', text: 'octo/sdk' }))
   await view.press({ type: 'ListItem', text: /Stream writer/ })

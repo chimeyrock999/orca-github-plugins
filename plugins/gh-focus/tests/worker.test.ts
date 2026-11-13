@@ -248,13 +248,13 @@ test('items.get reads the linked items in one gh call in the focused repo', asyn
   const calls: { args: string[]; cwd?: string; signal?: AbortSignal }[] = []
   const gh: Gh = async (args, options) => {
     calls.push({ args, cwd: options?.cwd, signal: options?.signal })
-    return { data: { r0: { n4: { __typename: 'Issue', number: 4, title: 'Four', url: 'https://github.com/octo/app/issues/4', state: 'OPEN', updatedAt: '2026-11-13T08:00:00Z' } } } }
+    return { data: { r0: { n4: { __typename: 'Issue', number: 4, title: 'Four', url: 'https://github.com/octo/app/issues/4', state: 'OPEN', updatedAt: '2026-11-13T08:00:00Z', author: { login: 'olu' } } } } }
   }
   const worker = await mountWorker(listWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
   const answer = await worker.request('items.get', { kind: 'issues', items: [{ number: 4, repo: null, title: null, url: null }] })
   assert.deepEqual(answer, {
     ok: true,
-    rows: [{ number: 4, repo: null, title: 'Four', url: 'https://github.com/octo/app/issues/4', state: 'open', updatedAt: Date.parse('2026-11-13T08:00:00Z') }]
+    rows: [{ number: 4, repo: null, title: 'Four', url: 'https://github.com/octo/app/issues/4', state: 'open', updatedAt: Date.parse('2026-11-13T08:00:00Z'), author: 'olu' }]
   })
   assert.equal(calls.length, 1)
   assert.equal(calls[0].cwd, '/work/spike')

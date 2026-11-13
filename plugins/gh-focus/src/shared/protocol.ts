@@ -110,6 +110,8 @@ export type LinkedRow = {
   state: IssueState | PullState | null
   /** Milliseconds since the epoch. */
   updatedAt: number | null
+  /** Who opened it; null for a deleted account, or an item GitHub has no answer for. */
+  author: string | null
 }
 
 export type RunRow = {

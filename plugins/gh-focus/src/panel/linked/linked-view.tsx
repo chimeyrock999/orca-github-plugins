@@ -40,6 +40,7 @@ function LinkedItem({ t, row }: { t: AnyThread; row: LinkedRow }) {
             {row.repo && <Badge>{row.repo}</Badge>}
             <Text size="xs" muted>
               {`#${row.number}`}
+              {row.author && ` by ${row.author}`}
               {row.updatedAt !== null && (
                 <>
                   {' · updated '}

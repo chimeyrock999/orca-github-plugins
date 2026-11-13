@@ -36,7 +36,7 @@ test('states read like GitHub: open green, done and merged in the text colour, f
 })
 
 test('a linked item reads like its kind; one GitHub did not answer for is grey', () => {
-  const row: LinkedRow = { number: 8, repo: null, title: 't', url: 'u', state: 'merged', updatedAt: 1 }
+  const row: LinkedRow = { number: 8, repo: null, title: 't', url: 'u', state: 'merged', updatedAt: 1, author: null }
   assert.equal(linkedLook('pulls', row).label, 'Merged')
   assert.equal(linkedLook('issues', { ...row, state: 'not_planned' }).label, 'Not planned')
   assert.deepEqual(linkedLook('issues', { ...row, state: null }).tone, 'neutral')

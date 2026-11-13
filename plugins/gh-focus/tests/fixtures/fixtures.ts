@@ -41,6 +41,7 @@ const titles = [
   'Docs: explain workspace settings',
   'Crash when the config file is empty'
 ]
+const authors = ['mai-t', 'kenji', 'olu']
 
 /** An item linked to the workspace: a number of the focused repo, or `owner/name#n` of another. */
 export function ref(item: number | string): LinkedRef {
@@ -64,7 +65,8 @@ export function linkedRows(items: LinkedRef[], kind: 'issues' | 'pulls' = 'issue
       title: titles[i % titles.length],
       url: item.url ?? `https://github.com/octo/app/${kind === 'issues' ? 'issues' : 'pull'}/${item.number}`,
       state: 'open',
-      updatedAt: now - (i + 1) * hour
+      updatedAt: now - (i + 1) * hour,
+      author: authors[i % authors.length]
     }))
   }
 }
