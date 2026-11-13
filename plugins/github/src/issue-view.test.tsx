@@ -409,6 +409,8 @@ test('a workspace made from an issue opens on that issue, once; Back and tab swi
   const h = host({ 'repo.links': { ok: true, issue: 4, pull: null } })
   const view = await mount(panel, { host: h })
   assert.deepEqual(h.last('issue.get'), { number: 4 })
+  // The Issues tab never asks for the branch's pull request (a gh call it has no use for).
+  assert.deepEqual(h.last('repo.links'), {})
   assert.ok(view.find({ text: '← Back to issues' }))
   // The list loads behind it, so Back shows it at once.
   assert.equal(h.asked.filter((a) => a.name === 'issues.list').length, 1)

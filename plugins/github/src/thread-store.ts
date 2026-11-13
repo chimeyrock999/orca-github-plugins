@@ -364,7 +364,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     if (read(lists[kind]).open) return
     const last = read(seen)
     if (where in last) return last[where] === null ? undefined : open(last[where]!)
-    const links = await plugin.request('repo.links').catch(() => null)
+    const links = await plugin.request('repo.links', {}).catch(() => null)
     // The person may have opened something, or moved to another workspace, meanwhile.
     if (read(startedIn) !== started || read(lists[kind]).open || read(tab) !== kind) return
     const linked = links?.ok ? (kind === 'issues' ? links.issue : links.pull) : null

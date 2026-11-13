@@ -428,17 +428,23 @@ test('repo.links: with no linked pull request, the branch pull request gh finds 
   // A linked pull request wins, and gh is not asked.
   assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: 4, pull: 13 })
   assert.equal(calls.length, 0)
+  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issue: 4, pull: 13 })
+  assert.equal(calls.length, 0)
   linked = { project: 'github:octo/app', issue: 4, pull: null }
-  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: 4, pull: 21 })
+  // Only the Pull requests tab asks for the branch's: the Issues tab never pays a gh call.
+  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: 4, pull: null })
+  assert.deepEqual(await worker.request('repo.links', {}), { ok: true, issue: 4, pull: null })
+  assert.equal(calls.length, 0)
+  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issue: 4, pull: 21 })
   assert.deepEqual(calls[0], { args: ['pr', 'view', '--json', 'number'], cwd: '/work/spike' })
   // Orca's CLI says nothing: gh still finds the branch's.
   linked = null
-  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: null, pull: 21 })
+  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issue: null, pull: 21 })
   // No pull request for the branch, or gh failing, is none, not an error.
   branch = new GhError('gh_failed', 'no pull requests found for branch "feature/spike"')
-  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: null, pull: null })
+  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issue: null, pull: null })
   branch = { message: 'odd' }
-  assert.deepEqual(await worker.request('repo.links'), { ok: true, issue: null, pull: null })
+  assert.deepEqual(await worker.request('repo.links', { branch: true }), { ok: true, issue: null, pull: null })
   await worker.deactivate()
 })
 

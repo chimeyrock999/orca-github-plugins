@@ -289,9 +289,10 @@ declare module 'orca' {
     /** Forgets the pick for the focused branch and name. */
     'repo.unpick': { output: RepoAnswer }
     /** The issue and pull request Orca links to the focused workspace (one made from them), when
-     *  they are of its repo; null when there is none or Orca's CLI does not say. With no linked
-     *  pull request, `pull` is the one gh finds for the workspace's branch. */
-    'repo.links': { output: Answer<{ issue: number | null; pull: number | null }> }
+     *  they are of its repo; null when there is none or Orca's CLI does not say. With `branch` and
+     *  no linked pull request, `pull` is the one gh finds for the workspace's branch (a gh call, so
+     *  only the Pull requests tab asks for it). */
+    'repo.links': { input: { branch?: boolean }; output: Answer<{ issue: number | null; pull: number | null }> }
     /** One page of the focused repo's issues, newest first. */
     'issues.list': { input: ItemListInput; output: Answer<ItemPage<IssueRow>> }
     /** One page of the focused repo's workflow runs, newest first. */

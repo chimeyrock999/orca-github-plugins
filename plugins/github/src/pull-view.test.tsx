@@ -47,6 +47,11 @@ function openPull(h = host()) {
   return mount(panel, { host: h, ...onPulls })
 }
 
+/** Waits (up to a second) for `done`, so a timer-driven step is not raced on a slow machine. */
+async function until(done: () => boolean): Promise<void> {
+  for (let waited = 0; !done() && waited < 1000; waited += 10) await new Promise((resolve) => setTimeout(resolve, 10))
+}
+
 const says = (view: Awaited<ReturnType<typeof mount>>, text: RegExp) => view.summary().some((l) => text.test(l))
 const mentionOf = (number: number): TimelineItem => ({
   kind: 'mention',
@@ -60,6 +65,8 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
   const h = host()
   const view = await openPull(h)
   assert.deepEqual(h.last('pull.get'), { number: 124 })
+  // The Pull requests tab asks for the branch's pull request when Orca links none.
+  assert.deepEqual(h.last('repo.links'), { branch: true })
   assert.equal(h.count('pulls.list'), 0)
   assert.ok(view.find({ type: 'Text', text: 'fix: stream CSV export past 10k rows' }))
   // Its own pull request: no Back, and Tasks for the rest of the repo's.
@@ -193,7 +200,7 @@ test('a merge state GitHub has not worked out yet is asked again once, a moment 
   const view = await openPull(h)
   assert.ok(view.find({ text: 'Checking' }))
   merge = 'clean'
-  await new Promise((resolve) => setTimeout(resolve, 30))
+  await until(() => h.count('pull.get') >= 2)
   await view.settled()
   assert.equal(h.count('pull.get'), 2)
   assert.ok(view.find({ text: 'Able to merge' }))
@@ -202,7 +209,9 @@ test('a merge state GitHub has not worked out yet is asked again once, a moment 
   // Still unknown after the second ask: no third, until Refresh.
   const still = host({}, () => pullDetail({ merge: 'unknown' }))
   const again = await openPull(still)
-  await new Promise((resolve) => setTimeout(resolve, 30))
+  await until(() => still.count('pull.get') >= 2)
+  // Long enough for a third ask, were there one.
+  await new Promise((resolve) => setTimeout(resolve, 50))
   await again.settled()
   assert.equal(still.count('pull.get'), 2)
   await again.unmount()

@@ -35,12 +35,12 @@ const defaultDeps: WorkerDeps = {
 
 /** The issue and pull request Orca links to the focused workspace, when they are of its repo. Orca
  *  links a pull request only when the workspace was made from it or it was made in Orca, so with
- *  none the branch's pull request (one opened with gh or on GitHub) stands in. */
-async function repoLinks(deps: WorkerDeps, repo: RepoRef, signal?: AbortSignal): Promise<{ issue: number | null; pull: number | null }> {
+ *  none and `branch` asked, the branch's pull request (one opened with gh or on GitHub) stands in. */
+async function repoLinks(deps: WorkerDeps, repo: RepoRef, branch: boolean, signal?: AbortSignal): Promise<{ issue: number | null; pull: number | null }> {
   const links = await deps.links?.(repo.path)
   const ours = links?.project?.toLowerCase() === `github:${repo.nameWithOwner}`.toLowerCase()
   const linked = ours && links ? { issue: links.issue, pull: links.pull } : { issue: null, pull: null }
-  return linked.pull ? linked : { ...linked, pull: await branchPull(deps.gh, repo, signal) }
+  return linked.pull || !branch ? linked : { ...linked, pull: await branchPull(deps.gh, repo, signal) }
 }
 
 const ORCA_ACTIONS: Record<OrcaView, 'view.tasks' | 'sidebar.checks.toggle'> = { tasks: 'view.tasks', checks: 'sidebar.checks.toggle' }
@@ -77,7 +77,7 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   orca.panels.handle('repo.get', () => tracker.get())
   orca.panels.handle('repo.pick', ({ path }) => tracker.pick(path))
   orca.panels.handle('repo.unpick', () => tracker.unpick())
-  orca.panels.handle('repo.links', (_, { signal }) => inRepo(tracker, (repo) => repoLinks(deps, repo, signal)))
+  orca.panels.handle('repo.links', (input, { signal }) => inRepo(tracker, (repo) => repoLinks(deps, repo, !!input?.branch, signal)))
   orca.panels.handle('orca.show', ({ view }) => showView(orca, view))
   orca.panels.handle('issues.list', (input, { signal }) => inRepo(tracker, (repo) => listIssues(deps.gh, repo, input, signal)))
   orca.panels.handle('runs.list', (input, { signal }) => inRepo(tracker, (repo) => listRuns(deps.gh, repo, input, signal)))

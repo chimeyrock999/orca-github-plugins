@@ -57,7 +57,7 @@ export async function findPull(again = false): Promise<void> {
   if (!again && read(focus)?.where === where) return
   // Refresh keeps what it found until the new answer; a new workspace shows that it is looking.
   if (!again) set(focus, null)
-  const links = await plugin.request('repo.links').catch(() => null)
+  const links = await plugin.request('repo.links', { branch: true }).catch(() => null)
   if (focusKey() !== where) return
   const number = links?.ok ? links.pull : null
   set(focus, { where, number })
