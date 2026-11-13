@@ -100,6 +100,10 @@ export type LinkedRef = { number: number; repo: string | null; title: string | n
 /** An agent of the focused workspace that can take a prompt, by the name the panel shows. */
 export type FreeAgent = { name: string; terminalId: string }
 
+/** An agent of the focused workspace that cannot take a prompt now: at work, or waiting on a
+ *  question. */
+export type BusyAgent = { name: string; state: 'working' | 'blocked' }
+
 /** A linked issue or pull request as GitHub has it now. `state` and `updatedAt` are null when
  *  GitHub did not answer for it (gone, or this login cannot see it): then title and url are Orca's. */
 export type LinkedRow = {
@@ -399,8 +403,8 @@ declare module 'orca' {
     /** The linked issues or pull requests as GitHub has them now (one call), newest activity first. */
     'items.get': { input: { kind: LinkedKind; items: LinkedRef[] }; output: Answer<{ rows: LinkedRow[] }> }
     /** A free agent of the focused workspace (one not working or blocked): its name and terminal;
-     *  null when none. */
-    'agent.find': { output: Answer<{ agent: FreeAgent | null }> }
+     *  null when none, and then `busy` names the one working or blocked there, if any. */
+    'agent.find': { output: Answer<{ agent: FreeAgent | null; busy: BusyAgent | null }> }
     /** Types a prompt into that agent's terminal asking it to link the workspace's issue or pull
      *  request with `orca reference add`, when it is still free; Enter is left to the person. */
     'agent.ask': { input: { kind: LinkedKind; terminalId: string }; output: Answer<{ agent: string }> }

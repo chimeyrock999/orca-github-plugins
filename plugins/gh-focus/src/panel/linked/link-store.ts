@@ -1,7 +1,7 @@
 // What the Issues and Pull requests tabs offer around the linked items: the hand-offs to Orca's Tasks
 // page and Checks tab, and, with nothing linked, a free agent to ask to link one.
 import { atom, plugin, read, set } from 'orca'
-import type { FreeAgent, LinkedKind, OrcaView, PanelError } from '../../shared/protocol'
+import type { BusyAgent, FreeAgent, LinkedKind, OrcaView, PanelError } from '../../shared/protocol'
 import { lists, requestFailed } from '../store'
 import { focusKey, type AnyThread } from '../thread/thread-store'
 
@@ -17,10 +17,10 @@ export async function handOff(view: OrcaView): Promise<void> {
 }
 export const dismissHandOff = () => set(handOffError, null)
 
-/** The free agent of the workspace on screen (`where`); `agent` null when none is free. `asked` is
- *  the kind it was asked to link (with the name it answered as), `asking` while the prompt is on its
- *  way. */
-export type AgentState = { where: string; agent: FreeAgent | null; asking: boolean; asked: LinkedKind | null; error: PanelError | null }
+/** The free agent of the workspace on screen (`where`); `agent` null when none is free, and then
+ *  `busy` the one at work or waiting on a question, if any. `asked` is the kind it was asked to link
+ *  (with the name it answered as), `asking` while the prompt is on its way. */
+export type AgentState = { where: string; agent: FreeAgent | null; busy: BusyAgent | null; asking: boolean; asked: LinkedKind | null; error: PanelError | null }
 export const agent = atom<AgentState | null>(null)
 
 /** The agent state for the workspace on screen, once found. */
@@ -29,14 +29,24 @@ export function agentNow(): AgentState | null {
   return a && a.where === focusKey() ? a : null
 }
 
-/** Looks for a free agent when the empty state shows for a workspace (or on Refresh): a failure,
- *  such as Orca not allowing it, is no agent. */
+/** Looks for a free agent when the empty state shows for a workspace (or on Refresh, or when an agent
+ *  there changes state): a failure, such as Orca not allowing it, is no agent. */
+let finding = 0
 export async function findAgent(again = false): Promise<void> {
   const where = focusKey()
   if (!again && read(agent)?.where === where) return
+  // Agent events come quickly: only the latest look answers.
+  const mine = ++finding
   const answer = await plugin.request('agent.find').catch(requestFailed)
-  if (focusKey() !== where) return
-  set(agent, { where, agent: answer.ok ? answer.agent : null, asking: false, asked: null, error: null })
+  if (mine !== finding || focusKey() !== where) return
+  set(agent, { where, agent: answer.ok ? answer.agent : null, busy: answer.ok ? answer.busy : null, asking: false, asked: null, error: null })
+}
+
+/** Whether an agent changing state is looked for again: not while it is being asked or once it was
+ *  asked (Enter on the prompt sets it working, and the callout stays until Refresh). */
+export function mayRefindAgent(): boolean {
+  const a = agentNow()
+  return !a?.asking && !a?.asked
 }
 
 /** Types the link prompt into the free agent's terminal; the person presses Enter there. */
@@ -47,9 +57,12 @@ export async function askAgent(kind: LinkedKind): Promise<void> {
   set(agent, { ...a, asking: true, error: null })
   const answer = await plugin.request('agent.ask', { kind, terminalId: offered.terminalId }).catch(requestFailed)
   if (focusKey() !== where) return
-  if (answer.ok) return set(agent, { where, agent: { ...offered, name: answer.agent }, asking: false, asked: kind, error: null })
-  // With no agent free any more, the button goes and the command stays.
-  set(agent, { where, agent: answer.error.code === 'no_agent' ? null : a.agent, asking: false, asked: null, error: answer.error })
+  if (answer.ok) return set(agent, { ...a, agent: { ...offered, name: answer.agent }, asking: false, asked: kind, error: null })
+  if (answer.error.code !== 'no_agent') return set(agent, { ...a, asking: false, error: answer.error })
+  // No agent free any more: it says why, and asks again what the agent is doing now.
+  await findAgent(true)
+  const now = agentNow()
+  if (now) set(agent, { ...now, error: answer.error })
 }
 
 /** Back from a thread; the empty state it may land on offers a free agent, so one is looked for. */

@@ -437,7 +437,7 @@ test('agent.find names a free agent; agent.ask types the link prompt into its te
       main.activateWith(orca, { gh: noGh, ghRepo: async (path) => repos[path], terminalPath: async (id) => folders[id] ?? null, exists: () => true })
   }
   const worker = await mountWorker(module, { host })
-  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Claude Code', terminalId: 't-free' } })
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Claude Code', terminalId: 't-free' }, busy: null })
   // Not even when the panel names it.
   const elsewhere = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-elsewhere' })
   assert.equal(!elsewhere.ok && elsewhere.error.code, 'no_agent')
@@ -456,7 +456,8 @@ test('agent.find names a free agent; agent.ask types the link prompt into its te
   const busy = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-busy' })
   assert.equal(!busy.ok && busy.error.code, 'no_agent')
   agents = agents.slice(0, 3)
-  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null })
+  // None free: the busy one of this workspace is named, so the panel can say why.
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: { name: 'Codex', state: 'working' } })
   const gone = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-free' })
   assert.equal(!gone.ok && gone.error.code, 'no_agent')
   assert.equal(host.callsOf('terminal.sendText').length, 2)
@@ -475,6 +476,41 @@ test('agent.find names a free agent; agent.ask types the link prompt into its te
   const answer = await denied.request('agent.find')
   assert.equal(!answer.ok && answer.error.code, 'not_allowed')
   await denied.deactivate()
+})
+
+test('the repo tracker and the agent requests share one CLI run per terminal; no answer is asked again', async () => {
+  const asked: string[] = []
+  const module = {
+    default: (orca: OrcaWorkerApi) =>
+      main.activateWith(orca, {
+        gh: noGh,
+        ghRepo: async (path) => repos[path],
+        terminalPath: async (id) => (asked.push(id), id === 't-app' ? '/code/app' : null),
+        exists: () => true
+      })
+  }
+  const agents = [
+    { terminalId: 't-app', title: 'Claude Code', agent: 'claude', state: 'waiting', stateStartedAt: 1 },
+    { terminalId: 't-gone', title: 'Codex', agent: 'codex', state: 'working', stateStartedAt: 2 }
+  ]
+  const context = { branch: 'main', displayName: 'main', terminals: [{ id: 't-app' }] }
+  const host = mockHost({
+    results: {
+      'workspace.readContext': context,
+      'workspace.list': { workspaces, truncated: false },
+      'agents.list': { agents },
+      'terminal.sendText': { accepted: true }
+    }
+  })
+  const worker = await mountWorker(module, { host })
+  assert.equal((await worker.request('repo.get')).ok, true)
+  await Promise.all([worker.request('agent.find'), worker.request('agent.find')])
+  assert.equal((await worker.request('agent.ask', { kind: 'issues', terminalId: 't-app' })).ok, true)
+  assert.deepEqual(asked.filter((id) => id === 't-app'), ['t-app'])
+  // A terminal the CLI has no folder for is asked again next time.
+  await worker.request('agent.find')
+  assert.ok(asked.filter((id) => id === 't-gone').length >= 2)
+  await worker.deactivate()
 })
 
 test('orca.show runs the Tasks page or the Checks tab of Orca, and a refusal is an answer', async () => {

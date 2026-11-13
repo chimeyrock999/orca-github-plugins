@@ -14,7 +14,7 @@ function host(overrides: Record<string, unknown> = {}) {
     'repo.links': () => links([120, 119]),
     'items.get': ({ items }: { items: LinkedRef[] }) => linkedRows(items),
     'issue.get': () => ({ ok: true, issue: issueDetail() }),
-    'agent.find': { ok: true, agent: null },
+    'agent.find': { ok: true, agent: null, busy: null },
     'cache.drop': { ok: true },
     'budget.get': { ok: true, budget: null },
     ...overrides

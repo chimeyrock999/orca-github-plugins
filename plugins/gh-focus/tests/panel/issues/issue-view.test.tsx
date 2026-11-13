@@ -21,7 +21,7 @@ function host(overrides: Record<string, unknown> = {}, detail: () => IssueDetail
     // Three issues linked to the workspace: a short list, newest activity first.
     'repo.links': links([120, 119, 118]),
     'items.get': ({ items }: { items: LinkedRef[] }) => linkedRows(items),
-    'agent.find': { ok: true, agent: { name: 'Claude Code', terminalId: 't1' } },
+    'agent.find': { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null },
     'issue.get': () => ({ ok: true, issue: detail() }),
     'issue.comment': () => ok,
     'issue.close': () => ok,

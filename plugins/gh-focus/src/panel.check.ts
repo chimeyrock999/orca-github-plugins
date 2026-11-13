@@ -7,7 +7,7 @@ import { commentItem, failed, issueDetail, links, linkedRows, pullDetail, ref, r
 const lists = {
   'repo.get': repoOk,
   'repo.links': links(),
-  'agent.find': { ok: true as const, agent: { name: 'Claude Code', terminalId: 't1' } },
+  'agent.find': { ok: true as const, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null },
   // The Actions tab starts on the workspace's branch.
   'runs.list': runPage(runRows, 296, '2', 1000, 'fix/token-refresh')
 }
@@ -31,7 +31,10 @@ const longTimeline = issueDetail({
 
 export default defineCheck({
   issues: { requests: lists },
-  'issues-no-agent': { requests: { ...lists, 'agent.find': { ok: true, agent: null } } },
+  'issues-no-agent': { requests: { ...lists, 'agent.find': { ok: true, agent: null, busy: null } } },
+  // The workspace's agent is at work, or waits on a question: named, and Ask waits for it.
+  'issues-agent-working': { requests: { ...lists, 'agent.find': { ok: true, agent: null, busy: { name: 'Claude Code', state: 'working' } } } },
+  'issues-agent-blocked': { requests: { ...lists, 'agent.find': { ok: true, agent: null, busy: { name: 'Claude Code', state: 'blocked' } } } },
   'issues-several': { requests: { ...lists, 'repo.links': links([120, 'octo/sdk#45', 98]), 'items.get': linkedRows(several) } },
   // The GitHub budget shared with Orca is low: the panel says so above the tabs.
   'budget-low': {

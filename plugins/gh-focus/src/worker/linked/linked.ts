@@ -107,6 +107,13 @@ export function freeAgent(agents: AgentRow[]): (AgentRow & { terminalId: string 
   return free.sort((a, b) => b.stateStartedAt - a.stateStartedAt)[0] ?? null
 }
 
+/** The agent the panel names when none is free: one with a terminal that works or waits on a
+ *  question, the one that changed last. */
+export function busyAgent(agents: AgentRow[]): (AgentRow & { terminalId: string; state: 'working' | 'blocked' }) | null {
+  const busy = agents.filter((a): a is AgentRow & { terminalId: string; state: 'working' | 'blocked' } => !!a.terminalId && (a.state === 'working' || a.state === 'blocked'))
+  return busy.sort((a, b) => b.stateStartedAt - a.stateStartedAt)[0] ?? null
+}
+
 /** How the panel names an agent: its terminal title, else its kind. */
 export const agentName = (a: AgentRow): string => a.title?.trim() || a.agent || 'the agent'
 

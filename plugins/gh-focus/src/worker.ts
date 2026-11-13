@@ -18,7 +18,7 @@ import {
   reopenIssue,
   setReaction
 } from './worker/issues/issues'
-import { agentName, freeAgent, linkedRefs, linkedRows, linkPrompt, type AgentRow } from './worker/linked/linked'
+import { agentName, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, type AgentRow } from './worker/linked/linked'
 import { listLabels, listRuns, listWorkflows, type RepoRef } from './worker/lists'
 import { isRepoName, type Answer, type GitHubBudget, type LinkedKind, type LinkedRef, type OrcaView, type RunState } from './shared/protocol'
 import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, readyPull, reviewPull } from './worker/pulls/pulls'
@@ -66,30 +66,33 @@ const samePath = (a: string, b: string) => a.replace(/[\\/]+$/, '') === b.replac
 /** The free agent to ask among those of Orca's focused workspace, keeping only agents whose terminal
  *  runs in the panel's workspace folder `path`: the panel's workspace can be a pick shared by clones,
  *  not the one Orca focuses, and that agent would link its own workspace. An agent whose folder the
- *  CLI cannot tell is not offered. */
-async function findAgent(orca: OrcaWorkerApi, deps: WorkerDeps, path: string): Promise<Answer<{ agent: (AgentRow & { terminalId: string }) | null }>> {
+ *  CLI cannot tell is not offered. With none free, the busy one there, for the panel to name. */
+async function findAgent(
+  orca: OrcaWorkerApi,
+  folderOf: (terminalId: string) => Promise<string | null>,
+  path: string
+): Promise<Answer<{ agent: (AgentRow & { terminalId: string }) | null; busy: ReturnType<typeof busyAgent> }>> {
   let agents: AgentRow[]
   try {
     agents = (await orca.host.call('agents.list')).agents
   } catch (error) {
     return { ok: false, error: hostFailure(error) }
   }
-  const here = await Promise.all(
-    agents.map(async (a) => (a.terminalId && samePath((await deps.terminalPath(a.terminalId).catch(() => null)) ?? '', path) ? [a] : []))
-  )
-  return { ok: true, agent: freeAgent(here.flat()) }
+  const here = (await Promise.all(agents.map(async (a) => (a.terminalId && samePath((await folderOf(a.terminalId).catch(() => null)) ?? '', path) ? [a] : [])))).flat()
+  const agent = freeAgent(here)
+  return { ok: true, agent, busy: agent ? null : busyAgent(here) }
 }
 
 /** Types the link prompt into the agent the panel offered, while it is still free and in the
  *  workspace folder `path`, without Enter: the person reads it and sends it. */
-async function askAgent(orca: OrcaWorkerApi, deps: WorkerDeps, path: string, repoUrl: string, kind: LinkedKind, terminalId: string): Promise<Answer<{ agent: string }>> {
+async function askAgent(orca: OrcaWorkerApi, folderOf: (terminalId: string) => Promise<string | null>, path: string, repoUrl: string, kind: LinkedKind, terminalId: string): Promise<Answer<{ agent: string }>> {
   let agent: AgentRow | undefined
   try {
     agent = (await orca.host.call('agents.list')).agents.find((a) => a.terminalId === terminalId)
   } catch (error) {
     return { ok: false, error: hostFailure(error) }
   }
-  const folder = agent ? await deps.terminalPath(terminalId).catch(() => null) : null
+  const folder = agent ? await folderOf(terminalId).catch(() => null) : null
   if (!agent || !freeAgent([agent]) || !folder || !samePath(folder, path)) {
     return { ok: false, error: { code: 'no_agent', message: 'That agent is busy now, gone, or not in this workspace.' } }
   }
@@ -153,7 +156,18 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   // A repo the workspace no longer shows keeps nothing; another folder of the same repo keeps it
   // all, and so does a focus that found no repo (the next may well be this one again).
   let shown: string | null = null
-  const tracker = trackRepo(orca, deps, (_, after) => {
+  // A terminal stays in its folder, so the CLI is asked once per terminal, by the tracker and the
+  // agent requests alike; concurrent asks share the run, and a failure or no answer is not kept.
+  const folders = new Map<string, Promise<string | null>>()
+  function folderOf(terminalId: string): Promise<string | null> {
+    const kept = folders.get(terminalId)
+    if (kept) return kept
+    const path = deps.terminalPath(terminalId)
+    folders.set(terminalId, path)
+    void path.then((p) => p || folders.delete(terminalId), () => folders.delete(terminalId))
+    return path
+  }
+  const tracker = trackRepo(orca, { ...deps, terminalPath: folderOf }, (_, after) => {
     if (!after.ok) return
     const name = after.nameWithOwner.toLowerCase()
     if (shown && shown !== name) reads.drop(...(['items', 'runs', 'meta'] as const).map((area) => tagOf(area, { nameWithOwner: shown! })))
@@ -212,12 +226,14 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   orca.panels.handle('agent.find', async () => {
     const repo = await tracker.get()
     if (!repo.ok) return repo
-    const found = await findAgent(orca, deps, repo.path)
-    return found.ok ? { ok: true as const, agent: found.agent && { name: agentName(found.agent), terminalId: found.agent.terminalId } } : found
+    const found = await findAgent(orca, folderOf, repo.path)
+    if (!found.ok) return found
+    const { agent, busy } = found
+    return { ok: true as const, agent: agent && { name: agentName(agent), terminalId: agent.terminalId }, busy: busy && { name: agentName(busy), state: busy.state } }
   })
   orca.panels.handle('agent.ask', async ({ kind, terminalId }) => {
     const repo = await tracker.get()
-    return repo.ok ? askAgent(orca, deps, repo.path, repo.url, kind, terminalId) : repo
+    return repo.ok ? askAgent(orca, folderOf, repo.path, repo.url, kind, terminalId) : repo
   })
   orca.panels.handle('orca.show', ({ view }) => showView(orca, view))
   orca.panels.handle('runs.list', (input, { signal }) =>
