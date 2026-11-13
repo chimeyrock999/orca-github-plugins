@@ -2,8 +2,7 @@
 // so tests pin it without drawing. Tones only, never colours: Orca maps them to the theme.
 import type { Tone } from 'orca'
 import type {
-  Check,
-  CheckState,
+  CheckCounts,
   ErrorCode,
   IssueRow,
   MergeState,
@@ -66,40 +65,52 @@ const REVIEW: Record<ReviewState, { words: string; look: Look }> = {
 /** What a review says after its author, and its glyph. */
 export const reviewLook = (state: ReviewState) => REVIEW[state]
 
-const CHECK: Record<CheckState, Look> = {
-  pass: { glyph: '✓', tone: 'success', label: 'passed' },
-  fail: { glyph: '✕', tone: 'danger', label: 'failing' },
-  pending: { glyph: '●', tone: 'warning', label: 'pending' },
-  skipped: { glyph: '⊘', tone: 'neutral', label: 'skipped' }
-}
-export const checkLook = (state: CheckState): Look => CHECK[state]
+// What Orca's Checks tab and pull request page say, so the panel reads alike
+// (github-pr-merge-state.ts, pr-check-counts.ts).
+const CHECK_WORDS: [keyof CheckCounts, string][] = [
+  ['failed', 'failing'],
+  ['cancelled', 'cancelled'],
+  ['needsAction', 'need action'],
+  ['pending', 'pending'],
+  ['passed', 'passed'],
+  ['neutral', 'neutral']
+]
 
-/** "1 failing · 2 pending · 4 passed", and how many GitHub has beyond the ones asked for. */
-export function checkSummary(checks: Check[], total: number): string {
-  const parts = (['fail', 'pending', 'pass', 'skipped'] as const).flatMap((state) => {
-    const n = checks.filter((c) => c.state === state).length
-    return n ? [`${count(n)} ${CHECK[state].label}`] : []
-  })
-  if (total > checks.length) parts.push(`${count(total - checks.length)} more on GitHub`)
-  return parts.join(' · ')
+/** "1 failing · 2 pending · 4 passed", by Orca's counting. */
+export function checkSummary(counts: CheckCounts): string {
+  return CHECK_WORDS.flatMap(([key, words]) => (counts[key] ? [`${count(counts[key])} ${words}`] : [])).join(' · ')
 }
 
-const MERGE: Record<MergeState, Look> = {
-  clean: { glyph: '✓', tone: 'success', label: 'Ready to merge' },
-  conflicts: { glyph: '✕', tone: 'danger', label: 'Conflicts with the base branch' },
-  behind: { glyph: '●', tone: 'warning', label: 'Behind the base branch' },
-  blocked: { glyph: '●', tone: 'warning', label: 'Blocked: reviews or checks are required' },
-  unstable: { glyph: '●', tone: 'warning', label: 'Some checks are not passing' },
-  draft: { glyph: '◌', tone: 'neutral', label: 'Draft: not ready for review' },
-  unknown: { glyph: '◌', tone: 'neutral', label: 'Checking…' }
+/** The glyph of the checks as a whole: failing (or waiting on an action) red, running amber, all
+ *  cancelled grey, else green. */
+export function checksLook(counts: CheckCounts): Look {
+  if (counts.failed || counts.needsAction) return { glyph: '✕', tone: 'danger', label: 'Checks failed' }
+  if (counts.pending) return { glyph: '●', tone: 'warning', label: 'Checks pending' }
+  if (counts.cancelled) return { glyph: '⊘', tone: 'neutral', label: 'Cancelled' }
+  return { glyph: '✓', tone: 'success', label: 'Checks passed' }
 }
-export const mergeLook = (state: MergeState): Look => MERGE[state]
 
-export function decisionLook(decision: ReviewDecision): Look {
+const MERGE: Record<Exclude<MergeState, 'unstable'>, Look> = {
+  clean: { glyph: '✓', tone: 'success', label: 'Able to merge' },
+  conflicts: { glyph: '✕', tone: 'danger', label: 'Conflicts' },
+  behind: { glyph: '●', tone: 'warning', label: 'Behind' },
+  blocked: { glyph: '✕', tone: 'danger', label: 'Blocked' },
+  draft: { glyph: '◌', tone: 'neutral', label: 'Draft' },
+  unknown: { glyph: '◌', tone: 'neutral', label: 'Checking' }
+}
+
+/** Whether it can merge, in Orca's words; `unstable` (mergeable, checks not passing) says how the
+ *  checks stand. */
+export function mergeLook(state: MergeState, checks: CheckCounts | null = null): Look {
+  if (state !== 'unstable') return MERGE[state]
+  return checks ? checksLook(checks) : { glyph: '✕', tone: 'danger', label: 'Checks failed' }
+}
+
+/** A review decision in Orca's words; with none (no review needed) there is no line. */
+export function decisionLook(decision: Exclude<ReviewDecision, null>): Look {
   if (decision === 'approved') return { glyph: '✓', tone: 'success', label: 'Approved' }
   if (decision === 'changes_requested') return { glyph: '±', tone: 'danger', label: 'Changes requested' }
-  if (decision === 'review_required') return { glyph: '●', tone: 'warning', label: 'Review required' }
-  return { glyph: '–', tone: 'neutral', label: 'No review required' }
+  return { glyph: '●', tone: 'warning', label: 'Approval required' }
 }
 
 export const EMOJI: Record<Reaction, string> = {

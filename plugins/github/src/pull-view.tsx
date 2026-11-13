@@ -1,16 +1,14 @@
-// One pull request as GitHub shows it: title, state, base ← head, its review decision and merge
-// state, reviewers, labels and assignees, the checks of its head commit, the body, then the timeline
-// of comments, reviews and events, and a box to comment, review, close or reopen.
+// One pull request as GitHub shows it: title, state, base ← head, its review decision, merge state
+// and checks in one line each (Orca's words), reviewers, labels and assignees, the body, the timeline
+// of comments, reviews and events, and a box to comment or review.
 import {
   Box,
   Button,
   Callout,
   Code,
-  Collapsible,
   EmptyState,
   IconButton,
-  List,
-  ListItem,
+  Link,
   RadioGroup,
   read,
   RelativeTime,
@@ -24,9 +22,9 @@ import {
   Textarea,
   Toolbar
 } from 'orca'
-import { checkLook, checkSummary, count, decisionLook, duration, mergeLook, pullLook, type Look } from './look'
+import { checkSummary, checksLook, count, decisionLook, mergeLook, pullLook, type Look } from './look'
 import { Glyph, Problem } from './parts'
-import type { Check, PullDetail, ReviewEvent } from './protocol'
+import type { PullDetail, ReviewEvent } from './protocol'
 import {
   backToFocus,
   canReview,
@@ -56,41 +54,16 @@ function Status({ look }: { look: Look }) {
   )
 }
 
-function CheckRow({ c }: { c: Check }) {
-  const look = checkLook(c.state)
-  const when = c.state === 'pending' ? 'running' : c.durationMs === null ? '' : duration(c.durationMs)
+/** One line for the checks; the workspace's pull request hands off to Orca's Checks tab, which
+ *  lists them with logs and reruns, any other opens its checks on GitHub. */
+function ChecksLine({ d }: { d: PullDetail }) {
+  if (!d.checks) return null
+  const own = d.number === focused()?.number
   return (
-    <ListItem disabled={!c.url} onPress={() => (c.url ? shell.openExternal(c.url) : undefined)}>
-      <Box direction="row" gap="sm" align="center">
-        <Glyph look={look} />
-        <Box grow minWidth={0}>
-          <Text size="sm" truncate>
-            {c.name}
-          </Text>
-        </Box>
-        <Box shrink={false}>
-          <Text size="xs" muted>
-            {when}
-          </Text>
-        </Box>
-      </Box>
-    </ListItem>
-  )
-}
-
-/** The head commit's checks, folded under their summary; open when one fails. */
-function Checks({ d }: { d: PullDetail }) {
-  if (d.checksTotal === 0) return null
-  const failing = d.checks.some((c) => c.state === 'fail')
-  // Keyed on whether one fails, so a reload that brings a failure opens it again.
-  return (
-    <Collapsible key={`${d.number}-${failing}`} title="Checks" description={checkSummary(d.checks, d.checksTotal)} defaultOpen={failing}>
-      <List label="Checks">
-        {d.checks.map((c, i) => (
-          <CheckRow key={`${c.name}-${i}`} c={c} />
-        ))}
-      </List>
-    </Collapsible>
+    <MetaLine label="Checks" empty="">
+      <Glyph look={checksLook(d.checks)} />
+      <Link onPress={() => (own ? handOff('checks') : shell.openExternal(`${d.url}/checks`))}>{checkSummary(d.checks)}</Link>
+    </MetaLine>
   )
 }
 
@@ -98,14 +71,17 @@ function Meta({ d, s }: { d: PullDetail; s: PullState }) {
   const open = d.state === 'open' || d.state === 'draft'
   return (
     <Stack gap="xs">
-      <MetaLine label="Review" empty="">
-        <Status look={decisionLook(d.review)} />
-      </MetaLine>
-      {open && (
-        <MetaLine label="Merge" empty="">
-          <Status look={mergeLook(d.merge)} />
+      {d.review && (
+        <MetaLine label="Review" empty="">
+          <Status look={decisionLook(d.review)} />
         </MetaLine>
       )}
+      {open && (
+        <MetaLine label="Merge" empty="">
+          <Status look={mergeLook(d.merge, d.checks)} />
+        </MetaLine>
+      )}
+      <ChecksLine d={d} />
       <MetaLine label="Reviewers" empty="None waiting">
         {d.reviewers.length > 0 && <Text size="sm">{d.reviewers.join(', ')}</Text>}
       </MetaLine>
@@ -219,7 +195,6 @@ function Detail({ d, s }: { d: PullDetail; s: PullState }) {
         <Code>{d.headRef}</Code>
       </Row>
       <Meta d={d} s={s} />
-      <Checks d={d} />
       {!s.editing && (
         <Post t={pulls} head={<Byline who={d.author} words="opened" at={d.createdAt} />} body={d.body} url={d.url} cut={d.truncated} subject={d.id} reactions={d.reactions} />
       )}

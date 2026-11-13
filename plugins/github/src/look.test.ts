@@ -90,8 +90,8 @@ test('state events read like GitHub', () => {
   assert.equal(stateWords(ev('reopened', null)).look.tone, 'success')
 })
 
-test('pull requests: closed and merged events, reviews, checks, merge state and review decision', async () => {
-  const { checkLook, checkSummary, decisionLook, mergeLook, reviewLook } = await import('./look')
+test('pull requests: closed and merged events, reviews, checks, merge state and review decision in Orca words', async () => {
+  const { checkSummary, checksLook, decisionLook, mergeLook, reviewLook } = await import('./look')
   assert.deepEqual(stateWords({ kind: 'closed', id: 'c', actor: 'a', createdAt: 1, reason: null }), { words: 'closed this', look: pullLook({ state: 'closed' }) })
   assert.deepEqual(
     (['approved', 'changes_requested', 'commented', 'dismissed'] as const).map((s) => [reviewLook(s).words, reviewLook(s).look.tone]),
@@ -102,32 +102,40 @@ test('pull requests: closed and merged events, reviews, checks, merge state and 
       ['reviewed (dismissed)', 'neutral']
     ]
   )
+  const none = { passed: 0, failed: 0, cancelled: 0, needsAction: 0, pending: 0, neutral: 0 }
+  assert.equal(checkSummary({ passed: 4, failed: 1, cancelled: 1, needsAction: 1, pending: 2, neutral: 1 }), '1 failing · 1 cancelled · 1 need action · 2 pending · 4 passed · 1 neutral')
+  assert.equal(checkSummary({ ...none, passed: 1234 }), '1,234 passed')
   assert.deepEqual(
-    (['pass', 'fail', 'pending', 'skipped'] as const).map((s) => checkLook(s).tone),
-    ['success', 'danger', 'warning', 'neutral']
-  )
-  const check = (state: 'pass' | 'fail' | 'pending' | 'skipped') => ({ name: 'x', state, url: null, durationMs: null })
-  assert.equal(checkSummary([check('pass'), check('fail'), check('pending'), check('pass'), check('skipped')], 5), '1 failing · 1 pending · 2 passed · 1 skipped')
-  assert.equal(checkSummary([check('pass')], 120), '1 passed · 119 more on GitHub')
-  assert.deepEqual(
-    (['clean', 'conflicts', 'behind', 'blocked', 'unstable', 'draft', 'unknown'] as const).map((m) => [mergeLook(m).label, mergeLook(m).tone]),
+    [{ ...none, failed: 1, pending: 1 }, { ...none, needsAction: 1 }, { ...none, pending: 1, passed: 2 }, { ...none, cancelled: 1, passed: 2 }, { ...none, passed: 2, neutral: 1 }].map((c) => [checksLook(c).label, checksLook(c).tone]),
     [
-      ['Ready to merge', 'success'],
-      ['Conflicts with the base branch', 'danger'],
-      ['Behind the base branch', 'warning'],
-      ['Blocked: reviews or checks are required', 'warning'],
-      ['Some checks are not passing', 'warning'],
-      ['Draft: not ready for review', 'neutral'],
-      ['Checking…', 'neutral']
+      ['Checks failed', 'danger'],
+      ['Checks failed', 'danger'],
+      ['Checks pending', 'warning'],
+      ['Cancelled', 'neutral'],
+      ['Checks passed', 'success']
     ]
   )
   assert.deepEqual(
-    (['approved', 'changes_requested', 'review_required', null] as const).map((d) => [decisionLook(d).label, decisionLook(d).tone]),
+    (['clean', 'conflicts', 'behind', 'blocked', 'draft', 'unknown'] as const).map((m) => [mergeLook(m).label, mergeLook(m).tone]),
+    [
+      ['Able to merge', 'success'],
+      ['Conflicts', 'danger'],
+      ['Behind', 'warning'],
+      ['Blocked', 'danger'],
+      ['Draft', 'neutral'],
+      ['Checking', 'neutral']
+    ]
+  )
+  // Mergeable with checks not passing says how the checks stand.
+  assert.equal(mergeLook('unstable', { ...none, pending: 2 }).label, 'Checks pending')
+  assert.equal(mergeLook('unstable', { ...none, failed: 1 }).label, 'Checks failed')
+  assert.equal(mergeLook('unstable').label, 'Checks failed')
+  assert.deepEqual(
+    (['approved', 'changes_requested', 'review_required'] as const).map((d) => [decisionLook(d).label, decisionLook(d).tone]),
     [
       ['Approved', 'success'],
       ['Changes requested', 'danger'],
-      ['Review required', 'warning'],
-      ['No review required', 'neutral']
+      ['Approval required', 'warning']
     ]
   )
 })

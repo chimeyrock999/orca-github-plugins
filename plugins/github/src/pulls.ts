@@ -7,8 +7,7 @@ import { commentOn, editIssue, needText, run } from './issues'
 import { pullState, type RepoRef } from './lists'
 import {
   PAGE_SIZE,
-  type Check,
-  type CheckState,
+  type CheckCounts,
   type IssueEdit,
   type MergeState,
   type PullDetail,
@@ -46,9 +45,6 @@ const TIMELINE_NODE = `${COMMON_NODES}
 const TIMELINE_TYPES =
   'itemTypes: [ISSUE_COMMENT, PULL_REQUEST_REVIEW, CROSS_REFERENCED_EVENT, CLOSED_EVENT, REOPENED_EVENT, MERGED_EVENT]'
 
-/** The most checks asked for; GitHub's merge box shows the same rollup. */
-const CHECKS = 100
-
 const PULL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $first: Int!, $last: Int!) {
   viewer { login }
   repository(owner: $owner, name: $name) {
@@ -64,9 +60,8 @@ const PULL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $first
         ... on User { login } ... on Bot { login } ... on Mannequin { login } ... on Team { name } } } }
       comments { totalCount }
       ${REACTORS}
-      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: ${CHECKS}) { totalCount nodes { __typename
-        ... on CheckRun { name status conclusion detailsUrl startedAt completedAt checkSuite { workflowRun { workflow { name } } } }
-        ... on StatusContext { context state targetUrl } } } } } } }
+      commits(last: 1) { nodes { commit { statusCheckRollup { contexts {
+        checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } }
       head: timelineItems(first: $first, ${TIMELINE_TYPES}) {
         # On a pull request totalCount ignores itemTypes; filteredCount counts the kinds asked for.
         totalCount: filteredCount
@@ -90,19 +85,7 @@ const TIMELINE_QUERY = `query($owner: String!, $name: String!, $number: Int!, $f
   }
 }`
 
-type ContextJson = {
-  __typename: string
-  name?: string
-  status?: string
-  conclusion?: string | null
-  detailsUrl?: string | null
-  startedAt?: string | null
-  completedAt?: string | null
-  checkSuite?: { workflowRun: { workflow: { name: string } } | null } | null
-  context?: string
-  state?: string
-  targetUrl?: string | null
-}
+type StateCount = { state: string; count: number }
 
 type PullJson = {
   id: string
@@ -131,7 +114,9 @@ type PullJson = {
   reviewRequests: { nodes: { requestedReviewer: { login?: string; name?: string } | null }[] }
   comments: { totalCount: number }
   reactionGroups: GroupJson[]
-  commits: { nodes: { commit: { statusCheckRollup: { contexts: { totalCount: number; nodes: ContextJson[] } } | null } }[] }
+  commits: {
+    nodes: { commit: { statusCheckRollup: { contexts: { checkRunCountsByState: StateCount[]; statusContextCountsByState: StateCount[] } } | null } }[]
+  }
   head: Connection
   tail: Connection
 }
@@ -219,45 +204,30 @@ function reviewDecision(value: string | null): ReviewDecision {
   return value === 'REVIEW_REQUIRED' ? 'review_required' : null
 }
 
-function checkState(c: ContextJson): CheckState {
-  if (c.__typename === 'StatusContext') return c.state === 'SUCCESS' ? 'pass' : c.state === 'FAILURE' || c.state === 'ERROR' ? 'fail' : 'pending'
-  if (c.status !== 'COMPLETED') return 'pending'
-  switch (c.conclusion) {
-    case 'SUCCESS':
-      return 'pass'
-    case 'NEUTRAL':
-    case 'SKIPPED':
-    case 'STALE':
-      return 'skipped'
-    default:
-      // failure, cancelled, timed out, action required, startup failure
-      return 'fail'
-  }
+// Check run and commit status states, as Orca sorts them (provider-check-summary.ts).
+const CHECK_RUN_COUNT: Record<string, keyof CheckCounts> = {
+  SUCCESS: 'passed',
+  SKIPPED: 'passed',
+  FAILURE: 'failed',
+  TIMED_OUT: 'failed',
+  STARTUP_FAILURE: 'failed',
+  CANCELLED: 'cancelled',
+  ACTION_REQUIRED: 'needsAction',
+  NEUTRAL: 'neutral',
+  STALE: 'neutral',
+  COMPLETED: 'neutral'
 }
+const STATUS_COUNT: Record<string, keyof CheckCounts> = { SUCCESS: 'passed', FAILURE: 'failed', ERROR: 'failed' }
 
-const ORDER: CheckState[] = ['fail', 'pending', 'pass', 'skipped']
-
-function check(c: ContextJson): Check {
-  if (c.__typename === 'StatusContext') return { name: c.context ?? '', state: checkState(c), url: c.targetUrl ?? null, durationMs: null }
-  const workflow = c.checkSuite?.workflowRun?.workflow.name
-  const started = c.startedAt ? Date.parse(c.startedAt) : NaN
-  const done = c.completedAt ? Date.parse(c.completedAt) : NaN
-  return {
-    name: workflow ? `${workflow} / ${c.name}` : (c.name ?? ''),
-    state: checkState(c),
-    url: c.detailsUrl ?? null,
-    // A skipped job can end before it starts; that is no duration.
-    durationMs: c.status === 'COMPLETED' && done >= started ? done - started : null
-  }
-}
-
-/** The head commit's checks, failing first, as GitHub's merge box lists them. */
-function checks(pull: PullJson): { checks: Check[]; checksTotal: number } {
+/** The head commit's checks, counted from GitHub's rollup (every one of them, however many);
+ *  anything not finished yet is pending. */
+function checks(pull: PullJson): CheckCounts | null {
   const contexts = pull.commits.nodes[0]?.commit.statusCheckRollup?.contexts
-  if (!contexts) return { checks: [], checksTotal: 0 }
-  const all = contexts.nodes.filter((c) => c.__typename === 'CheckRun' || c.__typename === 'StatusContext').map(check)
-  const sorted = ORDER.flatMap((state) => all.filter((c) => c.state === state))
-  return { checks: sorted, checksTotal: contexts.totalCount }
+  if (!contexts) return null
+  const counts: CheckCounts = { passed: 0, failed: 0, cancelled: 0, needsAction: 0, pending: 0, neutral: 0 }
+  for (const { state, count } of contexts.checkRunCountsByState ?? []) counts[CHECK_RUN_COUNT[state] ?? 'pending'] += count
+  for (const { state, count } of contexts.statusContextCountsByState ?? []) counts[STATUS_COUNT[state] ?? 'pending'] += count
+  return Object.values(counts).some((n) => n > 0) ? counts : null
 }
 
 export async function getPull(gh: Gh, repo: RepoRef, number: number, signal?: AbortSignal): Promise<{ pull: PullDetail }> {
@@ -293,7 +263,7 @@ export async function getPull(gh: Gh, repo: RepoRef, number: number, signal?: Ab
         const who = r.requestedReviewer?.login ?? r.requestedReviewer?.name
         return who ? [who] : []
       }),
-      ...checks(pull),
+      checks: checks(pull),
       ...bothEnds(pull.head, pull.tail, pullItem(pull.mergedAt)),
       viewer: viewerOf(out)
     }

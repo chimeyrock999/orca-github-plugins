@@ -239,10 +239,10 @@ export type IssueDetail = ThreadDetail & { state: IssueState }
  *  required set with other checks failing, `unknown` while GitHub is still working it out. */
 export type MergeState = 'clean' | 'conflicts' | 'behind' | 'blocked' | 'unstable' | 'draft' | 'unknown'
 export type ReviewDecision = 'approved' | 'changes_requested' | 'review_required' | null
-/** `skipped` is skipped, neutral or stale; cancelled and timed-out checks fail. */
-export type CheckState = 'pass' | 'fail' | 'pending' | 'skipped'
-/** One check run or commit status on the head commit; `url` opens its run. */
-export type Check = { name: string; state: CheckState; url: string | null; durationMs: number | null }
+/** The head commit's checks counted as Orca counts them, so the panel and Orca's Checks tab agree:
+ *  skipped passes; cancelled and those that need an action (an approval) are told apart from the
+ *  failing; neutral and stale are neither. */
+export type CheckCounts = { passed: number; failed: number; cancelled: number; needsAction: number; pending: number; neutral: number }
 
 export type PullDetail = ThreadDetail & {
   state: PullState
@@ -255,10 +255,9 @@ export type PullDetail = ThreadDetail & {
   review: ReviewDecision
   /** Reviews asked for and not given yet: logins, or team names. */
   reviewers: string[]
-  /** Failing first, then pending, passed and skipped; at most 100. */
-  checks: Check[]
-  /** Checks in all, which may be more than `checks` holds. */
-  checksTotal: number
+  /** Counted from GitHub's rollup, every check; null when the head commit has none. Orca's Checks
+   *  tab lists them, with logs and reruns. */
+  checks: CheckCounts | null
 }
 
 /** Orca's own views the panel hands off to. */

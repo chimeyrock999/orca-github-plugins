@@ -67,13 +67,13 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
   assert.ok(view.find({ type: 'Button', text: 'Tasks' }))
   assert.deepEqual(view.findAll({ type: 'Code' }).map((c) => c.text), ['dev', 'kenji:stream-export'])
   assert.ok(view.find({ text: 'Changes requested' }))
-  assert.ok(view.find({ text: 'Some checks are not passing' }))
+  // Mergeable, but a check fails: Orca's words.
+  assert.ok(view.find({ text: 'Checks failed' }))
   assert.ok(view.find({ text: 'ana' }))
-  assert.equal(view.find({ type: 'Collapsible' })?.props.description, '1 failing · 1 pending · 1 passed · 1 skipped')
-  // A failing check opens the list.
-  assert.equal(view.valueOf({ type: 'Collapsible' }), true)
-  await view.press({ type: 'ListItem', text: /CI \/ test \(ubuntu\)/ })
-  assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/app/actions/runs/1/job/2' })
+  // One line for the checks, no list: Orca's Checks tab has them, with logs and reruns.
+  assert.equal(view.find({ type: 'Collapsible' }), null)
+  await view.press({ type: 'Link', text: '1 failing · 1 pending · 4 passed' })
+  assert.deepEqual(h.last('orca.show'), { view: 'checks' })
   // Reviews: a box when they say something, one line when not.
   assert.ok(view.find({ text: /^\s*reviewed\b/ }))
   assert.ok(view.find({ text: /2 comments on the diff/ }))
@@ -151,8 +151,10 @@ test('another pull request opened from a mention leads back to the workspace one
   const view = await openPull(h)
   await view.press({ type: 'ListItem', text: /refactor: CSV writer/ })
   assert.deepEqual(h.last('pull.get'), { number: 131 })
-  // Checks is the workspace's pull request; for another one its threads stay on GitHub.
+  // Checks is the workspace's pull request; for another one its threads and checks stay on GitHub.
   assert.equal(view.find({ type: 'Button', text: 'Open in Checks' }), null)
+  await view.press({ type: 'Link', text: '1 failing · 1 pending · 4 passed' })
+  assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/app/pull/131/checks' })
   await view.press({ type: 'Button', text: '← Back to #124' })
   assert.deepEqual(h.last('pull.get'), { number: 124 })
   assert.equal(view.find({ type: 'Button', text: /^← Back/ }), null)
@@ -189,12 +191,12 @@ test('a merge state GitHub has not worked out yet is asked again once, a moment 
   let merge: PullDetail['merge'] = 'unknown'
   const h = host({}, () => pullDetail({ merge }))
   const view = await openPull(h)
-  assert.ok(view.find({ text: 'Checking…' }))
+  assert.ok(view.find({ text: 'Checking' }))
   merge = 'clean'
   await new Promise((resolve) => setTimeout(resolve, 30))
   await view.settled()
   assert.equal(h.count('pull.get'), 2)
-  assert.ok(view.find({ text: 'Ready to merge' }))
+  assert.ok(view.find({ text: 'Able to merge' }))
   await view.unmount()
 
   // Still unknown after the second ask: no third, until Refresh.
@@ -207,18 +209,19 @@ test('a merge state GitHub has not worked out yet is asked again once, a moment 
   timing.mergeRetryMs = 4_000
 })
 
-test('passing checks stay folded; no checks shows no box; a merged pull request offers only Comment', async () => {
-  const passing = pullDetail({ checks: [{ name: 'CI / lint', state: 'pass', url: null, durationMs: 1000 }], checksTotal: 1, merge: 'clean' })
-  let view = await openPull(host({}, () => passing))
-  assert.equal(view.valueOf({ type: 'Collapsible' }), false)
-  assert.ok(view.find({ text: 'Ready to merge' }))
+test('no checks shows no line, no review decision no Review line; a merged pull request offers only Comment', async () => {
+  const ready = pullDetail({ merge: 'clean', checks: { passed: 5, failed: 0, cancelled: 0, needsAction: 0, pending: 0, neutral: 0 } })
+  let view = await openPull(host({}, () => ready))
+  assert.ok(view.find({ text: 'Able to merge' }))
+  assert.ok(view.find({ type: 'Link', text: '5 passed' }))
   await view.unmount()
-  view = await openPull(host({}, () => pullDetail({ state: 'draft', merge: 'draft', checks: [], checksTotal: 0 })))
-  assert.equal(view.find({ type: 'Collapsible' }), null)
-  assert.ok(view.find({ text: 'Draft: not ready for review' }))
+  view = await openPull(host({}, () => pullDetail({ state: 'draft', merge: 'draft', review: null, checks: null })))
+  assert.equal(view.find({ text: 'Checks' }), null)
+  assert.equal(view.find({ text: 'Review' }), null)
+  assert.ok(view.find({ text: 'Draft' }))
   await view.unmount()
   view = await openPull(host({}, () => pullDetail({ state: 'merged', merge: 'unknown' })))
-  assert.equal(view.find({ text: 'Checking…' }), null)
+  assert.equal(view.find({ text: 'Checking' }), null)
   assert.equal(view.find({ text: 'Review…' }), null)
   assert.ok(view.find({ type: 'Button', text: 'Comment' }))
   await view.unmount()

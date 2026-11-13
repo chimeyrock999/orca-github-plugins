@@ -1,5 +1,5 @@
 // Sample answers the panel tests and check scenarios stand in for the worker with.
-import type { Answer, Check, IssueDetail, IssueRow, ItemPage, Page, PullDetail, RepoAnswer, RunRow, TimelineComment, TimelineItem, TimelineReview } from './protocol'
+import type { Answer, CheckCounts, IssueDetail, IssueRow, ItemPage, Page, PullDetail, RepoAnswer, RunRow, TimelineComment, TimelineItem, TimelineReview } from './protocol'
 
 const now = Date.UTC(2026, 10, 12, 9, 0)
 const hour = 3_600_000
@@ -138,12 +138,7 @@ export function reviewItem(n: number, change: Partial<TimelineReview> = {}): Tim
   }
 }
 
-export const checks: Check[] = [
-  { name: 'CI / test (ubuntu)', state: 'fail', url: 'https://github.com/octo/app/actions/runs/1/job/2', durationMs: 192_000 },
-  { name: 'CI / test (macos)', state: 'pending', url: 'https://github.com/octo/app/actions/runs/1/job/3', durationMs: null },
-  { name: 'CI / lint', state: 'pass', url: 'https://github.com/octo/app/actions/runs/1/job/4', durationMs: 41_000 },
-  { name: 'netlify/deploy-preview', state: 'skipped', url: null, durationMs: null }
-]
+export const checkCounts: CheckCounts = { passed: 4, failed: 1, cancelled: 0, needsAction: 0, pending: 1, neutral: 0 }
 
 export const pullTimelineItems: TimelineItem[] = [
   commentItem(1, { body: 'Does this keep the header row when the first page is empty?', url: 'https://github.com/octo/app/pull/131#issuecomment-1001' }),
@@ -182,8 +177,7 @@ export function pullDetail(change: Partial<PullDetail> = {}): PullDetail {
     merge: 'unstable',
     review: 'changes_requested',
     reviewers: ['ana'],
-    checks,
-    checksTotal: checks.length,
+    checks: checkCounts,
     ...change
   }
 }

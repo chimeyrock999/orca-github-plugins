@@ -49,9 +49,9 @@ export default defineCheck({
   'pull-none': { requests: { ...lists, 'repo.links': { ok: true, issue: null, pull: null } }, ...onPulls },
   'pull-detail': showPull(),
   'pull-own': showPull({ author: 'chimeyrock999', review: 'review_required', reviewers: ['ana', 'core'] }),
-  'pull-ready': showPull({ merge: 'clean', review: 'approved', reviewers: [], checks: [{ name: 'CI / lint', state: 'pass', url: null, durationMs: 41_000 }], checksTotal: 1 }),
+  'pull-ready': showPull({ merge: 'clean', review: 'approved', reviewers: [], checks: { passed: 5, failed: 0, cancelled: 0, needsAction: 0, pending: 0, neutral: 0 } }),
   'pull-conflicts': showPull({ merge: 'conflicts' }),
-  'pull-draft': showPull({ state: 'draft', merge: 'draft', review: 'review_required', checks: [], checksTotal: 0, head: [], total: 0, comments: 0 }),
+  'pull-draft': showPull({ state: 'draft', merge: 'draft', review: null, checks: null, head: [], total: 0, comments: 0 }),
   'pull-closed': showPull({
     state: 'closed',
     closedAt: mergedAt,

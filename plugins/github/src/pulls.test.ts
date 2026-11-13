@@ -61,17 +61,22 @@ const closedByMerge = { __typename: 'ClosedEvent', id: 'CE_1', createdAt: '2026-
 const closed = { __typename: 'ClosedEvent', id: 'CE_2', createdAt: '2026-11-12T13:00:00Z', actor: { login: 'mai-t' } }
 const reopened = { __typename: 'ReopenedEvent', id: 'RE_1', createdAt: '2026-11-12T14:00:00Z', actor: { login: 'mai-t' } }
 
-const checkRun = (name: string, status: string, conclusion: string | null, workflow: string | null = 'CI') => ({
-  __typename: 'CheckRun',
-  name,
-  status,
-  conclusion,
-  detailsUrl: `https://github.com/octo/app/actions/runs/1/job/${name.length}`,
-  startedAt: '2026-11-13T05:05:08Z',
-  completedAt: status === 'COMPLETED' ? '2026-11-13T05:05:13Z' : null,
-  checkSuite: { workflowRun: workflow ? { workflow: { name: workflow } } : null }
+const counts = (pairs: [string, number][]) => pairs.map(([state, count]) => ({ state, count }))
+// GitHub answers every state, most of them 0.
+const rollup = (runs: [string, number][], statuses: [string, number][] = []) => ({
+  nodes: [
+    {
+      commit: {
+        statusCheckRollup: {
+          contexts: {
+            checkRunCountsByState: counts([['QUEUED', 0], ...runs]),
+            statusContextCountsByState: counts([['EXPECTED', 0], ...statuses])
+          }
+        }
+      }
+    }
+  ]
 })
-const status = (context: string, state: string) => ({ __typename: 'StatusContext', context, state, targetUrl: `https://ci.example.com/${context}`, description: 'Build' })
 
 function pullAnswer(head: unknown[], change: Record<string, unknown> = {}) {
   return {
@@ -105,27 +110,10 @@ function pullAnswer(head: unknown[], change: Record<string, unknown> = {}) {
           reviewRequests: { nodes: [{ requestedReviewer: null }, { requestedReviewer: { __typename: 'User', login: 'ana' } }, { requestedReviewer: { __typename: 'Team', name: 'core' } }] },
           comments: { totalCount: 1 },
           reactionGroups: [group('ROCKET', ['ana', 'olu'])],
-          commits: {
-            nodes: [
-              {
-                commit: {
-                  statusCheckRollup: {
-                    contexts: {
-                      totalCount: 6,
-                      nodes: [
-                        checkRun('lint', 'COMPLETED', 'SUCCESS'),
-                        checkRun('test (ubuntu)', 'COMPLETED', 'FAILURE'),
-                        checkRun('test (macos)', 'IN_PROGRESS', null),
-                        checkRun('GitGuardian Security Checks', 'COMPLETED', 'SKIPPED', null),
-                        status('netlify/deploy-preview', 'PENDING'),
-                        checkRun('analyze', 'COMPLETED', 'CANCELLED', 'CodeQL')
-                      ]
-                    }
-                  }
-                }
-              }
-            ]
-          },
+          commits: rollup(
+            [['SUCCESS', 3], ['SKIPPED', 1], ['FAILURE', 1], ['TIMED_OUT', 1], ['CANCELLED', 1], ['ACTION_REQUIRED', 1], ['IN_PROGRESS', 2], ['NEUTRAL', 1], ['STALE', 1]],
+            [['PENDING', 1], ['SUCCESS', 1], ['ERROR', 1]]
+          ),
           head: { totalCount: head.length, pageInfo: { hasNextPage: false, endCursor: null }, edges: head.map(edge) },
           tail: { edges: head.slice(-10).map((n, i) => ({ cursor: `t${i}`, node: n })) },
           ...change
@@ -154,32 +142,19 @@ test('pull.get: one GraphQL query for the pull request, its checks and both ends
   assert.equal(pull.head[0].kind, 'comment')
 })
 
-test('checks: failing first, then pending, passed and skipped, each with its run and workflow', async () => {
-  const { pull } = await getPull(fakeGh(pullAnswer([])), repo, 131)
-  assert.deepEqual(
-    pull.checks.map((c) => [c.name, c.state]),
-    [
-      ['CI / test (ubuntu)', 'fail'],
-      ['CodeQL / analyze', 'fail'],
-      ['CI / test (macos)', 'pending'],
-      ['netlify/deploy-preview', 'pending'],
-      ['CI / lint', 'pass'],
-      ['GitGuardian Security Checks', 'skipped']
-    ]
-  )
-  assert.equal(pull.checksTotal, 6)
-  assert.equal(pull.checks[0].url, 'https://github.com/octo/app/actions/runs/1/job/13')
-  assert.equal(pull.checks[0].durationMs, 5000)
-  assert.equal(pull.checks.find((c) => c.state === 'pending' && c.name.startsWith('CI'))?.durationMs, null)
-  assert.equal(pull.checks.find((c) => c.name === 'netlify/deploy-preview')?.url, 'https://ci.example.com/netlify/deploy-preview')
+test('checks: counted from the rollup as Orca counts them, every one of them', async () => {
+  const gh = fakeGh(pullAnswer([]))
+  const { pull } = await getPull(gh, repo, 131)
+  // Skipped passes; cancelled and action required apart from failing; stale is neutral; the rest pend.
+  assert.deepEqual(pull.checks, { passed: 5, failed: 3, cancelled: 1, needsAction: 1, pending: 3, neutral: 2 })
+  assert.match(field(gh.calls[0].args, 'query') ?? '', /checkRunCountsByState \{ state count \} statusContextCountsByState \{ state count \}/)
 })
 
-test('a commit with no checks has none, and a skipped check that ends before it starts has no duration', async () => {
+test('a commit with no checks, or none counted, has none', async () => {
   const noRollup = { nodes: [{ commit: { statusCheckRollup: null } }] }
-  assert.deepEqual((await getPull(fakeGh(pullAnswer([], { commits: noRollup })), repo, 131)).pull.checks, [])
-  const odd = { ...checkRun('skip', 'COMPLETED', 'SKIPPED'), completedAt: '2026-11-13T05:05:06Z' }
-  const commits = { nodes: [{ commit: { statusCheckRollup: { contexts: { totalCount: 1, nodes: [odd] } } } }] }
-  assert.equal((await getPull(fakeGh(pullAnswer([], { commits })), repo, 131)).pull.checks[0].durationMs, null)
+  assert.equal((await getPull(fakeGh(pullAnswer([], { commits: noRollup })), repo, 131)).pull.checks, null)
+  assert.equal((await getPull(fakeGh(pullAnswer([], { commits: rollup([['SUCCESS', 0]]) })), repo, 131)).pull.checks, null)
+  assert.equal((await getPull(fakeGh(pullAnswer([], { commits: { nodes: [] } })), repo, 131)).pull.checks, null)
 })
 
 test('merge state reads GitHub merge state status, and conflicts win', async () => {
