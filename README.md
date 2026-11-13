@@ -17,7 +17,7 @@ so the plugin holds no tokens of its own.
 
 | Plugin | Folder | Type | Status |
 | :--- | :--- | :--- | :--- |
-| gh Focus (`gh-focus`) | [`plugins/github`](plugins/github) | `trusted-worker` | Tabs, lists, paging, search; issues: detail, comments, close/reopen, edit, create, reactions |
+| gh Focus (`gh-focus`) | [`plugins/github`](plugins/github) | `trusted-worker` | Tabs, lists, paging, search; issues: detail, comments, close/reopen, edit, create, reactions; Actions: the focused branch's runs, run detail, logs, rerun, cancel, Run workflow, live runs |
 
 ## Install
 

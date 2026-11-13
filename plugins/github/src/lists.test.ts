@@ -220,7 +220,7 @@ test('runs: the last page has no next, and a bad cursor reads as page 1', async 
   assert.equal(field(gh.calls[1].args, 'page'), '1')
 })
 
-test('run states: queued and in progress run, failures fail, approval waits, skipped is not cancelled', async () => {
+test('run states: queued waits to start, in progress runs, failures fail, approval waits, skipped is not cancelled', async () => {
   const states = [
     ['queued', null],
     ['in_progress', null],
@@ -236,7 +236,7 @@ test('run states: queued and in progress run, failures fail, approval waits, ski
   const runs = states.map(([status, conclusion], i) => ({ ...runJson, id: i, status, conclusion }))
   const page = await listRuns(fakeGh({ total_count: runs.length, workflow_runs: runs }), repo, { query: '', after: null })
   assert.deepEqual(page.rows.map((r) => r.state), [
-    'running',
+    'queued',
     'running',
     'failure',
     'failure',
@@ -321,4 +321,19 @@ test('paging asks for no counts: the open and closed counts come back null', asy
   const page = await listIssues(gh, repo, { state: 'open', query: '', after: 'c0', withCounts: false })
   assert.equal(field(gh.calls[0].args, 'withCounts'), 'false')
   assert.deepEqual([page.open, page.closed, page.total], [null, null, 72])
+})
+
+test('runs scoped to the branch narrow to the workspace branch unless a branch is asked for', async () => {
+  const page = { total_count: 0, workflow_runs: [] }
+  const gh = fakeGh(page, page, page, page)
+  assert.equal((await listRuns(gh, repo, { query: '', after: null, scope: 'branch' }, undefined, 'feature/x')).branch, 'feature/x')
+  assert.equal(field(gh.calls[0].args, 'branch'), 'feature/x')
+  const asked = await listRuns(gh, repo, { query: 'branch:main', after: null, scope: 'branch' }, undefined, 'feature/x')
+  assert.equal(asked.branch, null)
+  assert.equal(field(gh.calls[1].args, 'branch'), 'main')
+  assert.equal((await listRuns(gh, repo, { query: '', after: null, scope: 'all' }, undefined, 'feature/x')).branch, null)
+  assert.equal(field(gh.calls[2].args, 'branch'), undefined)
+  // Detached, or git failed: every branch.
+  assert.equal((await listRuns(gh, repo, { query: '', after: null, scope: 'branch' }, undefined, null)).branch, null)
+  assert.equal(field(gh.calls[3].args, 'branch'), undefined)
 })

@@ -1,7 +1,7 @@
-// terminalPath over a fake runner, and the PATH the worker runs commands with.
+// terminalPath and currentBranch over a fake runner, and the PATH the worker runs commands with.
 import { assert, test } from 'orca/testing'
 import { delimiter } from 'node:path'
-import { fallbackPath, parseTerminalShow, parseWorktreeShow, terminalPath, workspaceLinks, type Run } from './exec'
+import { currentBranch, fallbackPath, parseTerminalShow, parseWorktreeShow, terminalPath, workspaceLinks, type Run, type RunResult } from './exec'
 
 function fake(answer: { code: number; stdout?: string; stderr?: string } | NodeJS.ErrnoException): Run & { calls: unknown[][] } {
   const calls: unknown[][] = []
@@ -64,4 +64,13 @@ test('workspaceLinks asks the CLI by path, and a CLI that will not run is null',
   assert.deepEqual(await workspaceLinks('/code/app wt', runner), { project: 'github:octo/app', issue: 4, pull: null })
   assert.deepEqual(runner.calls[0][1], ['worktree', 'show', '--worktree=path:/code/app wt', '--json'])
   assert.equal(await workspaceLinks('/code/app', fake(Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }))), null)
+})
+
+test('currentBranch: the upstream branch name when it tracks one, else its own; null when detached', async () => {
+  const git = (answers: Record<string, RunResult>): Run => async (_cmd, args) => answers[args.join(' ')] ?? { code: 1, stdout: '', stderr: '' }
+  const head = (name: string) => ({ 'rev-parse --abbrev-ref HEAD': { code: 0, stdout: `${name}\n`, stderr: '' } })
+  assert.equal(await currentBranch('/w', git({ ...head('fix'), 'config --get branch.fix.merge': { code: 0, stdout: 'refs/heads/user/fix\n', stderr: '' } })), 'user/fix')
+  assert.equal(await currentBranch('/w', git(head('feature/x'))), 'feature/x')
+  assert.equal(await currentBranch('/w', git(head('HEAD'))), null)
+  assert.equal(await currentBranch('/w', async () => { throw Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' }) }), null)
 })
