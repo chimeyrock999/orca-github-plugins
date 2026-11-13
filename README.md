@@ -18,13 +18,19 @@ so the plugin holds no tokens of its own.
 
 ## Plugins
 
-| Plugin | Type | Status |
-| :--- | :--- | :--- |
-| [`plugins/github`](plugins/github) | `trusted-worker` | Tabs, lists, paging, search; issues: detail, comments, close/reopen, edit, create, reactions |
+| Plugin | Folder | Type | Status |
+| :--- | :--- | :--- | :--- |
+| gh Focus (`gh-focus`) | [`plugins/github`](plugins/github) | `trusted-worker` | Tabs, lists, paging, search; issues: detail, comments, close/reopen, edit, create, reactions |
+
+## Install
+
+From the first release on (#20): [Open in Orca](https://orca.dev/plugins/chimeyrock999.gh-focus?catalog=community), or in Orca:
+Settings → Plugins, community catalog, **gh Focus**. Needs Orca `1.4.256`+ and `gh` logged in.
+gh Focus is not affiliated with GitHub.
 
 ## Develop
 
-Needs Orca `1.4.248`+ (`orca` on PATH), Node.js 18+, and `gh` logged in.
+Needs Orca `1.4.256`+ (`orca` on PATH), Node.js 18+, and `gh` logged in.
 
 ```sh
 orca plugin validate ./plugins/github
