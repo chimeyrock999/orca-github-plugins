@@ -16,16 +16,31 @@ import {
   Toolbar,
   type PanelContext
 } from 'orca'
-import { githubUrl, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
-import { KindView, Problem } from './views'
+import { issue, loadIssue, newIssue, restoreIssue } from './issue-store'
+import { githubUrl, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
+import { Problem } from './parts'
+import { KindView } from './views'
 
 /** Runs once before the first render; what it pushes to `subscriptions` ends with the panel. */
 export function setup(ctx: PanelContext): void {
   ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void setRepo(answer)))
   void plugin.request('repo.get').then(
-    (answer) => setRepo(answer),
+    (answer) => {
+      void setRepo(answer)
+      return restoreIssue()
+    },
     (error: unknown) => setRepo(requestFailed(error))
   )
+}
+
+/** Refresh: the repo and the list, and the issue on screen. */
+async function refreshAll(): Promise<void> {
+  await refresh()
+  // Refresh drops the label and assignee choices; an open picker asks for its own again.
+  const picking = read(issue).picking ?? read(newIssue).picking
+  if (picking) void loadChoices(picking.kind)
+  const open = read(lists.issues).open
+  if (read(tab) === 'issues' && open === String(read(issue).number)) await loadIssue()
 }
 
 function openOnGitHub(): unknown {
@@ -62,7 +77,7 @@ export default function Panel() {
           {r.resolvedBy === 'picked' && (
             <IconButton icon="folder" label="Change workspace" variant="ghost" onPress={unpickRepo} />
           )}
-          <IconButton icon="refresh" label="Refresh" variant="ghost" onPress={refresh} />
+          <IconButton icon="refresh" label="Refresh" variant="ghost" onPress={refreshAll} />
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" onPress={openOnGitHub} />
         </Toolbar>
       </Row>

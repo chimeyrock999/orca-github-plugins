@@ -4,6 +4,19 @@ import { existsSync } from 'node:fs'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { terminalPath } from './exec'
 import { runGh, toFailure, type Gh } from './gh'
+import {
+  closeIssue,
+  commentOn,
+  createIssue,
+  deleteComment,
+  editComment,
+  editIssue,
+  getIssue,
+  issueTimeline,
+  listAssignees,
+  reopenIssue,
+  setReaction
+} from './issues'
 import { listIssues, listLabels, listPulls, listRuns, listWorkflows, type RepoRef } from './lists'
 import type { Answer } from './protocol'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './repo'
@@ -38,6 +51,20 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   orca.panels.handle('runs.list', (input, { signal }) => inRepo(tracker, (repo) => listRuns(deps.gh, repo, input, signal)))
   orca.panels.handle('labels.list', (_, { signal }) => inRepo(tracker, (repo) => listLabels(deps.gh, repo, signal)))
   orca.panels.handle('workflows.list', (_, { signal }) => inRepo(tracker, (repo) => listWorkflows(deps.gh, repo, signal)))
+  orca.panels.handle('assignees.list', (_, { signal }) => inRepo(tracker, (repo) => listAssignees(deps.gh, repo, signal)))
+
+  orca.panels.handle('issue.get', ({ number }, { signal }) => inRepo(tracker, (repo) => getIssue(deps.gh, repo, number, signal)))
+  orca.panels.handle('issue.timeline', ({ number, after }, { signal }) =>
+    inRepo(tracker, (repo) => issueTimeline(deps.gh, repo, number, after, signal))
+  )
+  orca.panels.handle('issue.comment', ({ number, body }, { signal }) => inRepo(tracker, (repo) => commentOn(deps.gh, repo, number, body, signal)))
+  orca.panels.handle('comment.edit', ({ id, body }, { signal }) => inRepo(tracker, (repo) => editComment(deps.gh, repo, id, body, signal)))
+  orca.panels.handle('comment.delete', ({ id }, { signal }) => inRepo(tracker, (repo) => deleteComment(deps.gh, repo, id, signal)))
+  orca.panels.handle('issue.close', (input, { signal }) => inRepo(tracker, (repo) => closeIssue(deps.gh, repo, input, signal)))
+  orca.panels.handle('issue.reopen', (input, { signal }) => inRepo(tracker, (repo) => reopenIssue(deps.gh, repo, input, signal)))
+  orca.panels.handle('issue.edit', (input, { signal }) => inRepo(tracker, (repo) => editIssue(deps.gh, repo, input, signal)))
+  orca.panels.handle('issue.create', (input, { signal }) => inRepo(tracker, (repo) => createIssue(deps.gh, repo, input, signal)))
+  orca.panels.handle('reaction.set', (input, { signal }) => inRepo(tracker, (repo) => setReaction(deps.gh, repo, input, signal)))
 }
 
 export default function activate(orca: OrcaWorkerApi): void {

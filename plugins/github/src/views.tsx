@@ -3,7 +3,6 @@ import {
   Badge,
   Box,
   Button,
-  Callout,
   Code,
   EmptyState,
   IconButton,
@@ -22,8 +21,12 @@ import {
   Toolbar,
   type KeyValueItem
 } from 'orca'
-import { count, duration, issueLook, itemEvent, pageLine, problemOf, pullLook, runCause, runLook, type Look } from './look'
-import { PAGE_SIZE, type IssueRow, type ItemSort, type PanelError, type PullRow, type RunRow } from './protocol'
+import { count, duration, issueLook, itemEvent, pageLine, pullLook, runCause, runLook, type Look } from './look'
+import { Glyph, Problem } from './parts'
+import { NewIssueView } from './issue-forms'
+import { openIssue, startNewIssue } from './issue-store'
+import { IssueView } from './issue-view'
+import { PAGE_SIZE, type IssueRow, type ItemSort, type PullRow, type RunRow } from './protocol'
 import {
   back,
   choices,
@@ -48,47 +51,6 @@ const NAMES: Record<Kind, { plural: string; empty: string }> = {
   issues: { plural: 'issues', empty: 'No issues' },
   pulls: { plural: 'pull requests', empty: 'No pull requests' },
   runs: { plural: 'runs', empty: 'No workflow runs' }
-}
-
-/** The last folder of a path: what tells root clones on the same branch apart. */
-function folderName(path: string): string {
-  return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
-}
-
-export function Problem({ error, onRetry, onPick }: { error: PanelError; onRetry?: () => unknown; onPick?: (path: string) => unknown }) {
-  const problem = problemOf(error.code)
-  return (
-    <Callout tone={problem.tone} title={problem.title} icon="warning">
-      <Stack gap="xs">
-        <Text size="sm">{problem.hint}</Text>
-        <Text size="xs" muted>
-          {error.message}
-        </Text>
-        {error.candidates && onPick && (
-          <List label="Workspaces">
-            {error.candidates.map((c) => (
-              <ListItem key={c.id} icon="folder" title={folderName(c.path)} description={c.path} onPress={() => onPick(c.path)} />
-            ))}
-          </List>
-        )}
-        {onRetry && (
-          <Row>
-            <Button size="sm" variant="outline" icon="refresh" onPress={onRetry}>
-              Retry
-            </Button>
-          </Row>
-        )}
-      </Stack>
-    </Callout>
-  )
-}
-
-function Glyph({ look }: { look: Look }) {
-  return (
-    <Text tone={look.tone} size="md" weight="semibold">
-      {look.glyph}
-    </Text>
-  )
 }
 
 function ItemMeta({ row }: { row: IssueRow | PullRow }) {
@@ -128,7 +90,7 @@ function lookOf(kind: Kind, row: IssueRow | PullRow | RunRow): Look {
 
 function RowItem({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow }) {
   return (
-    <ListItem key={rowKey(row)} onPress={() => openRow(kind, rowKey(row))}>
+    <ListItem key={rowKey(row)} onPress={() => (kind === 'issues' ? openIssue((row as IssueRow).number) : openRow(kind, rowKey(row)))}>
       <Box direction="row" gap="md" align="center" paddingY="sm">
         <Glyph look={lookOf(kind, row)} />
         <Stack gap="xs">
@@ -187,6 +149,9 @@ function Counts({ kind, s }: { kind: Kind; s: ListState }) {
           ) : null}
         </Row>
       ))}
+      <Button size="sm" variant={s.state === 'all' ? 'outline' : 'ghost'} onPress={() => showState(kind, 'all')}>
+        All
+      </Button>
     </Row>
   )
 }
@@ -217,6 +182,7 @@ function Tools({ kind, s }: { kind: Kind; s: ListState }) {
       {kind !== 'runs' && (
         <IconButton icon="expand" label={`Sort: ${sort}`} variant={s.tool === 'sort' ? 'outline' : 'ghost'} onPress={() => toggleTool(kind, 'sort')} />
       )}
+      {kind === 'issues' && <IconButton icon="add" label="New issue" variant="ghost" onPress={startNewIssue} />}
     </Toolbar>
   )
 }
@@ -269,6 +235,7 @@ function Strip({ kind, s }: { kind: Kind; s: ListState }) {
       ) : (
         <>
           <Typed kind={kind} s={s} name="author" label="Author" placeholder="login" />
+          <Typed kind={kind} s={s} name="assignee" label="Assignee" placeholder="login or @me" />
           <Choice kind={kind} s={s} name="label" label="Label" options={asOptions(c.labels)} />
         </>
       )}
@@ -391,6 +358,8 @@ function Detail({ kind, row }: { kind: Kind; row: IssueRow | PullRow | RunRow })
 
 export function KindView({ kind }: { kind: Kind }) {
   const s = read(lists[kind])
+  // An issue opens by number, so it shows whether or not it is on the page.
+  if (kind === 'issues' && s.open) return s.open === 'new' ? <NewIssueView /> : <IssueView />
   const row = s.open && s.answer?.ok ? s.answer.rows.find((r) => rowKey(r) === s.open) : undefined
   return row ? <Detail kind={kind} row={row} /> : <ListView kind={kind} s={s} />
 }

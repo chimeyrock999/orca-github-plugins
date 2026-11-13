@@ -333,3 +333,27 @@ test('a pick stored by an earlier run is used, and a stale one is ignored', asyn
   assert.equal(!ambiguous.ok && ambiguous.error.code, 'ambiguous_workspace')
   await again.deactivate()
 })
+
+test('issue requests run gh in the focused repo, and answer the repo error without one', async () => {
+  const calls: { args: string[]; cwd?: string }[] = []
+  const gh: Gh = async (args, options) => {
+    calls.push({ args, cwd: options?.cwd })
+    return ''
+  }
+  const worker = await mountWorker(listWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
+  assert.deepEqual(await worker.request('issue.comment', { number: 8, body: 'Fixed in #131.' }), { ok: true })
+  assert.deepEqual(await worker.request('issue.close', { number: 8, reason: 'not planned' }), { ok: true })
+  assert.deepEqual(calls.map((c) => [c.cwd, c.args.slice(0, 2)]), [
+    ['/work/spike', ['issue', 'comment']],
+    ['/work/spike', ['issue', 'close']]
+  ])
+  // A refused write is an answer too.
+  const empty = await worker.request('issue.comment', { number: 8, body: ' ' })
+  assert.equal(!empty.ok && empty.error.code, 'gh_failed')
+  await worker.deactivate()
+
+  const out = await mountWorker(listWorker(noGh), { host: hostFocused({ branch: 'main', displayName: 'out' }) })
+  const answer = await out.request('issue.get', { number: 8 })
+  assert.equal(!answer.ok && answer.error.code, 'gh_logged_out')
+  await out.deactivate()
+})

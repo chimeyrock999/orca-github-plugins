@@ -50,6 +50,24 @@ test('itemSearch builds the repo, kind and state qualifiers, newest first, then 
   assert.equal(itemSearch(repo, 'pr', 'closed', ''), 'repo:octo/app is:pr is:closed sort:created-desc')
 })
 
+test('itemSearch: all leaves the state out, assignee is a qualifier quoted like the others', () => {
+  assert.equal(itemSearch(repo, 'issue', 'all', ''), 'repo:octo/app is:issue sort:created-desc')
+  assert.equal(
+    itemSearch(repo, 'issue', 'all', 'csv', { assignee: '@me', label: 'needs review' }),
+    'repo:octo/app is:issue label:"needs review" assignee:@me sort:created-desc csv'
+  )
+})
+
+test('issues: all still counts open and closed apart', async () => {
+  const gh = fakeGh(searchAnswer([issueNode]))
+  const page = await listIssues(gh, repo, { state: 'all', query: '', after: null, filters: { assignee: 'kenji' } })
+  const { args } = gh.calls[0]
+  assert.equal(field(args, 'q'), 'repo:octo/app is:issue assignee:kenji sort:created-desc')
+  assert.equal(field(args, 'openQ'), 'repo:octo/app is:issue is:open assignee:kenji')
+  assert.equal(field(args, 'closedQ'), 'repo:octo/app is:issue is:closed assignee:kenji')
+  assert.equal(page.open, 72)
+})
+
 test('issues: one GraphQL search in the repo folder, with both counts and the page cursor', async () => {
   const gh = fakeGh(searchAnswer([issueNode], true))
   const page = await listIssues(gh, repo, { state: 'open', query: 'csv', after: 'Y3Vyc29yOjA=' })
