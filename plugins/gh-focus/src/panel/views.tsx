@@ -166,18 +166,19 @@ function Pager({ s }: { s: ListState }) {
   const answer = s.answer?.ok ? s.answer : null
   const page = s.cursors.length
   return (
-    <Row justify="between" align="center">
+    // In a narrow sidebar the buttons drop under the page line, together, instead of past the edge.
+    <Row justify="between" align="center" wrap>
       <Text size="xs" muted>
         {answer ? pageLine(page, answer.total, answer.limit, PAGE_SIZE) : `Page ${page}`}
       </Text>
-      <Row gap="xs">
+      <Box direction="row" gap="xs" shrink={false}>
         <Button size="sm" variant="outline" disabled={page < 2 || s.answer === null} onPress={() => previous('runs')}>
           Previous
         </Button>
         <Button size="sm" variant="outline" disabled={!answer?.next} onPress={() => next('runs')}>
           Next
         </Button>
-      </Row>
+      </Box>
     </Row>
   )
 }

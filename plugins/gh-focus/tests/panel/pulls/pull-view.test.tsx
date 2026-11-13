@@ -81,6 +81,10 @@ test('the tab opens the workspace pull request: refs, review, merge, reviewers, 
   assert.ok(view.find({ text: 'ana' }))
   // One line for the checks, no list: Orca's Checks tab has them, with logs and reruns.
   assert.equal(view.find({ type: 'Collapsible' }), null)
+  // The glyph stays beside the line when it wraps in a narrow sidebar.
+  const line = view.find({ type: 'Link', text: '1 failing · 1 pending · 4 passed' })
+  const holder = view.findAll({ type: 'Row' }).find((r) => r.path === rowOf(line!.path))
+  assert.ok(holder && !holder.props.wrap)
   await view.press({ type: 'Link', text: '1 failing · 1 pending · 4 passed' })
   assert.deepEqual(h.last('orca.show'), { view: 'checks' })
   // Reviews: a box when they say something, one line when not.
@@ -175,6 +179,9 @@ test('another pull request opened from a mention leads back to the workspace one
   const inRow = (label: string) => view.findAll({ type: 'IconButton', label }).some((b) => b.path.startsWith(`${row}/`))
   assert.ok(inRow('Open on GitHub'))
   assert.ok(inRow('Edit title and body'))
+  // In a narrow sidebar Edit and Open on GitHub keep their row instead of stacking under each other.
+  const bar = view.findAll({ type: 'Toolbar' }).find((b) => b.props.label === 'Pull request')
+  assert.equal(view.findAll({ type: 'Box' }).find((b) => b.path === rowOf(bar!.path))?.props.shrink, false)
   assert.ok(!back.path.startsWith(`${row}/`))
   assert.ok(before(tasks.path, back.path))
   await view.press({ type: 'Button', text: '← Back to #124' })

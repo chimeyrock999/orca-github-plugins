@@ -131,10 +131,13 @@ export function IssueView() {
     <Box grow minHeight={0} gap="sm">
       <Row justify="between" align="center">
         <TasksButton kind="issues" back />
-        <Toolbar label="Issue" gap="xs">
-          {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={issues.startEdit} />}
-          <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
-        </Toolbar>
+        {/* Kept whole, so the two buttons do not stack in a narrow sidebar. */}
+        <Box shrink={false}>
+          <Toolbar label="Issue" gap="xs">
+            {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={issues.startEdit} />}
+            <IconButton icon="open-external" label="Open on GitHub" variant="ghost" disabled={!d} onPress={() => (d ? shell.openExternal(d.url) : undefined)} />
+          </Toolbar>
+        </Box>
       </Row>
       {back && (
         <Row>
