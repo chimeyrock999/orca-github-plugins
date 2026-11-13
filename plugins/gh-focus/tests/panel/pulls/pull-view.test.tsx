@@ -126,8 +126,8 @@ test('the review threads of the workspace pull request open in the Orca Checks t
   const h = host()
   const view = await openPull(h)
   assert.equal(view.findAll({ type: 'Button', text: 'Open in Checks' }).length, 2)
-  // Orca's Checks tab opens each comment's file at its line, so the panel does not (#17).
-  assert.match(String(view.findAll({ type: 'Button', text: 'Open in Checks' })[0].props.tooltip), /opens each file at its line/)
+  // Orca's Checks tab opens a comment's file at its line, so the panel does not (#17).
+  assert.match(String(view.findAll({ type: 'Button', text: 'Open in Checks' })[0].props.tooltip), /opens a comment's file at its line/)
   await view.press(view.findAll({ type: 'Button', text: 'Open in Checks' })[0])
   assert.deepEqual(h.last('orca.show'), { view: 'checks' })
   await view.unmount()

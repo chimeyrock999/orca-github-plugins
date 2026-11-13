@@ -13,7 +13,7 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 ### Changed
 
 - **Issues and pull requests**: Open in Checks, beside a review's comments on the diff, says that
-  Orca's Checks tab opens each comment's file at its line.
+  Orca's Checks tab opens a comment's file at its line.
 
 ## 0.1.0 - 2026-11-13
 

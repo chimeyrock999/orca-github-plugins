@@ -263,7 +263,7 @@ function EventLine({ look, actor, words, at }: { look: Look; actor: string | nul
 }
 
 /** A review's comments on the diff: Orca's Checks tab shows and answers them for the workspace's own
- *  pull request, and opens each one's file at its line in the editor; any other opens on GitHub. */
+ *  pull request, and opens a comment's file at its line in the editor; any other opens on GitHub. */
 function DiffComments({ t, r }: { t: AnyThread; r: TimelineReview }) {
   const own = t.kind === 'pulls' && read(t.state).number === workspacePull() && read(t.state).repo === null
   return (
@@ -272,7 +272,7 @@ function DiffComments({ t, r }: { t: AnyThread; r: TimelineReview }) {
         {`${count(r.comments)} comment${r.comments === 1 ? '' : 's'} on the diff`}
       </Text>
       {own && (
-        <Button size="xs" variant="outline" icon="activity" tooltip="Orca's Checks tab answers review threads and opens each file at its line" onPress={() => handOff('checks')}>
+        <Button size="xs" variant="outline" icon="activity" tooltip="Orca's Checks tab answers review threads and opens a comment's file at its line" onPress={() => handOff('checks')}>
           Open in Checks
         </Button>
       )}
