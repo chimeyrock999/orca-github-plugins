@@ -28,10 +28,9 @@ export function TasksButton({ kind }: { kind: LinkedKind }) {
 }
 
 function LinkedItem({ t, row }: { t: AnyThread; row: LinkedRow }) {
-  // One of another repo opens on GitHub: the panel reads and writes the focused repo only.
-  const press = () => (row.repo ? shell.openExternal(row.url) : t.open(row.number))
+  // One of another repo opens here too, read and written in its own repo; the badge names it.
   return (
-    <ListItem onPress={press}>
+    <ListItem onPress={() => t.open(row.number, row.repo)}>
       <Box direction="row" gap="md" align="center" paddingY="sm">
         <Glyph look={linkedLook(t.kind, row)} />
         <Stack gap="xs">
@@ -46,7 +45,6 @@ function LinkedItem({ t, row }: { t: AnyThread; row: LinkedRow }) {
                   <RelativeTime at={row.updatedAt} />
                 </>
               )}
-              {row.repo ? ' · opens on GitHub ↗' : ''}
             </Text>
           </Row>
         </Stack>
@@ -169,8 +167,8 @@ export function LinkedView({ t }: { t: AnyThread }) {
 
 /** What Back says on a thread: to the workspace's only link, to the linked list, or to the empty
  *  state; null on the only link itself. */
-export function backLabel(t: AnyThread, number: number): string | null {
+export function backLabel(t: AnyThread): string | null {
   const one = t.sole()
-  if (one !== null) return one === number ? null : `← Back to #${one}`
+  if (one) return t.isShown(one) ? null : `← Back to ${one.repo ?? ''}#${one.number}`
   return t.linkedNow()?.refs?.length ? `← Back to linked ${NOUN[t.kind].many}` : '← Back'
 }

@@ -410,8 +410,13 @@ test('repo.links: with no linked pull request of this repo, the branch pull requ
 test('agent.find names a free agent; agent.ask types the link prompt into its terminal without Enter', async () => {
   let agents = [
     { terminalId: 't-busy', title: 'Codex', agent: 'codex', state: 'working', stateStartedAt: 9 },
+    // Free and the latest, but its terminal runs in another workspace (Orca's focus can differ
+    // from the panel's when the panel's comes from a pick): it would link its own.
+    { terminalId: 't-elsewhere', title: 'Other Claude', agent: 'claude', state: 'done', stateStartedAt: 8 },
+    { terminalId: 't-unknown', title: 'Who knows', agent: 'claude', state: 'done', stateStartedAt: 7 },
     { terminalId: 't-free', title: 'Claude Code', agent: 'claude', state: 'waiting', stateStartedAt: 5 }
   ]
+  const folders: Record<string, string> = { 't-busy': '/work/spike', 't-elsewhere': '/code/app', 't-free': '/work/spike/' }
   let accepted = true
   const host = mockHost({
     results: {
@@ -421,8 +426,15 @@ test('agent.find names a free agent; agent.ask types the link prompt into its te
       'terminal.sendText': () => ({ accepted })
     }
   })
-  const worker = await mountWorker(listWorker(noGh), { host })
+  const module = {
+    default: (orca: OrcaWorkerApi) =>
+      main.activateWith(orca, { gh: noGh, ghRepo: async (path) => repos[path], terminalPath: async (id) => folders[id] ?? null, exists: () => true })
+  }
+  const worker = await mountWorker(module, { host })
   assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Claude Code', terminalId: 't-free' } })
+  // Not even when the panel names it.
+  const elsewhere = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-elsewhere' })
+  assert.equal(!elsewhere.ok && elsewhere.error.code, 'no_agent')
   assert.deepEqual(await worker.request('agent.ask', { kind: 'pulls', terminalId: 't-free' }), { ok: true, agent: 'Claude Code' })
   assert.deepEqual(host.callsOf('terminal.sendText'), [
     {
@@ -437,7 +449,7 @@ test('agent.find names a free agent; agent.ask types the link prompt into its te
   // Only the agent the panel offered is asked, and only while it is free: never another one.
   const busy = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-busy' })
   assert.equal(!busy.ok && busy.error.code, 'no_agent')
-  agents = agents.slice(0, 1)
+  agents = agents.slice(0, 3)
   assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null })
   const gone = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-free' })
   assert.equal(!gone.ok && gone.error.code, 'no_agent')
@@ -566,5 +578,25 @@ test('run.review writes the review in the repo', async () => {
   const worker = await mountWorker(runWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
   assert.deepEqual(await worker.request('run.review', { id: 9, approve: false, environments: [7] }), { ok: true })
   assert.deepEqual(calls, [['api', '-X', 'POST', 'repos/octo/app/actions/runs/9/pending_deployments', '-F', 'environment_ids[]=7', '-f', 'state=rejected', '-f', 'comment=']])
+  await worker.deactivate()
+})
+
+test('an item of another repo is read in that repo; a name that is not a repo is refused before gh', async () => {
+  const calls: string[][] = []
+  const gh: Gh = async (args) => {
+    calls.push(args)
+    return { data: { repository: null } }
+  }
+  const worker = await mountWorker(listWorker(gh), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
+  await worker.request('issue.get', { number: 45, repo: 'octo/sdk' })
+  assert.ok(calls[0].includes('owner=octo') && calls[0].includes('name=sdk'))
+  // The focused repo named outright is the focused repo, with no -R.
+  await worker.request('labels.list', { repo: 'Octo/App' })
+  assert.deepEqual(calls[1], ['label', 'list', '--json', 'name', '--limit', '500'])
+  await worker.request('labels.list', { repo: 'octo/sdk' })
+  assert.deepEqual(calls[2].slice(-2), ['-R', 'octo/sdk'])
+  const odd = await worker.request('issue.get', { number: 1, repo: 'octo/sdk; rm -rf' })
+  assert.equal(!odd.ok && odd.error.code, 'gh_failed')
+  assert.equal(calls.length, 3)
   await worker.deactivate()
 })

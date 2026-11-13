@@ -5,7 +5,7 @@
 // pages loaded with Load more stay.
 import { atom, plugin, read, set, update, type Atom } from 'orca'
 import type { Answer, IssueEdit, LinkedKind, LinkedRef, LinkedRow, PanelError, Reaction, ReactionGroup, ThreadDetail, TimelineItem } from './protocol'
-import { back, lists, loadChoices, repo, repoEpoch, requestFailed, tab, unsure } from './store'
+import { back, itemKey, lists, loadChoices, repo, repoEpoch, requestFailed, tab, unsure } from './store'
 
 export type ThreadKind = LinkedKind
 
@@ -17,6 +17,8 @@ export type Picking = { kind: 'labels' | 'assignees'; selected: string[]; query:
 
 export type ThreadState<D extends ThreadDetail> = {
   number: number
+  /** `owner/name` when the thread is of another repo than the focused one (Orca links it), else null. */
+  repo: string | null
   /** null while the thread loads. */
   answer: Answer<{ detail: D }> | null
   /** The write or load running now (`comment`, `close`, `more`, `delete`, ...); one at a time. */
@@ -33,15 +35,20 @@ export type ThreadState<D extends ThreadDetail> = {
   reacting: string | null
 }
 
+/** What a request about the thread adds so the worker asks the thread's repo: `{ repo }` when it is
+ *  of another repo than the focused one, else nothing. */
+export type At = { repo?: string }
+export const atRepo = (s: { repo: string | null }): At => (s.repo ? { repo: s.repo } : {})
+
 /** How a kind of thread is asked for and written. */
 export type ThreadRequests<D extends ThreadDetail> = {
-  get: (number: number) => Promise<Answer<{ detail: D }>>
-  timeline: (number: number, after: string) => Promise<Answer<{ items: TimelineItem[]; next: string | null }>>
-  comment: (number: number, body: string) => Promise<Answer<object>>
-  edit: (input: IssueEdit) => Promise<Answer<object>>
+  get: (number: number, at: At) => Promise<Answer<{ detail: D }>>
+  timeline: (number: number, after: string, at: At) => Promise<Answer<{ items: TimelineItem[]; next: string | null }>>
+  comment: (number: number, body: string, at: At) => Promise<Answer<object>>
+  edit: (input: IssueEdit & At) => Promise<Answer<object>>
 }
 
-/** Writes wait longer than reads: gh issue create makes several API calls. The worker gives gh 60 s. */
+/** Writes wait longer than reads: a write can make several API calls. The worker gives gh 60 s. */
 export const WRITE = { timeoutMs: 90_000 }
 
 
@@ -55,10 +62,10 @@ export function workspace(): string {
  *  elsewhere and back starts again when shown. */
 export const focusKey = () => `${repoEpoch()}\n${workspace()}`
 
-/** The one linked item of the focused repo when it is the only one linked: the only one a tab opens
- *  by itself. */
-export function soleRef(refs: LinkedRef[] | null): number | null {
-  return refs?.length === 1 && refs[0].repo === null ? refs[0].number : null
+/** The linked item when it is the only one (of this repo or another): the only one a tab opens by
+ *  itself. */
+export function soleRef(refs: LinkedRef[] | null): LinkedRef | null {
+  return refs?.length === 1 ? refs[0] : null
 }
 
 /** The timeline with a loaded page added after the head; once the head reaches the tail they join. */
@@ -95,9 +102,10 @@ function flip(groups: ReactionGroup[], content: Reaction, on: boolean, viewer: s
     .filter((g) => g.count > 0)
 }
 
-// Pickers are pure changes of a Picking, shared by threads and the new issue form.
-export function startPicking(kind: Picking['kind'], selected: string[]): Picking {
-  void loadChoices(kind === 'labels' ? 'labels' : 'assignees')
+// Pickers are pure changes of a Picking. `of` is the thread's repo when it is another one, whose
+// labels and assignees are offered.
+export function startPicking(kind: Picking['kind'], selected: string[], of: string | null = null): Picking {
+  void loadChoices(kind === 'labels' ? 'labels' : 'assignees', of)
   return { kind, selected: [...selected], query: '', login: '' }
 }
 export const togglePicked = (p: Picking, name: string, on: boolean): Picking => ({
@@ -131,8 +139,9 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   loaded?: (detail: D, current: () => boolean) => void
 ) {
   type S = ThreadState<D> & X
-  const fresh = (number: number): S => ({
+  const fresh = (number: number, repo: string | null = null): S => ({
     number,
+    repo,
     answer: null,
     busy: null,
     error: null,
@@ -167,17 +176,18 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   async function loadThread(): Promise<void> {
     const mine = ++loads
     const view = here()
-    const answer = await requests.get(read(state).number).catch(requestFailed)
+    const answer = await requests.get(read(state).number, atRepo(read(state))).catch(requestFailed)
     if (mine !== loads || view !== here()) return
     update(state, (s) => ({ ...s, answer }))
     if (answer.ok) loaded?.(answer.detail, () => mine === loads && view === here())
   }
 
-  /** Opens a thread by number, from the linked list, a mention, or as the workspace's only link. */
-  function open(number: number): Promise<void> {
+  /** Opens a thread by number (of `repo`, when another repo's), from the linked list, a mention, or
+   *  as the workspace's only link. */
+  function open(number: number, repo: string | null = null): Promise<void> {
     views++
-    update(lists[kind], (s) => ({ ...s, open: String(number) }))
-    set(state, fresh(number))
+    update(lists[kind], (s) => ({ ...s, open: itemKey(number, repo) }))
+    set(state, fresh(number, repo))
     return loadThread()
   }
 
@@ -195,6 +205,12 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   /** The workspace's only linked item of this repo, when there is just one. */
   const sole = () => soleRef(linkedNow()?.refs ?? null)
 
+  /** Whether the thread open is this linked item. */
+  function isShown(ref: Pick<LinkedRef, 'number' | 'repo'>): boolean {
+    const s = read(state)
+    return s.number === ref.number && (s.repo ?? '').toLowerCase() === (ref.repo ?? '').toLowerCase()
+  }
+
   /** Asks GitHub for the linked items' title and state, for the list. */
   async function loadRows(): Promise<void> {
     const l = linkedNow()
@@ -211,7 +227,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
    *  state. */
   function backToList(): Promise<void> | void {
     const one = sole()
-    if (one !== null && read(state).number !== one) return open(one)
+    if (one && !isShown(one)) return open(one.number, one.repo)
     leave()
     back(kind)
     if (!read(listStale) && linkedNow()?.rows) return
@@ -231,7 +247,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     if (s.busy || !detail?.next) return
     const view = here()
     update(state, (x) => ({ ...x, busy: 'more', error: null }))
-    const answer = await requests.timeline(s.number, detail.next).catch(requestFailed)
+    const answer = await requests.timeline(s.number, detail.next, atRepo(s)).catch(requestFailed)
     if (view !== here()) return
     update(state, (x) => ({ ...x, busy: null, error: answer.ok ? null : answer.error }))
     // A reload while the page was on its way starts the timeline over; the page then fits nowhere.
@@ -268,7 +284,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   function sendComment(): Promise<boolean> | void {
     const { number, draft } = read(state)
     if (!draft.trim()) return
-    return write('comment', () => requests.comment(number, draft), (s) => ({ ...s, draft: '' }))
+    return write('comment', () => requests.comment(number, draft, atRepo(read(state))), (s) => ({ ...s, draft: '' }))
   }
 
   function changeComment(id: number, change: (item: TimelineItem) => TimelineItem | null): void {
@@ -283,7 +299,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   async function saveComment(): Promise<void> {
     const editing = read(state).editingComment
     if (!editing?.body.trim()) return
-    const ok = await write('edit-comment', () => plugin.request('comment.edit', editing, WRITE), (s) => ({ ...s, editingComment: null }), false)
+    const ok = await write('edit-comment', () => plugin.request('comment.edit', { ...editing, ...atRepo(read(state)) }, WRITE), (s) => ({ ...s, editingComment: null }), false)
     if (ok) changeComment(editing.id, (c) => ({ ...c, body: editing.body, edited: true, truncated: false }))
   }
 
@@ -293,7 +309,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   async function confirmDelete(): Promise<void> {
     const id = read(state).deleting
     if (id === null) return
-    const ok = await write('delete', () => plugin.request('comment.delete', { id }, WRITE), (s) => ({ ...s, deleting: null }), false)
+    const ok = await write('delete', () => plugin.request('comment.delete', { id, ...atRepo(read(state)) }, WRITE), (s) => ({ ...s, deleting: null }), false)
     if (ok) {
       changeComment(id, () => null)
       changeShown((d) => ({ ...d, comments: Math.max(0, d.comments - 1), total: Math.max(0, d.total - 1) }))
@@ -315,6 +331,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     // A cut body is not sent back unless it was changed: saving it would drop the rest.
     const input = {
       number,
+      ...atRepo(read(state)),
       ...(editing.title !== d.title ? { title: editing.title } : {}),
       ...(editing.body !== d.body ? { body: editing.body } : {})
     }
@@ -323,7 +340,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
 
   function openPicker(which: Picking['kind']): void {
     const d = shown()
-    if (d) update(state, (s) => ({ ...s, picking: startPicking(which, which === 'labels' ? d.labels : d.assignees) }))
+    if (d) update(state, (s) => ({ ...s, picking: startPicking(which, which === 'labels' ? d.labels : d.assignees, s.repo) }))
   }
   const changePicker = (change: (p: Picking) => Picking | null) => update(state, (s) => (s.picking ? { ...s, picking: change(s.picking) } : s))
 
@@ -335,8 +352,9 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     const add = picking.selected.filter((x) => !before.includes(x))
     const remove = before.filter((x) => !picking.selected.includes(x))
     if (add.length + remove.length === 0) return update(state, (s) => ({ ...s, picking: null }))
+    const at = atRepo(read(state))
     const input =
-      picking.kind === 'labels' ? { number, addLabels: add, removeLabels: remove } : { number, addAssignees: add, removeAssignees: remove }
+      picking.kind === 'labels' ? { number, ...at, addLabels: add, removeLabels: remove } : { number, ...at, addAssignees: add, removeAssignees: remove }
     return write(picking.kind, () => requests.edit(input), (s) => ({ ...s, picking: null }))
   }
 
@@ -393,7 +411,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     set(linked, { where, refs, rows: null })
     const one = soleRef(refs)
     if (read(lists[kind]).open || read(tab) !== kind) return
-    if (one !== null) return open(one)
+    if (one) return open(one.number, one.repo)
     return loadRows()
   }
 
@@ -412,6 +430,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     backToList,
     linkedNow,
     sole,
+    isShown,
     loadRows,
     markStale,
     loadMore,

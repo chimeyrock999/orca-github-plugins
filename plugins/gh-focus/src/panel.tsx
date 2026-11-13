@@ -19,7 +19,7 @@ import {
 import { issue, issues } from './issue-store'
 import { findAgent } from './link-store'
 import { pull, pulls } from './pull-store'
-import { githubUrl, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
+import { githubUrl, itemKey, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
 import { Problem } from './parts'
 import { DISPATCH, loadForm, loadRun, progress, tabShown } from './run-store'
 import { KindView } from './views'
@@ -54,7 +54,10 @@ export function setup(ctx: PanelContext): void {
 /** Refresh: the repo, the list or what Orca links to the workspace (something may be linked by now,
  *  or the branch have a pull request), and the issue, pull request or run on screen. */
 async function refreshAll(): Promise<void> {
-  const shown = (kind: 'issues' | 'pulls') => read(lists[kind]).open === String(kind === 'issues' ? read(issue).number : read(pull).number)
+  const shown = (kind: 'issues' | 'pulls') => {
+    const s = kind === 'issues' ? read(issue) : read(pull)
+    return read(lists[kind]).open === itemKey(s.number, s.repo)
+  }
   const was = { issues: shown('issues'), pulls: shown('pulls') }
   await thenStart(refresh(), true)
   // Refresh drops the label and assignee choices; an open picker asks for its own again.

@@ -47,8 +47,10 @@ function fresh(): ListState {
 export const repo = atom<RepoAnswer | null>(null)
 export const tab = atom<Kind>('tab', 'issues', { persist: 'plugin' })
 export const lists: Record<Kind, Atom<ListState>> = { issues: atom(fresh()), pulls: atom(fresh()), runs: atom(fresh()) }
-export type Choices = { labels: string[] | null; workflows: { id: number; name: string }[] | null; assignees: string[] | null }
-const noChoices = (): Choices => ({ labels: null, workflows: null, assignees: null })
+/** `of`: the repo the labels and assignees are of, `owner/name` when an item of another repo asked
+ *  for them, else null (workflows are always the focused repo's). */
+export type Choices = { labels: string[] | null; workflows: { id: number; name: string }[] | null; assignees: string[] | null; of: string | null }
+const noChoices = (): Choices => ({ labels: null, workflows: null, assignees: null, of: null })
 /** Labels, workflows and assignable logins of the repo, asked for the first time a filter or picker
  *  needs them. */
 export const choices = atom<Choices>(noChoices())
@@ -119,19 +121,26 @@ export const clearFilters = (kind: Kind) => restart(kind, { filters: {}, drafts:
 /** How many filters hold a value. */
 export const filterCount = (s: ListState) => Object.values(s.filters).filter(Boolean).length
 
-/** Asks for one kind of choice unless it is already there; a failure leaves none to pick. */
-export function loadChoices(name: keyof Choices): Promise<void> | void {
+export type ChoiceName = Exclude<keyof Choices, 'of'>
+
+/** Asks for one kind of choice unless it is already there; a failure leaves none to pick. Labels and
+ *  assignees of another repo (`of`) replace the ones held. */
+export function loadChoices(name: ChoiceName, of: string | null = null): Promise<void> | void {
+  if (name !== 'workflows' && read(choices).of !== of) {
+    choicesFor++
+    update(choices, (c) => ({ ...c, labels: null, assignees: null, of }))
+  }
   if (read(choices)[name] !== null) return
   const mine = choicesFor
-  const keep = (value: Choices[typeof name]): void => {
+  const keep = (value: Choices[ChoiceName]): void => {
     if (mine === choicesFor) update(choices, (c) => ({ ...c, [name]: value }))
   }
   const asked =
     name === 'workflows'
       ? plugin.request('workflows.list').then((a) => keep(a.ok ? a.workflows : []))
       : name === 'labels'
-        ? plugin.request('labels.list').then((a) => keep(a.ok ? a.names : []))
-        : plugin.request('assignees.list').then((a) => keep(a.ok ? a.logins : []))
+        ? plugin.request('labels.list', of ? { repo: of } : {}).then((a) => keep(a.ok ? a.names : []))
+        : plugin.request('assignees.list', of ? { repo: of } : {}).then((a) => keep(a.ok ? a.logins : []))
   return asked.catch(() => keep([]))
 }
 
@@ -154,6 +163,9 @@ export function previous(kind: Kind): Promise<void> | void {
   update(lists[kind], (l) => ({ ...l, cursors: l.cursors.slice(0, -1) }))
   return load(kind)
 }
+
+/** The key of an issue or pull request open in its tab: its number, or `owner/name#N` for another repo's. */
+export const itemKey = (number: number, repo: string | null = null): string => (repo ? `${repo}#${number}` : String(number))
 
 export const openRow = (kind: Kind, key: string) => update(lists[kind], (s) => ({ ...s, open: key }))
 export const back = (kind: Kind) => update(lists[kind], (s) => ({ ...s, open: null }))
@@ -212,8 +224,13 @@ export function githubUrl(): string | null {
   if (!r?.ok) return null
   const kind = read(tab)
   const s = read(lists[kind])
-  // Issues and pull requests open by number, so they need not be on the page.
-  if (kind !== 'runs' && s.open && /^\d+$/.test(s.open)) return `${r.url}/${kind === 'issues' ? 'issues' : 'pull'}/${s.open}`
+  // Issues and pull requests open by number (`owner/name#N` for another repo's), so they need not be
+  // on the page.
+  const item = kind !== 'runs' && s.open ? /^(?:([^#]+)#)?(\d+)$/.exec(s.open) : null
+  if (item) {
+    const base = item[1] ? `${new URL(r.url).origin}/${item[1]}` : r.url
+    return `${base}/${kind === 'issues' ? 'issues' : 'pull'}/${item[2]}`
+  }
   if (s.open && s.answer?.ok) {
     const row = s.answer.rows.find((x) => String(x.id) === s.open)
     if (row) return row.url

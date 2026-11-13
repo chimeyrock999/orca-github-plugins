@@ -55,7 +55,7 @@ function Status({ look }: { look: Look }) {
  *  lists them with logs and reruns, any other opens its checks on GitHub. */
 function ChecksLine({ d }: { d: PullDetail }) {
   if (!d.checks) return null
-  const own = d.number === workspacePull()
+  const own = d.number === workspacePull() && read(pull).repo === null
   return (
     <MetaLine label="Checks" empty="">
       <Glyph look={checksLook(d.checks)} />
@@ -207,7 +207,7 @@ export function PullView() {
   const s = read(pull)
   const d = s.answer?.ok ? s.answer.detail : null
   // A pull request opened from a mention or the list leads back to the workspace's own, or the list.
-  const back = backLabel(pulls, s.number)
+  const back = backLabel(pulls)
   return (
     <Box grow minHeight={0} gap="sm">
       <Row justify="between" align="center">

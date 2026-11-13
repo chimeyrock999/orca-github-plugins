@@ -358,6 +358,8 @@ export type IssueEdit = {
 /** A write's answer: nothing more than that it worked. */
 export type Done = Answer<Record<never, never>>
 
+/* An issue or pull request request with `repo` (`owner/name`) reads or writes that repo instead of
+ * the focused one: an item Orca links to the workspace from another repo. */
 declare module 'orca' {
   interface PluginRequests {
     /** The GitHub repo (`owner/name`) of the focused workspace. */
@@ -384,32 +386,32 @@ declare module 'orca' {
     /** One page of the focused repo's workflow runs, newest first. */
     'runs.list': { input: RunListInput; output: Answer<RunPage> }
     /** The focused repo's label names, for the label picker. */
-    'labels.list': { output: Answer<{ names: string[] }> }
+    'labels.list': { input: { repo?: string }; output: Answer<{ names: string[] }> }
     /** One issue with its body and the start and end of its timeline. */
-    'issue.get': { input: { number: number }; output: Answer<{ issue: IssueDetail }> }
+    'issue.get': { input: { number: number; repo?: string }; output: Answer<{ issue: IssueDetail }> }
     /** The timeline after `after`, up to a page. */
-    'issue.timeline': { input: { number: number; after: string }; output: Answer<{ items: TimelineItem[]; next: string | null }> }
-    'issue.comment': { input: { number: number; body: string }; output: Done }
+    'issue.timeline': { input: { number: number; after: string; repo?: string }; output: Answer<{ items: TimelineItem[]; next: string | null }> }
+    'issue.comment': { input: { number: number; body: string; repo?: string }; output: Done }
     /** Edits or deletes a comment by its REST id. */
-    'comment.edit': { input: { id: number; body: string }; output: Done }
-    'comment.delete': { input: { id: number }; output: Done }
+    'comment.edit': { input: { id: number; body: string; repo?: string }; output: Done }
+    'comment.delete': { input: { id: number; repo?: string }; output: Done }
     /** Closes with a reason; `comment` is posted first, as GitHub's Close with comment does. */
-    'issue.close': { input: { number: number; reason: CloseReason; duplicateOf?: number; comment?: string }; output: Done }
-    'issue.reopen': { input: { number: number; comment?: string }; output: Done }
-    'issue.edit': { input: IssueEdit; output: Done }
+    'issue.close': { input: { number: number; reason: CloseReason; duplicateOf?: number; comment?: string; repo?: string }; output: Done }
+    'issue.reopen': { input: { number: number; comment?: string; repo?: string }; output: Done }
+    'issue.edit': { input: IssueEdit & { repo?: string }; output: Done }
     /** Adds or removes the viewer's reaction on an issue or comment, by its node id. */
     'reaction.set': { input: { subjectId: string; content: Reaction; on: boolean }; output: Done }
     /** One pull request with its checks, body and the start and end of its timeline. */
-    'pull.get': { input: { number: number }; output: Answer<{ pull: PullDetail }> }
-    'pull.timeline': { input: { number: number; after: string }; output: Answer<{ items: TimelineItem[]; next: string | null }> }
-    'pull.comment': { input: { number: number; body: string }; output: Done }
-    'pull.edit': { input: IssueEdit; output: Done }
+    'pull.get': { input: { number: number; repo?: string }; output: Answer<{ pull: PullDetail }> }
+    'pull.timeline': { input: { number: number; after: string; repo?: string }; output: Answer<{ items: TimelineItem[]; next: string | null }> }
+    'pull.comment': { input: { number: number; body: string; repo?: string }; output: Done }
+    'pull.edit': { input: IssueEdit & { repo?: string }; output: Done }
     /** Approve, request changes (with a body) or comment (with a body). */
-    'pull.review': { input: { number: number; event: ReviewEvent; body: string }; output: Done }
+    'pull.review': { input: { number: number; event: ReviewEvent; body: string; repo?: string }; output: Done }
     /** Shows one of Orca's own views: its Tasks page, or the Checks tab of the right sidebar. */
     'orca.show': { input: { view: OrcaView }; output: Done }
     /** Logins that can be assigned in the focused repo. */
-    'assignees.list': { output: Answer<{ logins: string[] }> }
+    'assignees.list': { input: { repo?: string }; output: Answer<{ logins: string[] }> }
     /** The focused repo's workflows, for the workflow filter. */
     'workflows.list': { output: Answer<{ workflows: { id: number; name: string }[] }> }
     /** One run and the jobs and steps of its latest attempt. */

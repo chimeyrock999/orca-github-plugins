@@ -126,7 +126,7 @@ function Detail({ d, s }: { d: IssueDetail; s: IssueState }) {
 export function IssueView() {
   const s = read(issue)
   const d = s.answer?.ok ? s.answer.detail : null
-  const back = backLabel(issues, s.number)
+  const back = backLabel(issues)
   return (
     <Box grow minHeight={0} gap="sm">
       <Row justify="between" align="center">

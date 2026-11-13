@@ -14,7 +14,13 @@ import {
   type RunState
 } from './protocol'
 
-export type RepoRef = { nameWithOwner: string; path: string }
+/** The repo a request reads or writes, and the workspace folder gh runs in. `other`: not the folder's
+ *  own repo (an item Orca links from another one), so gh's issue, pr and label commands name it with
+ *  `-R`; the API calls name it anyway. */
+export type RepoRef = { nameWithOwner: string; path: string; other?: boolean }
+
+/** `-R owner/name` for gh's repo-picking commands when the repo is not the folder's own. */
+export const repoFlag = (repo: RepoRef): string[] => (repo.other ? ['-R', repo.nameWithOwner] : [])
 
 /** An issue's state from GitHub's state and state reason; the linked list and the timeline share it. */
 export function issueState(node: { state: string; stateReason?: string | null }): IssueState {
@@ -113,7 +119,7 @@ export function runRow(run: RunJson): RunRow {
 
 /** The repo's label names. */
 export async function listLabels(gh: Gh, repo: RepoRef, signal?: AbortSignal): Promise<{ names: string[] }> {
-  const out = (await gh(['label', 'list', '--json', 'name', '--limit', '500'], { cwd: repo.path, signal, json: true })) as { name: string }[]
+  const out = (await gh(['label', 'list', '--json', 'name', '--limit', '500', ...repoFlag(repo)], { cwd: repo.path, signal, json: true })) as { name: string }[]
   return { names: Array.isArray(out) ? out.map((l) => l.name).sort((a, b) => a.localeCompare(b)) : [] }
 }
 

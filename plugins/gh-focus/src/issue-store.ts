@@ -2,16 +2,16 @@
 // New issues are made on Orca's Tasks page.
 import { plugin, read, update } from 'orca'
 import type { CloseReason, IssueDetail } from './protocol'
-import { makeThread, WRITE, type ThreadState } from './thread-store'
+import { atRepo, makeThread, WRITE, type ThreadState } from './thread-store'
 
 export type IssueState = ThreadState<IssueDetail> & { closing: { reason: CloseReason; duplicateOf: string } | null }
 
 export const issues = makeThread<IssueDetail, Pick<IssueState, 'closing'>>(
   'issues',
   {
-    get: (number) => plugin.request('issue.get', { number }).then((a) => (a.ok ? { ok: true as const, detail: a.issue } : a)),
-    timeline: (number, after) => plugin.request('issue.timeline', { number, after }),
-    comment: (number, body) => plugin.request('issue.comment', { number, body }, WRITE),
+    get: (number, at) => plugin.request('issue.get', { number, ...at }).then((a) => (a.ok ? { ok: true as const, detail: a.issue } : a)),
+    timeline: (number, after, at) => plugin.request('issue.timeline', { number, after, ...at }),
+    comment: (number, body, at) => plugin.request('issue.comment', { number, body, ...at }, WRITE),
     edit: (input) => plugin.request('issue.edit', input, WRITE)
   },
   () => ({ closing: null })
@@ -49,12 +49,12 @@ export function confirmClose(): Promise<boolean> | void {
   if (!closing) return
   const duplicateOf = closing.reason === 'duplicate' ? duplicateNumber(closing.duplicateOf) : null
   if (closing.reason === 'duplicate' && duplicateOf === null) return
-  const input = { number, reason: closing.reason, ...(duplicateOf ? { duplicateOf } : {}), ...(draft.trim() ? { comment: draft } : {}) }
+  const input = { number, ...atRepo(read(issue)), reason: closing.reason, ...(duplicateOf ? { duplicateOf } : {}), ...(draft.trim() ? { comment: draft } : {}) }
   return issues.write('close', () => plugin.request('issue.close', input, WRITE), (s) => ({ ...s, draft: '', closing: null }))
 }
 
 export function reopen(): Promise<boolean> {
   const { number, draft } = read(issue)
-  const input = { number, ...(draft.trim() ? { comment: draft } : {}) }
+  const input = { number, ...atRepo(read(issue)), ...(draft.trim() ? { comment: draft } : {}) }
   return issues.write('reopen', () => plugin.request('issue.reopen', input, WRITE), (s) => ({ ...s, draft: '' }))
 }

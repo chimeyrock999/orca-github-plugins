@@ -4,7 +4,7 @@
 // request views close, reopen and merge them.
 import { atom, plugin, read, set, update } from 'orca'
 import type { PullDetail, ReviewEvent } from './protocol'
-import { makeThread, WRITE, type ThreadState } from './thread-store'
+import { atRepo, makeThread, WRITE, type ThreadState } from './thread-store'
 
 export type PullState = ThreadState<PullDetail> & {
   /** The review being written; its body is the comment box's text. */
@@ -19,9 +19,9 @@ const retried = atom<number | null>(null)
 export const pulls = makeThread<PullDetail, Pick<PullState, 'reviewing'>>(
   'pulls',
   {
-    get: (number) => plugin.request('pull.get', { number }).then((a) => (a.ok ? { ok: true as const, detail: a.pull } : a)),
-    timeline: (number, after) => plugin.request('pull.timeline', { number, after }),
-    comment: (number, body) => plugin.request('pull.comment', { number, body }, WRITE),
+    get: (number, at) => plugin.request('pull.get', { number, ...at }).then((a) => (a.ok ? { ok: true as const, detail: a.pull } : a)),
+    timeline: (number, after, at) => plugin.request('pull.timeline', { number, after, ...at }),
+    comment: (number, body, at) => plugin.request('pull.comment', { number, body, ...at }, WRITE),
     edit: (input) => plugin.request('pull.edit', input, WRITE)
   },
   () => ({ reviewing: null }),
@@ -61,6 +61,6 @@ export function submitReview(): Promise<boolean> | void {
   const { number, draft, reviewing } = read(pull)
   const d = pulls.shown()
   if (!reviewing || !d || !canReview(d, reviewing, draft)) return
-  const input = { number, event: reviewing, body: draft }
+  const input = { number, event: reviewing, body: draft, ...atRepo(read(pull)) }
   return pulls.write('review', () => plugin.request('pull.review', input, WRITE), (s) => ({ ...s, draft: '', reviewing: null }))
 }

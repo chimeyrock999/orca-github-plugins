@@ -412,3 +412,17 @@ test('a pull request that will not load shows why', async () => {
   assert.ok(says(view, /Not found on GitHub/))
   await view.unmount()
 })
+
+test('a pull request of another repo opens here in its own repo; its checks stay on GitHub', async () => {
+  const h = host({ 'repo.links': links([], ['octo/sdk#7']) })
+  const view = await openPull(h)
+  assert.deepEqual(h.last('pull.get'), { number: 7, repo: 'octo/sdk' })
+  assert.equal(view.find({ type: 'Button', text: 'Open in Checks' }), null)
+  await view.press({ type: 'Link', text: '1 failing · 1 pending · 4 passed' })
+  assert.equal(h.last('orca.show'), undefined)
+  await view.press({ type: 'Button', text: 'Review…' })
+  await view.select({ label: 'Review' }, 'approve')
+  await view.press({ type: 'Button', text: 'Submit review' })
+  assert.deepEqual(h.last('pull.review'), { number: 7, event: 'approve', body: '', repo: 'octo/sdk' })
+  await view.unmount()
+})

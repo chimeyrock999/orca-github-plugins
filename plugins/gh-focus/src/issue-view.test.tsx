@@ -389,11 +389,11 @@ test('several linked issues make a list, newest activity first, and none opens b
     view.findAll({ type: 'ListItem' }).map((i) => i.text?.split('#')[0]),
     ['◉ Login page loops after token refresh ', '⊘ Stream writer drops the last chunk octo/sdk ', '◌ Gone ']
   )
-  // Another repo's is named, and opens on GitHub: the panel reads and writes this repo only.
+  // Another repo's is named, and opens here, read in its own repo.
   assert.ok(view.find({ type: 'Badge', text: 'octo/sdk' }))
   await view.press({ type: 'ListItem', text: /Stream writer/ })
-  assert.deepEqual(h.callsOf('shell.openExternal'), [{ url: 'https://github.com/octo/sdk/issues/45' }])
-  assert.equal(h.last('issue.get'), undefined)
+  assert.deepEqual(h.last('issue.get'), { number: 45, repo: 'octo/sdk' })
+  await view.press({ text: '← Back to linked issues' })
   await view.press({ type: 'ListItem', text: /Login page loops/ })
   assert.deepEqual(h.last('issue.get'), { number: 120 })
   await view.press({ text: '← Back to linked issues' })
@@ -401,12 +401,23 @@ test('several linked issues make a list, newest activity first, and none opens b
   await view.unmount()
 })
 
-test('one linked issue of another repo is a list of one, never opened here', async () => {
-  const h = host({ 'repo.links': links(['octo/sdk#45']) })
+test('an issue of another repo reads and writes in that repo: opens alone, comments, picks its labels, links its own #N', async () => {
+  const h = host({ 'repo.links': links(['octo/sdk#45']) }, () => issueDetail({ number: 45, url: 'https://github.com/octo/sdk/issues/45', body: 'Same as #44.' }))
   const view = await mount(panel, { host: h })
-  assert.equal(h.last('issue.get'), undefined)
-  assert.ok(view.find({ text: '1 linked issue' }))
-  assert.equal(view.findAll({ type: 'ListItem' }).length, 1)
+  // The only link opens by itself, whichever repo it is of.
+  assert.deepEqual(h.last('issue.get'), { number: 45, repo: 'octo/sdk' })
+  assert.equal(view.find({ text: /← Back/ }), null)
+  assert.ok(view.findAll({ type: 'Markdown' }).some((m) => /\[#44\]\(https:\/\/github\.com\/octo\/sdk\/issues\/44\)/.test(String(m.props.content))))
+  await view.type({ label: 'Comment' }, 'Same here.')
+  await view.press({ text: 'Comment' })
+  assert.deepEqual(h.last('issue.comment'), { number: 45, body: 'Same here.', repo: 'octo/sdk' })
+  await view.press({ label: 'Edit labels' })
+  assert.deepEqual(h.last('labels.list'), { repo: 'octo/sdk' })
+  await view.toggle({ label: 'bug' })
+  await view.press({ text: 'Apply' })
+  assert.deepEqual((h.last('issue.edit') as { repo?: string }).repo, 'octo/sdk')
+  await view.press({ label: 'Open on GitHub', type: 'IconButton' })
+  assert.deepEqual(h.callsOf('shell.openExternal').at(-1), { url: 'https://github.com/octo/sdk/issues/45' })
   await view.unmount()
 })
 
