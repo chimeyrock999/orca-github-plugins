@@ -1,6 +1,8 @@
 # gh Focus
 
-For GitHub repos: the issue and pull request of the workspace you're in, beside your code. Read, comment and review without leaving the editor for the Tasks page. Not affiliated with GitHub.
+For GitHub repos: the issue, pull request and Actions runs of the workspace you're in, beside your code. Read, comment, review and re-run without leaving the editor for the Tasks page. Not affiliated with GitHub.
+
+Small and focused on the work at hand: the everyday reading, answering and reviewing happens beside the code. The detail work (repo-wide lists, merge, reviewers, the files diff, Projects) stays on Orca's Tasks page and pull request page, and the panel hands off to them.
 
 A right-sidebar panel with the issues, pull requests and Actions runs of the focused workspace's repo. Every GitHub call goes through the `gh` CLI already logged in on the machine; the plugin stores no tokens. The panel (`src/panel.tsx`) asks with `plugin.request`, the plugin's own worker (`src/worker.ts`) answers with `orca.panels.handle` and runs `gh`; `src/protocol.ts` types both sides. Orca transpiles both files when they load, so there is no build step: save and the panel or worker reloads.
 
