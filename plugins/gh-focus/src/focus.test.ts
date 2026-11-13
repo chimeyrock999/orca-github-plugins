@@ -140,9 +140,17 @@ test('a stored pick is asked for with the matches, so the key can name their pro
 test('the pick key holds the branch, the name and the sorted distinct projects of the matches', () => {
   const context = { branch: 'refs/heads/main', displayName: 'main', terminals: [] }
   const appClone: WorkspaceEntry = { ...app, id: 'w-app2', path: '/code/app2' }
-  assert.equal(pickKey(context, [lib, app, appClone]), 'main\nmain\napp,lib')
+  assert.equal(pickKey(context, [lib, app, appClone]), 'main\nmain\n["app","lib"]')
   // Orca's project id is preferred over the repo name, which two repos may share.
-  assert.equal(pickKey(context, [{ ...app, projectId: 'p-1' }, { ...lib, projectId: 'p-2', project: 'app' }]), 'main\nmain\np-1,p-2')
+  assert.equal(pickKey(context, [{ ...app, projectId: 'p-1' }, { ...lib, projectId: 'p-2', project: 'app' }]), 'main\nmain\n["p-1","p-2"]')
   // A workspace without a project still counts, as an empty name.
-  assert.equal(pickKey(context, [app, { ...lib, project: null }]), 'main\nmain\n,app')
+  assert.equal(pickKey(context, [app, { ...lib, project: null }]), 'main\nmain\n["","app"]')
+})
+
+test('project names with commas cannot make two project sets share a key', () => {
+  const context = { branch: 'main', displayName: 'main', terminals: [] }
+  const one = pickKey(context, [{ ...app, project: 'a,b' }, { ...lib, project: 'c' }])
+  const two = pickKey(context, [{ ...app, project: 'a' }, { ...lib, project: 'b,c' }])
+  assert.notEqual(one, two)
+  assert.equal(one, 'main\nmain\n["a,b","c"]')
 })

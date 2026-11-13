@@ -48,14 +48,15 @@ export function matchesOf(context: FocusContext, workspaces: WorkspaceEntry[]): 
 
 /**
  * Where a pick for these matches is kept: `<branch>\n<name>\n<projects>`, the projects being the
- * sorted distinct project ids (or names, before host API 1.7) of the matches. When a clone of
+ * JSON array of the sorted distinct project ids (or names, before host API 1.7) of the matches, so
+ * names with commas stay apart. When a clone of
  * another repo joins or leaves the matches, the key changes and the person is asked again.
  * readContext does not name the focused workspace's project, so two clones of different repos
  * still share a pick while they are the same set of matches.
  */
 export function pickKey(context: FocusContext, matches: WorkspaceEntry[]): string {
   const projects = [...new Set(matches.map((w) => w.projectId ?? w.project ?? ''))].sort()
-  return `${stripRef(context.branch)}\n${context.displayName}\n${projects.join(',')}`
+  return `${stripRef(context.branch)}\n${context.displayName}\n${JSON.stringify(projects)}`
 }
 
 /** This machine is hostId null or 'local'; any other host's folders are out of reach of gh here. */

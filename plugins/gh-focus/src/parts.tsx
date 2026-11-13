@@ -8,6 +8,17 @@ function folderName(path: string): string {
   return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
 }
 
+type Candidate = NonNullable<PanelError['candidates']>[number]
+
+/** "<project> · <branch>", plus the folder name when another choice reads the same; the folder
+ *  name alone when Orca names no project. */
+function candidateTitle(c: Candidate, all: Candidate[]): string {
+  if (!c.project) return folderName(c.path)
+  const title = `${c.project} · ${c.branch}`
+  const clash = all.some((o) => o !== c && o.project === c.project && o.branch === c.branch)
+  return clash ? `${title} (${folderName(c.path)})` : title
+}
+
 export function Problem({
   error,
   onRetry,
@@ -34,7 +45,7 @@ export function Problem({
               <ListItem
                 key={c.id}
                 icon="folder"
-                title={c.project ? `${c.project} · ${c.branch}` : folderName(c.path)}
+                title={candidateTitle(c, error.candidates!)}
                 description={c.path}
                 onPress={() => onPick(c.path)}
               />

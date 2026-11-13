@@ -44,7 +44,8 @@ export type PanelError = {
   /** The workspace folder, once one was found. */
   path?: string
   /** The workspaces that fit the focused context equally well (`ambiguous_workspace`), with the
-   *  repo's name in Orca (null when Orca does not say) and the branch, both for the label. */
+   *  repo's name in Orca (null when Orca does not say) and the branch, both for the label;
+   *  choices that share both add their folder name. */
   candidates?: { id: string; name: string; path: string; project: string | null; branch: string }[]
   /** How long Orca asks the panel to wait (`host_rate_limited`). */
   retryAfterMs?: number

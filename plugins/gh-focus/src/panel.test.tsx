@@ -315,6 +315,30 @@ test('several workspaces match: pick one, it shows that repo, and Change workspa
   await view.unmount()
 })
 
+test('choices that share a project and branch add their folder name; the others do not', async () => {
+  const candidates = [
+    { id: 'w-app', name: 'main', path: '/code/app', project: 'app', branch: 'main' },
+    { id: 'w-app2', name: 'main', path: '/code/app-2/', project: 'app', branch: 'main' },
+    { id: 'w-lib', name: 'main', path: '/code/lib', project: 'lib', branch: 'main' },
+    { id: 'w-dev', name: 'main', path: '/code/app-dev', project: 'app', branch: 'dev' },
+    { id: 'w-bare', name: 'main', path: '/code/bare', project: null, branch: 'main' },
+    { id: 'w-bare2', name: 'main', path: '/code/bare2', project: null, branch: 'main' }
+  ]
+  const h = host({
+    'repo.get': () => ({ ok: false as const, error: { code: 'ambiguous_workspace' as const, message: '6 workspaces match.', candidates } })
+  })
+  const view = await mount(panel, { host: h })
+  assert.deepEqual(view.findAll({ type: 'ListItem' }).map((i) => [i.props?.title, i.props?.description]), [
+    ['app · main (app)', '/code/app'],
+    ['app · main (app-2)', '/code/app-2/'],
+    ['lib · main', '/code/lib'],
+    ['app · dev', '/code/app-dev'],
+    ['bare', '/code/bare'],
+    ['bare2', '/code/bare2']
+  ])
+  await view.unmount()
+})
+
 test('a failed first page shows no count placeholders', async () => {
   const view = await mount(panel, { host: host({ 'issues.list': () => failed('rate_limited', 'API rate limit exceeded.') }) })
   assert.equal(view.findAll({ type: 'Skeleton' }).length, 0)

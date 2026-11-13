@@ -18,7 +18,7 @@ test('repo.pick settles an ambiguous focus, keeps the pick in storage, and repo.
   const picked = await worker.request('repo.pick', { path: '/code/app' })
   assert.equal(picked.ok && picked.resolvedBy, 'picked')
   assert.equal(picked.ok && picked.nameWithOwner, 'octo/app')
-  assert.deepEqual(host.data().storage, { picks: { 'main\nmain\napp,lib': '/code/app' } })
+  assert.deepEqual(host.data().storage, { picks: { 'main\nmain\n["app","lib"]': '/code/app' } })
   // The same focus later still resolves by the pick.
   await worker.emit('workspace.changed', { context: { branch: 'main', displayName: 'main', terminals: [] } })
   assert.equal(((await worker.request('repo.get')) as { resolvedBy?: string }).resolvedBy, 'picked')
@@ -32,7 +32,7 @@ test('repo.pick settles an ambiguous focus, keeps the pick in storage, and repo.
 test('a pick stored by an earlier run is used, and a stale one is ignored', async () => {
   const focused = { branch: 'main', displayName: 'main', terminals: [] }
   const host = mockHost({
-    storage: { picks: { 'main\nmain\napp,lib': '/code/app' } },
+    storage: { picks: { 'main\nmain\n["app","lib"]': '/code/app' } },
     results: { 'workspace.readContext': focused, 'workspace.list': { workspaces, truncated: false } }
   })
   const worker = await mountWorker(repoWorker(), { host })
@@ -41,7 +41,7 @@ test('a pick stored by an earlier run is used, and a stale one is ignored', asyn
   await worker.deactivate()
 
   const stale = mockHost({
-    storage: { picks: { 'main\nmain\napp,lib': '/code/gone' } },
+    storage: { picks: { 'main\nmain\n["app","lib"]': '/code/gone' } },
     results: { 'workspace.readContext': focused, 'workspace.list': { workspaces, truncated: false } }
   })
   const again = await mountWorker(repoWorker(), { host: stale })
@@ -55,7 +55,7 @@ test('a clone of another repo joining the matches asks again, and the pick comes
   const other = { id: 'w-docs', kind: 'worktree', name: 'main', project: 'docs', path: '/code/docs', branch: 'main', hostId: null }
   let listed = workspaces
   const host = mockHost({
-    storage: { picks: { 'main\nmain\napp,lib': '/code/app' } },
+    storage: { picks: { 'main\nmain\n["app","lib"]': '/code/app' } },
     results: { 'workspace.readContext': focused, 'workspace.list': () => ({ workspaces: listed, truncated: false }) }
   })
   const worker = await mountWorker(repoWorker(), { host })
@@ -69,7 +69,7 @@ test('a clone of another repo joining the matches asks again, and the pick comes
   // A pick in the larger set is stored under its own key; the earlier one stays for the smaller set.
   const picked = await worker.request('repo.pick', { path: '/code/app' })
   assert.equal(picked.ok && picked.resolvedBy, 'picked')
-  assert.deepEqual(host.data().storage, { picks: { 'main\nmain\napp,lib': '/code/app', 'main\nmain\napp,docs,lib': '/code/app' } })
+  assert.deepEqual(host.data().storage, { picks: { 'main\nmain\n["app","lib"]': '/code/app', 'main\nmain\n["app","docs","lib"]': '/code/app' } })
 
   listed = workspaces
   await worker.emit('workspace.changed', { context: focused })
@@ -113,7 +113,7 @@ test('a pick made while old keys are being dropped is kept', async () => {
   const worker = await mountWorker(repoWorker(), { host })
   const [, picked] = await Promise.all([worker.request('repo.get'), worker.request('repo.pick', { path: '/code/app' })])
   assert.equal(picked.ok && picked.resolvedBy, 'picked')
-  assert.deepEqual(stored, { picks: { 'main\nmain\napp,lib': '/code/app' } })
+  assert.deepEqual(stored, { picks: { 'main\nmain\n["app","lib"]': '/code/app' } })
   await worker.deactivate()
 })
 
@@ -159,7 +159,7 @@ test("the pick key uses Orca's project id over the repo name when workspace.list
   const worker = await mountWorker(withIds, { host })
   const picked = await worker.request('repo.pick', { path: '/code/app' })
   assert.equal(picked.ok && picked.resolvedBy, 'picked')
-  assert.deepEqual(host.data().storage, { picks: { 'main\nmain\nid-app,id-lib': '/code/app' } })
+  assert.deepEqual(host.data().storage, { picks: { 'main\nmain\n["id-app","id-lib"]': '/code/app' } })
   await worker.deactivate()
 })
 
@@ -181,6 +181,6 @@ test('a failed write back of dropped old keys still resolves; a failed pick writ
   assert.deepEqual(picked, { ok: false, error: { code: 'too_large', message: 'storage full' } })
   // The refused write is the pick under the new key.
   const writes = host.callsOf('storage.set') as { key: string; value: unknown }[]
-  assert.deepEqual(writes.at(-1), { key: 'picks', value: { 'main\nmain\napp,lib': '/code/app' } })
+  assert.deepEqual(writes.at(-1), { key: 'picks', value: { 'main\nmain\n["app","lib"]': '/code/app' } })
   await worker.deactivate()
 })
