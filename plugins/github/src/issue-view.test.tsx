@@ -514,3 +514,53 @@ test('a write that GitHub refused is not called unsure', async () => {
   assert.ok(!view.summary().some((l) => /It may have gone through/.test(l)))
   await view.unmount()
 })
+
+test('a timed-out delete may have landed: the issue is loaded again to show what GitHub has', async () => {
+  let gone = false
+  const h = host(
+    {
+      'comment.delete': () => {
+        gone = true
+        throw hostError('timeout', 'plugin.request timed out')
+      }
+    },
+    () => issueDetail(gone ? { head: issueDetail().head.filter((i) => i.id !== 'IC_2') } : {})
+  )
+  const view = await openIssue120(h)
+  await view.press({ label: 'Delete comment' })
+  await view.press({ type: 'Button', text: 'Delete' })
+  assert.ok(view.summary().some((l) => /It may have gone through/.test(l)))
+  assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, 2)
+  assert.equal(view.findAll({ label: 'Delete comment' }).length, 0)
+  await view.unmount()
+})
+
+test('a timed-out reaction is not flipped back; the issue is loaded again', async () => {
+  const h = host({
+    'reaction.set': () => {
+      throw hostError('timeout', 'plugin.request timed out')
+    }
+  })
+  const view = await openIssue120(h)
+  await view.press({ type: 'Button', text: '👍 2' })
+  assert.ok(view.summary().some((l) => /It may have gone through/.test(l)))
+  assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, 2)
+  await view.unmount()
+})
+
+test('each workspace shows again what it showed last in this panel run', async () => {
+  const other = { ...repoOk, path: '/code/app-other' }
+  const h = host({ 'repo.links': { ok: true, issue: null, pull: null } })
+  const view = await openIssue120(h)
+  // Another workspace starts on its own (here the list), and coming back shows issue 120 again.
+  await view.post('repo.changed', other)
+  assert.ok(view.find({ type: 'ListItem', text: /Login page loops/ }))
+  await view.post('repo.changed', repoOk)
+  assert.ok(view.find({ type: 'Text', text: 'Export CSV drops rows past 10k' }))
+  // After Back, coming back shows the list, not the link or the issue.
+  await view.press({ text: '← Back to issues' })
+  await view.post('repo.changed', other)
+  await view.post('repo.changed', repoOk)
+  assert.equal(view.find({ text: '← Back to issues' }), null)
+  await view.unmount()
+})

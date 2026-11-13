@@ -50,9 +50,19 @@ let views = 0
 /** Where an answer belongs: what is open, in which workspace. A repo or folder change makes an
  *  answer stale as surely as opening something else does. */
 function here(): string {
-  const r = read(repo)
-  return `${views}\n${r?.ok ? `${r.nameWithOwner}\n${r.path}` : ''}`
+  return `${views}\n${workspace()}`
 }
+
+/** The focused workspace: its repo and folder. */
+function workspace(): string {
+  const r = read(repo)
+  return r?.ok ? `${r.nameWithOwner}\n${r.path}` : ''
+}
+
+/** What each workspace showed last in this panel run: an issue number, or null for the list. Coming
+ *  back to a workspace shows it again; a new panel run starts from Orca's link. */
+const seen = atom<Record<string, number | null>>({})
+const remember = (number: number | null) => update(seen, (m) => ({ ...m, [workspace()]: number }))
 
 /** Writes wait longer than reads: gh issue create makes several API calls. The worker gives gh 60 s. */
 const WRITE = { timeoutMs: 90_000 }
@@ -83,6 +93,7 @@ export async function loadIssue(): Promise<void> {
 
 /** Opens an issue by number, from the list, a mention or a new issue. */
 export function openIssue(number: number): Promise<void> {
+  remember(number)
   views++
   update(lists.issues, (s) => ({ ...s, open: String(number) }))
   set(issue, fresh(number))
@@ -92,6 +103,7 @@ export function openIssue(number: number): Promise<void> {
 /** Back to the list, asking for it again when a write changed an issue. */
 export function backToIssues(): Promise<void> | void {
   views++
+  remember(null)
   back('issues')
   if (!listStale) return
   listStale = false
@@ -141,10 +153,11 @@ async function write(name: string, request: () => Promise<Answer<object>>, done:
   if (!answer.ok) {
     const error = unsure(answer.error)
     update(issue, (s) => ({ ...s, busy: null, error }))
-    // It may have gone through: show what GitHub has now, keeping what was typed.
+    // It may have gone through: show what GitHub has now, keeping what was typed. In-place
+    // writes reload too; that drops pages from Load more, which is fine for a rare failure.
     if (error.code === 'unsure') {
       listStale = true
-      if (reload) await loadIssue()
+      await loadIssue()
     }
     return false
   }
@@ -331,8 +344,11 @@ export async function react(subjectId: string, content: Reaction): Promise<void>
   update(issue, (s) => ({ ...s, reacting: null, error: null }))
   const answer = await plugin.request('reaction.set', { subjectId, content, on }, WRITE).catch(requestFailed)
   if (view !== here() || answer.ok) return
+  const error = unsure(answer.error)
+  update(issue, (s) => ({ ...s, error }))
+  // A reaction with no answer may have landed: show GitHub's count rather than guess.
+  if (error.code === 'unsure') return loadIssue()
   setReactions(subjectId, (g) => flip(g, content, !on, viewer))
-  update(issue, (s) => ({ ...s, error: answer.error }))
 }
 
 // The new issue form.
@@ -340,24 +356,26 @@ export async function react(subjectId: string, content: Reaction): Promise<void>
 /** The workspace (repo and folder) the Issues tab last started in, for this panel run. */
 const startedIn = atom<string | null>(null)
 
-/** The first time the Issues tab shows for a workspace: the issue Orca links to the workspace (one
- *  made from an issue), else the list. Once per workspace, so Back and tab switches stay where the
- *  person went. */
+/** When the Issues tab shows for a workspace it is not showing yet: what the workspace showed last
+ *  in this panel run, else the issue Orca links to it (one made from an issue), else the list. */
 export async function startIssues(): Promise<void> {
   const r = read(repo)
   if (!r?.ok || read(tab) !== 'issues') return
-  const workspace = `${r.nameWithOwner}\n${r.path}`
-  if (read(startedIn) === workspace) return
-  set(startedIn, workspace)
+  const here = workspace()
+  if (read(startedIn) === here) return
+  set(startedIn, here)
   if (read(lists.issues).open) return
+  const last = read(seen)
+  if (here in last) return last[here] === null ? undefined : openIssue(last[here]!)
   const links = await plugin.request('repo.links').catch(() => null)
   // The person may have opened something, or moved to another workspace, meanwhile.
-  if (read(startedIn) !== workspace || read(lists.issues).open || read(tab) !== 'issues') return
+  if (read(startedIn) !== here || read(lists.issues).open || read(tab) !== 'issues') return
   if (links?.ok && links.issue) return openIssue(links.issue)
 }
 
 export function startNewIssue(): void {
   views++
+  remember(null)
   set(newIssue, blankIssue())
   update(lists.issues, (s) => ({ ...s, open: 'new' }))
 }
