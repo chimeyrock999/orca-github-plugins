@@ -21,7 +21,7 @@
       {
         "id": "gh-focus",
         "title": "gh Focus",
-        "icon": "branch",
+        "icon": "activity",
         "entry": "src/panel.tsx",
         "ui": "components"
       }

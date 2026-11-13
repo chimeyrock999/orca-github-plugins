@@ -22,8 +22,8 @@ export function HandOffProblem() {
  *  top of a tab it reads as the way back to them (`back`). */
 export function TasksButton({ kind, back = false }: { kind: LinkedKind; back?: boolean }) {
   return (
-    <Button size="sm" variant="outline" icon="layers" tooltip={`Orca's Tasks page: every ${NOUN[kind].one} of the repo`} onPress={() => handOff('tasks')}>
-      {back ? '← Tasks' : 'Tasks'}
+    <Button size="sm" variant="outline" icon={back ? undefined : 'layers'} tooltip={`Orca's Tasks page: every ${NOUN[kind].one} of the repo`} onPress={() => handOff('tasks')}>
+      {back ? '← Back to Orca Tasks' : 'Tasks'}
     </Button>
   )
 }
