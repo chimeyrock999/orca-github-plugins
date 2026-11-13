@@ -114,7 +114,13 @@ The icon (`images/icon.png`, `icon` in the manifest) is a flat 256×256 PNG: a g
 frame, white on graphite, with nothing of GitHub's or Orca's marks. The catalog wants it square,
 PNG or WEBP, static, at least 128×128 and at most 256 KB; `tests/manifest.test.ts` checks it.
 
-Listing images (`images/issue.png`, also the cover, and `images/pull.png`) are screenshots of Orca
+The cover (`images/cover.png`) and the README's animated cover (`docs/images/cover.webp`) are drawn
+from `docs/cover/cover.html`, which places crops of the two screenshots (`docs/cover/issue.jpg`,
+`pull.jpg`, the panel's 504 px on the right of each) beside the plugin's words. After retaking the
+screenshots, crop them again and run `CHROME=<headless Chromium> docs/cover/render.sh` (needs
+`img2webp`); it writes both.
+
+The screenshots (`images/issue.png` and `images/pull.png`) are screenshots of Orca
 itself, in the dark theme, with the left sidebar collapsed. Capture the window without its shadow
 (`screencapture -o -w <file>.png`), crop it to 16:10 from the left edge and scale it to 1600×1000,
 then blur everything private: the folder path line under the repository name (it holds the home
