@@ -23,14 +23,17 @@ test('linkedRefs: issues and pull requests of the workspace, by kind; another re
   const links = {
     project: 'github:Octo/App',
     items: [
-      { type: 'pull' as const, number: 131, repo: 'octo/app', title: 'fix: export', url: 'https://github.com/octo/app/pull/131' },
-      { type: 'issue' as const, number: 120, repo: null, title: null, url: null },
-      { type: 'issue' as const, number: 45, repo: 'octo/sdk', title: 'Stream writer', url: 'https://github.com/octo/sdk/issues/45' },
+      { type: 'pull' as const, number: 131, repo: 'octo/app', title: 'fix: export', url: 'https://github.com/octo/app/pull/131', host: 'github.com' },
+      { type: 'issue' as const, number: 120, repo: null, title: null, url: null, host: null },
+      { type: 'issue' as const, number: 45, repo: 'octo/sdk', title: 'Stream writer', url: 'https://github.com/octo/sdk/issues/45', host: 'github.com' },
       // Linked twice (by URL and by number): once.
-      { type: 'issue' as const, number: 120, repo: 'OCTO/app', title: null, url: null }
+      { type: 'issue' as const, number: 120, repo: 'OCTO/app', title: null, url: null, host: null },
+      // GitHub Enterprise: acme/app there is not github.com's acme/app.
+      { type: 'issue' as const, number: 3, repo: 'acme/app', title: 'GHE', url: 'https://ghe.example.com/acme/app/issues/3', host: 'ghe.example.com' }
     ]
   }
-  assert.deepEqual(linkedRefs(links, repo), {
+  const focused = { ...repo, url: 'https://github.com/octo/app' }
+  assert.deepEqual(linkedRefs(links, focused), {
     issues: [
       { number: 120, repo: null, title: null, url: null },
       { number: 45, repo: 'octo/sdk', title: 'Stream writer', url: 'https://github.com/octo/sdk/issues/45' }

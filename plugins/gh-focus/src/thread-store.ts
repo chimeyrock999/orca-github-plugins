@@ -13,7 +13,8 @@ export type ThreadKind = LinkedKind
  *  change) it was found for; `refs` null while Orca is asked; `rows` GitHub's answer for them, asked
  *  only when there is a list to show. */
 export type LinkedState = { where: string; refs: LinkedRef[] | null; rows: Answer<{ rows: LinkedRow[] }> | null }
-export type Picking = { kind: 'labels' | 'assignees'; selected: string[]; query: string; login: string }
+/** `of`: the repo whose labels or logins are offered, null for the focused one. */
+export type Picking = { kind: 'labels' | 'assignees'; selected: string[]; query: string; login: string; of: string | null }
 
 export type ThreadState<D extends ThreadDetail> = {
   number: number
@@ -106,7 +107,7 @@ function flip(groups: ReactionGroup[], content: Reaction, on: boolean, viewer: s
 // labels and assignees are offered.
 export function startPicking(kind: Picking['kind'], selected: string[], of: string | null = null): Picking {
   void loadChoices(kind === 'labels' ? 'labels' : 'assignees', of)
-  return { kind, selected: [...selected], query: '', login: '' }
+  return { kind, selected: [...selected], query: '', login: '', of }
 }
 export const togglePicked = (p: Picking, name: string, on: boolean): Picking => ({
   ...p,

@@ -346,7 +346,7 @@ test('pull request requests run gh pr in the focused repo, and answer the repo e
 })
 
 const ref = (number: number, repo: string | null = null) => ({ number, repo, title: null, url: null })
-const item = (type: 'issue' | 'pull', number: number, repo: string | null = null) => ({ type, number, repo, title: null, url: null })
+const item = (type: 'issue' | 'pull', number: number, repo: string | null = null) => ({ type, number, repo, title: null, url: null, host: null })
 
 test('repo.links answers what Orca links to the workspace, only for its own repo', async () => {
   let project: string | null = 'github:Octo/App'
@@ -595,8 +595,10 @@ test('an item of another repo is read in that repo; a name that is not a repo is
   assert.deepEqual(calls[1], ['label', 'list', '--json', 'name', '--limit', '500'])
   await worker.request('labels.list', { repo: 'octo/sdk' })
   assert.deepEqual(calls[2].slice(-2), ['-R', 'octo/sdk'])
-  const odd = await worker.request('issue.get', { number: 1, repo: 'octo/sdk; rm -rf' })
-  assert.equal(!odd.ok && odd.error.code, 'gh_failed')
+  for (const bad of ['octo/sdk; rm -rf', '../..', 'octo/..', 'octo/.', 'oc.to/sdk', 'oc_to/sdk', 'octo']) {
+    const odd = await worker.request('issue.get', { number: 1, repo: bad })
+    assert.equal(!odd.ok && odd.error.code, 'gh_failed', bad)
+  }
   assert.equal(calls.length, 3)
   await worker.deactivate()
 })

@@ -30,7 +30,7 @@ import { handOff } from './link-store'
 import { pulls, workspacePull } from './pull-store'
 import { REACTIONS, type ReactionGroup, type ThreadDetail, type TimelineComment, type TimelineItem, type TimelineMention, type TimelineReview } from './protocol'
 import { hasImage, linkRefs } from './refs'
-import { choices, repo, selectTab } from './store'
+import { choicesOf, repo, selectTab } from './store'
 import { hiddenCount, type AnyThread, type Picking, type PickerOps, type ThreadState } from './thread-store'
 
 /** The thread's repo as `owner/name`: the focused one, or the other repo it is of. */
@@ -384,8 +384,8 @@ export function MetaLine({ label, empty, onEdit, children }: { label: string; em
 
 /** Checkboxes over the repo's labels or assignable logins, with a filter; Apply sends the change. */
 export function PickerBox({ ops, picking, busy }: { ops: PickerOps; picking: Picking; busy: boolean }) {
-  const c = read(choices)
-  const known = picking.kind === 'labels' ? c.labels : c.assignees
+  // Only the picking repo's: another repo's open picker keeps its own.
+  const known = choicesOf(picking.kind, picking.of)
   const query = picking.query.trim().toLowerCase()
   // What is picked shows even when the repo's list lacks it, such as a login typed in.
   const all = known === null ? picking.selected : [...picking.selected.filter((x) => !known.includes(x)), ...known]

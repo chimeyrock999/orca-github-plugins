@@ -4,18 +4,20 @@ import { GhError, type Gh } from './gh'
 import type { LinkedItem, WorkspaceLinks } from './exec'
 import { issueState, pullState, type RepoRef } from './lists'
 import { linkCommand } from './look'
-import { LINKED_LIMIT, type LinkedKind, type LinkedRef, type LinkedRow } from './protocol'
+import { isRepoName, LINKED_LIMIT, type LinkedKind, type LinkedRef, type LinkedRow } from './protocol'
 
 /** The links Orca keeps for a workspace, by kind, when the workspace is of the focused repo: an
- *  item of the focused repo has `repo` null, one of another repo its `owner/name`. One item each,
- *  in Orca's order. */
-export function linkedRefs(links: WorkspaceLinks | null, repo: RepoRef): { issues: LinkedRef[]; pulls: LinkedRef[] } {
+ *  item of the focused repo has `repo` null, one of another repo its `owner/name`. An item on another
+ *  host (a GitHub Enterprise one while the repo is on github.com, say) is left out: its `owner/name`
+ *  would name another repo here. One item each, in Orca's order. */
+export function linkedRefs(links: WorkspaceLinks | null, repo: RepoRef & { url?: string }): { issues: LinkedRef[]; pulls: LinkedRef[] } {
+  const host = repo.url ? new URL(repo.url).host.toLowerCase() : null
   const ours = (name: string | null) => !name || name.toLowerCase() === repo.nameWithOwner.toLowerCase()
   if (!links?.project?.startsWith('github:') || !ours(links.project.slice('github:'.length))) return { issues: [], pulls: [] }
   const of = (type: LinkedItem['type']): LinkedRef[] => {
     const seen = new Set<string>()
     return links.items.flatMap((item) => {
-      if (item.type !== type) return []
+      if (item.type !== type || (item.host && host && item.host !== host)) return []
       const ref = { number: item.number, repo: ours(item.repo) ? null : item.repo, title: item.title, url: item.url }
       const key = `${ref.repo?.toLowerCase() ?? ''}#${ref.number}`
       if (seen.has(key)) return []
@@ -25,9 +27,6 @@ export function linkedRefs(links: WorkspaceLinks | null, repo: RepoRef): { issue
   }
   return { issues: of('issue'), pulls: of('pull') }
 }
-
-// Owner and repo names go into the query text, so only GitHub's own name characters pass.
-const NAME = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 
 const ITEM_FIELDS = `__typename
   ... on Issue { number title url state stateReason updatedAt }
@@ -63,7 +62,8 @@ export async function linkedRows(gh: Gh, repo: RepoRef, kind: LinkedKind, items:
   const numbers: number[][] = []
   for (const item of asked) {
     const name = item.repo ?? repo.nameWithOwner
-    if (!NAME.test(name) || !Number.isInteger(item.number) || item.number < 1) continue
+    // Owner and repo names go into the query text, so only GitHub's own names pass.
+    if (!isRepoName(name) || !Number.isInteger(item.number) || item.number < 1) continue
     let r = repos.findIndex((x) => x.toLowerCase() === name.toLowerCase())
     if (r < 0) r = repos.push(name) - 1
     numbers[r] = [...(numbers[r] ?? []), item.number]

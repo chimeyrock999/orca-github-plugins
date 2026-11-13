@@ -617,3 +617,26 @@ test('Refresh on one tab makes the other ask Orca again when it shows', async ()
   assert.deepEqual(h.last('pull.get'), { number: 131 })
   await view.unmount()
 })
+
+test("a picker on another repo's issue keeps that repo's labels, after Refresh and beside a picker of this repo", async () => {
+  const labelsOf = ({ repo }: { repo?: string }) => ({ ok: true, names: repo === 'octo/sdk' ? ['sdk-only'] : ['app-only'] })
+  const h = host(
+    { 'repo.links': links(['octo/sdk#45'], [131]), 'labels.list': labelsOf, 'pull.get': () => ({ ok: true, pull: pullDetail() }) },
+    () => issueDetail({ number: 45, url: 'https://github.com/octo/sdk/issues/45', labels: [] })
+  )
+  const view = await mount(panel, { host: h })
+  await view.press({ label: 'Edit labels' })
+  assert.ok(view.find({ label: 'sdk-only', type: 'Checkbox' }))
+  await view.press({ label: 'Refresh' })
+  assert.deepEqual(h.last('labels.list'), { repo: 'octo/sdk' })
+  assert.ok(view.find({ label: 'sdk-only', type: 'Checkbox' }))
+  assert.equal(view.find({ label: 'app-only', type: 'Checkbox' }), null)
+  // A picker on this repo's pull request asks for this repo's; the issue's picker keeps its own.
+  await view.select({ type: 'Tabs' }, 'pulls')
+  await view.press({ label: 'Edit labels' })
+  assert.ok(view.find({ label: 'app-only', type: 'Checkbox' }))
+  await view.select({ type: 'Tabs' }, 'issues')
+  assert.ok(view.find({ label: 'sdk-only', type: 'Checkbox' }))
+  assert.equal(view.find({ label: 'app-only', type: 'Checkbox' }), null)
+  await view.unmount()
+})

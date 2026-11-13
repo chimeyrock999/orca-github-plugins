@@ -79,6 +79,14 @@ export type PullState = 'open' | 'draft' | 'merged' | 'closed'
  *  neutral or stale. Runs, jobs and steps share it. */
 export type RunState = 'success' | 'failure' | 'running' | 'queued' | 'waiting' | 'cancelled' | 'skipped'
 
+/** Whether `name` is a GitHub `owner/name`: an owner of letters, digits and dashes, and a repo name
+ *  of letters, digits, `.`, `_` and `-` that is not `.` or `..`. Names go into gh arguments, API paths
+ *  and query text, so the worker and the link parser take nothing else. */
+export function isRepoName(name: string): boolean {
+  const m = /^([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+)$/.exec(name)
+  return !!m && m[2] !== '.' && m[2] !== '..'
+}
+
 /** The most linked items the panel asks GitHub about in one call; the list says when there are more. */
 export const LINKED_LIMIT = 50
 

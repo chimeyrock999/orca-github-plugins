@@ -1,6 +1,7 @@
 // Child processes: the host API cannot run one, but a trusted-worker is plain Node.
 import { execFile } from 'node:child_process'
 import { delimiter } from 'node:path'
+import { isRepoName } from './protocol'
 
 export type RunResult = { code: number; stdout: string; stderr: string }
 /** Resolves with the exit code; rejects only when the command did not run (ENOENT, timeout, abort). */
@@ -68,12 +69,13 @@ export async function terminalPath(terminalId: string, runner: Run = run): Promi
 }
 
 /** A GitHub issue or pull request Orca links to a workspace. `repo` is the `owner/name` its URL (or
- *  task source) names; null when Orca says neither, which means the workspace's own repo. */
-export type LinkedItem = { type: 'issue' | 'pull'; number: number; repo: string | null; title: string | null; url: string | null }
+ *  task source) names; null when Orca says neither, which means the workspace's own repo. `host` is
+ *  its URL's host (GitHub Enterprise has its own), null without a URL. */
+export type LinkedItem = { type: 'issue' | 'pull'; number: number; repo: string | null; title: string | null; url: string | null; host: string | null }
 /** What Orca links to a workspace, and its project (`github:o/r`). */
 export type WorkspaceLinks = { project: string | null; items: LinkedItem[] }
 
-const ITEM_URL = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/(?:issues|pull)\/\d+(?:[/?#]|$)/
+const ITEM_URL = /^https?:\/\/([^/]+)\/([^/]+\/[^/]+)\/(?:issues|pull)\/\d+(?:[/?#]|$)/
 
 const positive = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null)
 const text = (v: unknown) => (typeof v === 'string' && v ? v : null)
@@ -85,8 +87,11 @@ function linkedItem(item: unknown): LinkedItem | null {
   if (!i || i.provider !== 'github' || (i.type !== 'issue' && i.type !== 'pr') || !number) return null
   const url = text(i.url)
   const source = text(i.taskSourceContext?.projectId)
-  const repo = url?.match(ITEM_URL)?.[1] ?? (source?.startsWith('github:') ? source.slice('github:'.length) : null)
-  return { type: i.type === 'pr' ? 'pull' : 'issue', number, repo, title: text(i.title), url }
+  const parts = url?.match(ITEM_URL)
+  const repo = parts?.[2] ?? (source?.startsWith('github:') ? source.slice('github:'.length) : null)
+  // A name that is not owner/name (`..`, say) never becomes a repo the worker reads or writes.
+  if (repo !== null && !isRepoName(repo)) return null
+  return { type: i.type === 'pr' ? 'pull' : 'issue', number, repo, title: text(i.title), url, host: parts?.[1].toLowerCase() ?? null }
 }
 
 /** The links in `orca worktree show --json`: every linked item, then, as Orca's own
@@ -103,7 +108,7 @@ export function parseWorktreeShow(stdout: string): WorkspaceLinks | null {
     for (const [type, v] of [['issue', w.linkedIssue], ['pull', w.linkedPR]] as const) {
       const number = positive(v)
       const listed = items.some((i) => i.type === type && i.number === number && (!i.repo || i.repo.toLowerCase() === own))
-      if (number && !listed) items.push({ type, number, repo: null, title: null, url: null })
+      if (number && !listed) items.push({ type, number, repo: null, title: null, url: null, host: null })
     }
     return { project, items }
   } catch {

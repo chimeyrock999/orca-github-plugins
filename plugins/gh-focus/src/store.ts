@@ -47,10 +47,16 @@ function fresh(): ListState {
 export const repo = atom<RepoAnswer | null>(null)
 export const tab = atom<Kind>('tab', 'issues', { persist: 'plugin' })
 export const lists: Record<Kind, Atom<ListState>> = { issues: atom(fresh()), pulls: atom(fresh()), runs: atom(fresh()) }
-/** `of`: the repo the labels and assignees are of, `owner/name` when an item of another repo asked
- *  for them, else null (workflows are always the focused repo's). */
-export type Choices = { labels: string[] | null; workflows: { id: number; name: string }[] | null; assignees: string[] | null; of: string | null }
-const noChoices = (): Choices => ({ labels: null, workflows: null, assignees: null, of: null })
+/** Labels and assignees by repo (`choiceKey`): the focused one's, and those of each other repo a
+ *  linked item asked for, so a picker never shows another repo's. Workflows are the focused repo's. */
+export type Choices = { labels: Record<string, string[]>; workflows: { id: number; name: string }[] | null; assignees: Record<string, string[]> }
+const noChoices = (): Choices => ({ labels: {}, workflows: null, assignees: {} })
+/** Where a repo's labels and assignees are kept: `''` for the focused repo, else its `owner/name`. */
+export const choiceKey = (of: string | null): string => of?.toLowerCase() ?? ''
+/** The labels or assignees of `of` (null: the focused repo), or null until they are asked for. */
+export function choicesOf(name: 'labels' | 'assignees', of: string | null): string[] | null {
+  return read(choices)[name][choiceKey(of)] ?? null
+}
 /** Labels, workflows and assignable logins of the repo, asked for the first time a filter or picker
  *  needs them. */
 export const choices = atom<Choices>(noChoices())
@@ -121,26 +127,25 @@ export const clearFilters = (kind: Kind) => restart(kind, { filters: {}, drafts:
 /** How many filters hold a value. */
 export const filterCount = (s: ListState) => Object.values(s.filters).filter(Boolean).length
 
-export type ChoiceName = Exclude<keyof Choices, 'of'>
+export type ChoiceName = keyof Choices
 
 /** Asks for one kind of choice unless it is already there; a failure leaves none to pick. Labels and
- *  assignees of another repo (`of`) replace the ones held. */
+ *  assignees are of `of` (null: the focused repo). */
 export function loadChoices(name: ChoiceName, of: string | null = null): Promise<void> | void {
-  if (name !== 'workflows' && read(choices).of !== of) {
-    choicesFor++
-    update(choices, (c) => ({ ...c, labels: null, assignees: null, of }))
-  }
-  if (read(choices)[name] !== null) return
   const mine = choicesFor
-  const keep = (value: Choices[ChoiceName]): void => {
-    if (mine === choicesFor) update(choices, (c) => ({ ...c, [name]: value }))
+  if (name === 'workflows') {
+    if (read(choices).workflows !== null) return
+    const keep = (workflows: Choices['workflows']) => (mine === choicesFor ? update(choices, (c) => ({ ...c, workflows })) : undefined)
+    return plugin.request('workflows.list').then((a) => keep(a.ok ? a.workflows : []), () => keep([]))
   }
+  if (choicesOf(name, of) !== null) return
+  const key = choiceKey(of)
+  const keep = (values: string[]) => (mine === choicesFor ? update(choices, (c) => ({ ...c, [name]: { ...c[name], [key]: values } })) : undefined)
+  const at = of ? { repo: of } : {}
   const asked =
-    name === 'workflows'
-      ? plugin.request('workflows.list').then((a) => keep(a.ok ? a.workflows : []))
-      : name === 'labels'
-        ? plugin.request('labels.list', of ? { repo: of } : {}).then((a) => keep(a.ok ? a.names : []))
-        : plugin.request('assignees.list', of ? { repo: of } : {}).then((a) => keep(a.ok ? a.logins : []))
+    name === 'labels'
+      ? plugin.request('labels.list', at).then((a) => keep(a.ok ? a.names : []))
+      : plugin.request('assignees.list', at).then((a) => keep(a.ok ? a.logins : []))
   return asked.catch(() => keep([]))
 }
 

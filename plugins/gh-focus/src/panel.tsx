@@ -62,7 +62,7 @@ async function refreshAll(): Promise<void> {
   await thenStart(refresh(), true)
   // Refresh drops the label and assignee choices; an open picker asks for its own again.
   const picking = read(issue).picking ?? read(pull).picking
-  if (picking) void loadChoices(picking.kind)
+  if (picking) void loadChoices(picking.kind, picking.of)
   if (read(tab) === 'issues' && was.issues && shown('issues')) await issues.load()
   if (read(tab) === 'pulls' && was.pulls && shown('pulls')) await pulls.load()
   const run = read(lists.runs).open

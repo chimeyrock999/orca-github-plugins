@@ -19,7 +19,7 @@ import {
 } from './issues'
 import { agentName, freeAgent, linkedRefs, linkedRows, linkPrompt, type AgentRow } from './linked'
 import { listLabels, listRuns, listWorkflows, type RepoRef } from './lists'
-import type { Answer, LinkedKind, LinkedRef, OrcaView } from './protocol'
+import { isRepoName, type Answer, type LinkedKind, type LinkedRef, type OrcaView } from './protocol'
 import { branchPull, commentOnPull, editPull, getPull, pullTimeline, reviewPull } from './pulls'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './repo'
 import { cancelRun, dispatchWorkflow, getRun, rerunRun, reviewDeployments, runLogs, watchRun, workflowForm, type WatchDeps } from './runs'
@@ -46,7 +46,7 @@ const defaultDeps: WorkerDeps = {
 /** What Orca links to the focused workspace, of its repo or another. Orca links a pull request when
  *  the workspace was made from it, it was made in Orca or someone linked it, so with none of this
  *  repo and `branch` asked, the branch's pull request (one opened with gh or on GitHub) comes first. */
-async function repoLinks(deps: WorkerDeps, repo: RepoRef, branch: boolean, signal?: AbortSignal): Promise<{ issues: LinkedRef[]; pulls: LinkedRef[] }> {
+async function repoLinks(deps: WorkerDeps, repo: RepoRef & { url?: string }, branch: boolean, signal?: AbortSignal): Promise<{ issues: LinkedRef[]; pulls: LinkedRef[] }> {
   const linked = linkedRefs((await deps.links?.(repo.path)) ?? null, repo)
   if (!branch || linked.pulls.some((p) => p.repo === null)) return linked
   const own = await branchPull(deps.gh, repo, signal)
@@ -108,8 +108,6 @@ async function showView(orca: OrcaWorkerApi, view: OrcaView): Promise<Answer<Rec
   }
 }
 
-const REPO_NAME = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
-
 /** What `fetch` answers for the focused repo, or for `other` (`owner/name`, an item Orca links from
  *  another repo; gh still runs in the workspace folder), or why there is none. */
 async function inRepo<T extends object>(
@@ -120,7 +118,7 @@ async function inRepo<T extends object>(
   const repo = await tracker.get()
   if (!repo.ok) return repo
   const ours = !other || other.toLowerCase() === repo.nameWithOwner.toLowerCase()
-  if (!ours && !REPO_NAME.test(other)) return { ok: false, error: { code: 'gh_failed', message: `${other} is not a repo name.` } }
+  if (!ours && !isRepoName(other)) return { ok: false, error: { code: 'gh_failed', message: `${other} is not a repo name.` } }
   try {
     return { ok: true, ...(await fetch(ours ? repo : { nameWithOwner: other, path: repo.path, other: true })) }
   } catch (error) {
