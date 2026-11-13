@@ -103,3 +103,15 @@ test('toFailure turns a GhError into a failed answer and rethrows anything else'
   assert.deepEqual(toFailure(new GhError('not_found', 'gone')), { ok: false, error: { code: 'not_found', message: 'gone' } })
   assert.throws(() => toFailure(new TypeError('bug')), /bug/)
 })
+
+test('partial: a GraphQL answer that only misses things or is refused some keeps its data; anything else still fails', async () => {
+  const missing = JSON.stringify({ data: { r0: { n1: { number: 1 }, n9: null } }, errors: [{ type: 'NOT_FOUND', path: ['r0', 'n9'], message: 'Could not resolve' }] })
+  assert.deepEqual(await runGh(['api', 'graphql'], { json: true, partial: true }, fake({ code: 1, stdout: missing, stderr: 'Could not resolve' })), JSON.parse(missing))
+  // Without partial, the same answer is not_found.
+  assert.equal((await failed(runGh(['api', 'graphql'], { json: true }, fake({ code: 1, stdout: missing, stderr: 'Could not resolve to an issue' })))).code, 'not_found')
+  const saml = JSON.stringify({ data: { r0: null }, errors: [{ type: 'FORBIDDEN', message: 'SAML enforcement' }] })
+  assert.deepEqual(await runGh(['api', 'graphql'], { json: true, partial: true }, fake({ code: 1, stdout: saml, stderr: 'SAML' })), JSON.parse(saml))
+  const odd = JSON.stringify({ data: { r0: null }, errors: [{ type: 'INTERNAL', message: 'no' }] })
+  assert.equal((await failed(runGh(['api', 'graphql'], { json: true, partial: true }, fake({ code: 1, stdout: odd, stderr: 'no' })))).code, 'gh_failed')
+  assert.equal((await failed(runGh(['api', 'graphql'], { json: true, partial: true }, fake({ code: 4, stdout: '', stderr: 'gh auth login' })))).code, 'gh_logged_out')
+})

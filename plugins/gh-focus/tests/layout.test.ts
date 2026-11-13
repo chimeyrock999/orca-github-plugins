@@ -14,9 +14,17 @@ function sources(dir: string): string[] {
   })
 }
 
-// Every module a file names: static and type imports, re-exports and import().
-function specifiers(text: string): string[] {
-  return [...text.matchAll(/(?:\bfrom\s+|\bimport\s*\(?\s*)(['"])([^'"]+)\1/g)].map((m) => m[2])
+type Import = { specifier: string; typeOnly: boolean }
+
+// Every module a file names: imports, re-exports and import(). `import type` and `export type`
+// leave nothing behind at run time, so they are marked.
+function imports(text: string): Import[] {
+  const named = [...text.matchAll(/\b(?:import|export)(\s+type)?\b[^'"]*?\bfrom\s+(['"])([^'"]+)\2/g)].map((m) => ({
+    specifier: m[3],
+    typeOnly: Boolean(m[1]),
+  }))
+  const bare = [...text.matchAll(/\bimport\s*\(?\s*(['"])([^'"]+)\1/g)].map((m) => ({ specifier: m[2], typeOnly: false }))
+  return [...named, ...bare]
 }
 
 // The folder under src/ a specifier lands in ('..' outside src/), or the bare module name.
@@ -25,11 +33,11 @@ function target(file: string, specifier: string): string {
   return relative(src, resolve(file, '..', specifier)).split(sep)[0]
 }
 
-function breaches(side: string, banned: (target: string) => boolean): string[] {
+function breaches(side: string, banned: (target: string, typeOnly: boolean) => boolean): string[] {
   return sources(join(src, side)).filter((file) => !file.endsWith('.check.ts')).flatMap((file) =>
-    specifiers(readFileSync(file, 'utf8'))
-      .filter((specifier) => banned(target(file, specifier)))
-      .map((specifier) => `${relative(src, file)} imports ${specifier}`),
+    imports(readFileSync(file, 'utf8'))
+      .filter(({ specifier, typeOnly }) => banned(target(file, specifier), typeOnly))
+      .map(({ specifier }) => `${relative(src, file)} imports ${specifier}`),
   )
 }
 
@@ -39,8 +47,13 @@ test('panel/ imports neither node: modules nor worker code', () => {
   assert.deepEqual(breaches('panel', nodeOrWorker), [])
 })
 
-test('shared/ imports neither node: modules, worker code nor panel code', () => {
-  assert.deepEqual(breaches('shared', (t) => nodeOrWorker(t) || t === 'panel' || t === 'orca'), [])
+test('worker/ imports no panel code', () => {
+  assert.deepEqual(breaches('worker', (t) => t === 'panel'), [])
+})
+
+// The panel's `orca` module exists only in the panel; its types (Tone) are fine anywhere.
+test('shared/ imports neither node: modules, worker code, panel code nor the panel runtime', () => {
+  assert.deepEqual(breaches('shared', (t, typeOnly) => nodeOrWorker(t) || t === 'panel' || (t === 'orca' && !typeOnly)), [])
 })
 
 // Tests and fixtures live in tests/; only the check scenarios (panel.check.ts) borrow fixtures.
@@ -49,10 +62,12 @@ test('src/ never imports from tests/', () => {
 })
 
 test('the check finds a banned import', () => {
-  assert.deepEqual(specifiers("import { x } from 'node:fs'\nexport type { Y } from '../worker/gh'\nawait import('./z')"), [
-    'node:fs',
-    '../worker/gh',
-    './z',
+  const text = "import { x } from 'node:fs'\nimport type { Tone } from 'orca'\nexport type { Y } from '../worker/gh'\nawait import('./z')"
+  assert.deepEqual(imports(text), [
+    { specifier: 'node:fs', typeOnly: false },
+    { specifier: 'orca', typeOnly: true },
+    { specifier: '../worker/gh', typeOnly: true },
+    { specifier: './z', typeOnly: false },
   ])
   assert.equal(target(join(src, 'panel', 'store.ts'), '../worker/gh'), 'worker')
   assert.equal(target(join(src, 'panel', 'runs', 'run-view.tsx'), '../../shared/protocol'), 'shared')

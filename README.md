@@ -17,7 +17,7 @@ so the plugin holds no tokens of its own.
 
 | Plugin | Folder | Type | Status |
 | :--- | :--- | :--- | :--- |
-| gh Focus (`gh-focus`) | [`plugins/gh-focus`](plugins/gh-focus) | `trusted-worker` | Tabs; issues: list, paging, search, detail, comments, close/reopen, edit, create, reactions; the workspace's pull request: detail, checks line, comments, review, edit, reactions; hand-offs to Orca's Tasks page and Checks tab; Actions: the focused branch's runs, run detail, logs, rerun, cancel, deployment approval, artifacts, Run workflow, live runs |
+| gh Focus (`gh-focus`) | [`plugins/gh-focus`](plugins/gh-focus) | `trusted-worker` | Tabs; the issues and pull requests linked to the workspace (opens the only one, lists several, items of other repos read and answered in their own repo, with nothing linked the link command and Ask agent); issue: detail, comments, close/reopen, edit, reactions; pull request: detail, checks line, comments, review, edit, reactions; hand-offs to Orca's Tasks page and Checks tab; Actions: the focused branch's runs, run detail, logs, rerun, cancel, deployment approval, artifacts, Run workflow, live runs |
 
 ## Install
 

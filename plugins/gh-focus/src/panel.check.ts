@@ -2,19 +2,21 @@
 // no scenario reaches the real gh.
 import { defineCheck } from 'orca/testing'
 import type { Answer, PullDetail } from './shared/protocol'
-import { commentItem, failed, issueDetail, issueRows, itemPage, pullDetail, repoOk, runPage, runRows } from '../tests/fixtures/fixtures'
+import { commentItem, failed, issueDetail, links, linkedRows, pullDetail, ref, repoOk, runPage, runRows } from '../tests/fixtures/fixtures'
 
 const lists = {
   'repo.get': repoOk,
-  'issues.list': itemPage(issueRows(30), 72, 'p2', 5),
+  'repo.links': links(),
+  'agent.find': { ok: true as const, agent: { name: 'Claude Code', terminalId: 't1' } },
   // The Actions tab starts on the workspace's branch.
   'runs.list': runPage(runRows, 296, '2', 1000, 'fix/token-refresh')
 }
-const empty = itemPage([], 0, null)
-// A workspace made from issue 120 opens on it, which is how these scenarios show an issue.
-const linked = { 'repo.links': { ok: true as const, issue: 120, pull: null } }
-// The workspace's pull request (here 131) opens in the Pull requests tab.
-const linkedPull = { 'repo.links': { ok: true as const, issue: null, pull: 131 } }
+// A workspace linked to issue 120 alone opens on it, which is how these scenarios show an issue.
+const linked = { 'repo.links': links([120]) }
+// The workspace's only pull request (here 131) opens in the Pull requests tab.
+const linkedPull = { 'repo.links': links([], [131]) }
+// Several linked items, one of another repo: a short list.
+const several = [ref(120), ref('octo/sdk#45'), ref(98)]
 const onPulls = { persisted: { plugin: { tab: 'pulls' } } }
 const mergedAt = Date.UTC(2026, 10, 12, 8, 0)
 const pullScenario = (answer: Answer<{ pull: PullDetail }>) => ({ requests: { ...lists, ...linkedPull, 'pull.get': answer }, ...onPulls })
@@ -29,6 +31,11 @@ const longTimeline = issueDetail({
 
 export default defineCheck({
   issues: { requests: lists },
+  'issues-no-agent': { requests: { ...lists, 'agent.find': { ok: true, agent: null } } },
+  'issues-several': { requests: { ...lists, 'repo.links': links([120, 'octo/sdk#45', 98]), 'items.get': linkedRows(several) } },
+  'issues-several-failed': {
+    requests: { ...lists, 'repo.links': links([120, 98]), 'items.get': failed('rate_limited', 'API rate limit exceeded for user ID 1.') }
+  },
   'issue-detail': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: issueDetail() } } },
   'issue-closed': {
     requests: {
@@ -47,7 +54,8 @@ export default defineCheck({
   'issue-long-timeline': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: longTimeline } } },
   'issue-read-only': { requests: { ...lists, ...linked, 'issue.get': { ok: true, issue: issueDetail({ canEdit: false }) } } },
   'issue-not-found': { requests: { ...lists, ...linked, 'issue.get': failed('not_found', 'Could not resolve to an Issue with the number of 120.') } },
-  'pull-none': { requests: { ...lists, 'repo.links': { ok: true, issue: null, pull: null } }, ...onPulls },
+  'pull-none': { requests: lists, ...onPulls },
+  'pulls-several': { requests: { ...lists, 'repo.links': links([], [131, 129]), 'items.get': linkedRows([ref(131), ref(129)], 'pulls') }, ...onPulls },
   'pull-detail': showPull(),
   'pull-own': showPull({ author: 'chimeyrock999', review: 'review_required', reviewers: ['ana', 'core'] }),
   'pull-ready': showPull({ merge: 'clean', review: 'approved', reviewers: [], checks: { passed: 5, failed: 0, cancelled: 0, needsAction: 0, pending: 0, neutral: 0 } }),
@@ -69,12 +77,12 @@ export default defineCheck({
   'pull-not-found': pullScenario(failed('not_found', 'Could not resolve to a PullRequest with the number of 131.')),
   actions: { requests: lists, persisted: { plugin: { tab: 'runs' } } },
   // Scenarios cannot press, so a run's detail and the Run workflow form are covered by
-  // src/panel/runs/run-view.test.tsx; this one shows the list with a run waiting to start.
+  // src/run-view.test.tsx; this one shows the list with a run waiting to start.
   'actions-queued': {
     requests: { ...lists, 'runs.list': runPage([{ ...runRows[0], id: 9002, runNumber: 297, state: 'queued', startedAt: runRows[0].startedAt + 60_000 }, ...runRows], 297, '2') },
     persisted: { plugin: { tab: 'runs' } }
   },
-  'empty-repo': { requests: { 'repo.get': repoOk, 'issues.list': empty, 'runs.list': runPage([]) } },
+  'empty-repo': { requests: { ...lists, 'runs.list': runPage([]) }, persisted: { plugin: { tab: 'runs' } } },
   'no-workspace': { requests: { 'repo.get': failed('no_workspace', 'No workspace is focused in Orca.') } },
   'not-a-github-repo': {
     requests: { 'repo.get': failed('not_a_repo', 'none of the git remotes configured for this repository point to a known GitHub host') }
@@ -96,5 +104,5 @@ export default defineCheck({
     }
   },
   'gh-logged-out': { requests: { 'repo.get': failed('gh_logged_out', 'To get started with GitHub CLI, please run:  gh auth login') } },
-  'rate-limited': { requests: { ...lists, 'issues.list': failed('rate_limited', 'API rate limit exceeded for user ID 1.') } }
+  'rate-limited': { requests: { ...lists, 'runs.list': failed('rate_limited', 'API rate limit exceeded for user ID 1.') }, persisted: { plugin: { tab: 'runs' } } }
 })

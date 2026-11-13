@@ -1,7 +1,7 @@
 // The list fetchers over a fake gh: the gh arguments they build and the rows they map.
 import { assert, test } from 'orca/testing'
 import { GhError, type Gh } from '../../src/worker/gh'
-import { itemSearch, listIssues, listLabels, listRuns, listWorkflows, parseRunQuery } from '../../src/worker/lists'
+import { issueState, listLabels, listRuns, listWorkflows, parseRunQuery, pullState } from '../../src/worker/lists'
 
 const repo = { nameWithOwner: 'octo/app', path: '/code/app' }
 
@@ -22,112 +22,14 @@ function field(args: string[], name: string): string | undefined {
   return i < 0 ? undefined : args[i].slice(name.length + 1)
 }
 
-const issueNode = {
-  __typename: 'Issue',
-  number: 8,
-  title: 'Docs, manifest and visual polish',
-  url: 'https://github.com/octo/app/issues/8',
-  state: 'OPEN',
-  stateReason: null,
-  createdAt: '2026-11-12T11:40:37Z',
-  closedAt: null,
-  author: { login: 'mai-t' },
-  labels: { nodes: [{ name: 'documentation' }] }
-}
-
-function searchAnswer(nodes: unknown[], more = false, count = 72) {
-  return {
-    data: {
-      page: { issueCount: count, pageInfo: { hasNextPage: more, endCursor: more ? 'Y3Vyc29yOjMw' : null }, nodes },
-      open: { issueCount: 72 },
-      closed: { issueCount: 5 }
-    }
-  }
-}
-
-test('itemSearch builds the repo, kind and state qualifiers, newest first, then the words', () => {
-  assert.equal(itemSearch(repo, 'issue', 'open', '  csv export '), 'repo:octo/app is:issue is:open sort:created-desc csv export')
-  assert.equal(itemSearch(repo, 'pr', 'closed', ''), 'repo:octo/app is:pr is:closed sort:created-desc')
-})
-
-test('itemSearch: all leaves the state out, assignee is a qualifier quoted like the others', () => {
-  assert.equal(itemSearch(repo, 'issue', 'all', ''), 'repo:octo/app is:issue sort:created-desc')
-  assert.equal(
-    itemSearch(repo, 'issue', 'all', 'csv', { assignee: '@me', label: 'needs review' }),
-    'repo:octo/app is:issue label:"needs review" assignee:@me sort:created-desc csv'
-  )
-})
-
-test('issues: all still counts open and closed apart', async () => {
-  const gh = fakeGh(searchAnswer([issueNode]))
-  const page = await listIssues(gh, repo, { state: 'all', query: '', after: null, filters: { assignee: 'kenji' } })
-  const { args } = gh.calls[0]
-  assert.equal(field(args, 'q'), 'repo:octo/app is:issue assignee:kenji sort:created-desc')
-  assert.equal(field(args, 'openQ'), 'repo:octo/app is:issue is:open assignee:kenji')
-  assert.equal(field(args, 'closedQ'), 'repo:octo/app is:issue is:closed assignee:kenji')
-  assert.equal(page.open, 72)
-})
-
-test('issues: one GraphQL search in the repo folder, with both counts and the page cursor', async () => {
-  const gh = fakeGh(searchAnswer([issueNode], true))
-  const page = await listIssues(gh, repo, { state: 'open', query: 'csv', after: 'Y3Vyc29yOjA=' })
-  const { args, cwd } = gh.calls[0]
-  assert.equal(cwd, '/code/app')
-  assert.deepEqual(args.slice(0, 2), ['api', 'graphql'])
-  assert.equal(field(args, 'q'), 'repo:octo/app is:issue is:open sort:created-desc csv')
-  assert.equal(field(args, 'openQ'), 'repo:octo/app is:issue is:open csv')
-  assert.equal(field(args, 'closedQ'), 'repo:octo/app is:issue is:closed csv')
-  assert.equal(field(args, 'first'), '30')
-  assert.equal(field(args, 'after'), 'Y3Vyc29yOjA=')
-  assert.deepEqual(page, {
-    rows: [
-      {
-        number: 8,
-        title: 'Docs, manifest and visual polish',
-        url: 'https://github.com/octo/app/issues/8',
-        state: 'open',
-        author: 'mai-t',
-        labels: ['documentation'],
-        createdAt: Date.parse('2026-11-12T11:40:37Z'),
-        closedAt: null
-      }
-    ],
-    total: 72,
-    open: 72,
-    closed: 5,
-    next: 'Y3Vyc29yOjMw',
-    limit: 1000
-  })
-})
-
-test('the first page sends no cursor, and the last page has no next', async () => {
-  const gh = fakeGh(searchAnswer([issueNode]))
-  const page = await listIssues(gh, repo, { state: 'open', query: '', after: null })
-  assert.equal(field(gh.calls[0].args, 'after'), undefined)
-  assert.equal(page.next, null)
-})
-
-test('closed issues: done or not planned by state reason; a deleted author is null', async () => {
-  const closed = { ...issueNode, state: 'CLOSED', closedAt: '2026-11-13T00:00:00Z', author: null }
-  const gh = fakeGh(
-    searchAnswer([
-      { ...closed, number: 1, stateReason: 'COMPLETED' },
-      { ...closed, number: 2, stateReason: 'NOT_PLANNED' },
-      { ...closed, number: 3, stateReason: 'DUPLICATE' },
-      { ...closed, number: 4, stateReason: null }
-    ], false, 5)
-  )
-  const page = await listIssues(gh, repo, { state: 'closed', query: '', after: null })
-  assert.deepEqual(page.rows.map((r) => r.state), ['done', 'not_planned', 'not_planned', 'done'])
-  assert.equal(page.rows[0].author, null)
-  assert.equal(page.rows[0].closedAt, Date.parse('2026-11-13T00:00:00Z'))
-  assert.equal(page.total, 5)
-})
-
-test('a GraphQL answer without data is gh_failed', async () => {
-  await assert.rejects(listIssues(fakeGh({ errors: [{ message: 'boom' }] }), repo, { state: 'open', query: '', after: null }), (e) => {
-    return e instanceof GhError && e.code === 'gh_failed' && /boom/.test(e.message)
-  })
+test('issue and pull request states: done or not planned by state reason; merged and draft', () => {
+  assert.equal(issueState({ state: 'OPEN' }), 'open')
+  assert.equal(issueState({ state: 'CLOSED', stateReason: 'COMPLETED' }), 'done')
+  assert.equal(issueState({ state: 'CLOSED', stateReason: 'NOT_PLANNED' }), 'not_planned')
+  assert.equal(issueState({ state: 'CLOSED', stateReason: 'DUPLICATE' }), 'not_planned')
+  assert.equal(pullState({ state: 'OPEN', isDraft: true }), 'draft')
+  assert.equal(pullState({ state: 'MERGED', merged: true }), 'merged')
+  assert.equal(pullState({ state: 'CLOSED' }), 'closed')
 })
 
 test('parseRunQuery maps qualifiers to the runs API and refuses plain words', () => {
@@ -257,17 +159,6 @@ test('workflow: an unknown name is not_found', async () => {
   })
 })
 
-test('filters and order go into the search; the counts keep the filters but not the order', async () => {
-  assert.equal(
-    itemSearch(repo, 'issue', 'open', 'csv', { author: 'mai-t', label: 'good first issue' }, 'comments-desc'),
-    'repo:octo/app is:issue is:open author:mai-t label:"good first issue" sort:comments-desc csv'
-  )
-  const gh = fakeGh(searchAnswer([issueNode]))
-  await listIssues(gh, repo, { state: 'open', query: '', after: null, filters: { label: 'bug', author: ' ' }, sort: 'created-asc' })
-  assert.equal(field(gh.calls[0].args, 'q'), 'repo:octo/app is:issue is:open label:bug sort:created-asc')
-  assert.equal(field(gh.calls[0].args, 'closedQ'), 'repo:octo/app is:issue is:closed label:bug')
-})
-
 test('run filters become parameters and win over the same qualifier in the search', async () => {
   const gh = fakeGh({ total_count: 0, workflow_runs: [] })
   await listRuns(gh, repo, { query: 'branch:main status:success', after: null, filters: { status: 'failure', event: 'push', workflow: '9', branch: '' } })
@@ -292,13 +183,6 @@ test('runs: no filter reaches every run; a filter stops the pages at 1,000', asy
   assert.deepEqual([all.limit, all.next], [null, '41'])
   const filtered = await listRuns(fakeGh({ total_count: 5000, workflow_runs: [] }), repo, { query: 'status:success', after: '34' })
   assert.deepEqual([filtered.limit, filtered.next], [1000, null])
-})
-
-test('paging asks for no counts: the open and closed counts come back null', async () => {
-  const gh = fakeGh({ data: { page: { issueCount: 72, pageInfo: { hasNextPage: true, endCursor: 'c' }, nodes: [] } } })
-  const page = await listIssues(gh, repo, { state: 'open', query: '', after: 'c0', withCounts: false })
-  assert.equal(field(gh.calls[0].args, 'withCounts'), 'false')
-  assert.deepEqual([page.open, page.closed, page.total], [null, null, 72])
 })
 
 test('runs scoped to the branch narrow to the workspace branch unless a branch is asked for', async () => {

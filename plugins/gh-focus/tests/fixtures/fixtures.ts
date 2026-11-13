@@ -4,8 +4,8 @@ import type {
   CheckCounts,
   DispatchForm,
   IssueDetail,
-  IssueRow,
-  ItemPage,
+  LinkedRef,
+  LinkedRow,
   PullDetail,
   RepoAnswer,
   RunDetail,
@@ -42,17 +42,31 @@ const titles = [
   'Crash when the config file is empty'
 ]
 
-export function issueRows(count: number, first = 120): IssueRow[] {
-  return Array.from({ length: count }, (_, i) => ({
-    number: first - i,
-    title: titles[i % titles.length],
-    url: `https://github.com/octo/app/issues/${first - i}`,
-    state: 'open',
-    author: ['mai-t', 'kenji', 'ana'][i % 3],
-    labels: i % 2 ? ['bug'] : [],
-    createdAt: now - (i + 1) * hour,
-    closedAt: null
-  }))
+/** An item linked to the workspace: a number of the focused repo, or `owner/name#n` of another. */
+export function ref(item: number | string): LinkedRef {
+  if (typeof item === 'number') return { number: item, repo: null, title: null, url: null }
+  const [repo, number] = item.split('#')
+  return { number: Number(number), repo, title: null, url: `https://github.com/${repo}/issues/${number}` }
+}
+
+/** What `repo.links` answers: the issues and pull requests Orca links to the workspace. */
+export function links(issues: (number | string)[] = [], pulls: (number | string)[] = []): Answer<{ issues: LinkedRef[]; pulls: LinkedRef[] }> {
+  return { ok: true, issues: issues.map(ref), pulls: pulls.map(ref) }
+}
+
+/** What `items.get` answers for `items`: titles in turn, open, an hour apart, newest first. */
+export function linkedRows(items: LinkedRef[], kind: 'issues' | 'pulls' = 'issues'): Answer<{ rows: LinkedRow[] }> {
+  return {
+    ok: true,
+    rows: items.map((item, i) => ({
+      number: item.number,
+      repo: item.repo,
+      title: titles[i % titles.length],
+      url: item.url ?? `https://github.com/octo/app/${kind === 'issues' ? 'issues' : 'pull'}/${item.number}`,
+      state: 'open',
+      updatedAt: now - (i + 1) * hour
+    }))
+  }
 }
 
 export const runRows: RunRow[] = [
@@ -60,10 +74,6 @@ export const runRows: RunRow[] = [
   { id: 9000, runNumber: 295, workflow: 'CI', title: 'Merge pull request #121 from octo/docs', url: 'https://github.com/octo/app/actions/runs/9000', state: 'success', event: 'push', branch: 'main', sha: '40378fb9a1', actor: 'kenji', pullNumber: null, startedAt: now - 3 * hour, durationMs: 466_000 },
   { id: 8999, runNumber: 41, workflow: 'Release', title: 'Release 1.8.0', url: 'https://github.com/octo/app/actions/runs/8999', state: 'failure', event: 'workflow_dispatch', branch: 'main', sha: 'ac11ec5f00', actor: 'olu', pullNumber: null, startedAt: now - 30 * hour, durationMs: 57_000 }
 ]
-
-export function itemPage<Row>(rows: Row[], total: number, next: string | null, closed = 0): Answer<ItemPage<Row>> {
-  return { ok: true, rows, total, open: total, closed, next, limit: 1000 }
-}
 
 export function runPage(
   rows: RunRow[],

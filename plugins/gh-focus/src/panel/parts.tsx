@@ -1,6 +1,6 @@
 // Pieces every view draws: a problem with its hint, and a state glyph.
 import { Button, Callout, List, ListItem, Row, Stack, Text } from 'orca'
-import { problemOf, type Look } from './look'
+import { problemOf, type Look } from '../shared/look'
 import type { PanelError } from '../shared/protocol'
 
 /** The last folder of a path: the label of a choice whose project Orca does not name. */

@@ -13,8 +13,10 @@ export class GhError extends Error {
   }
 }
 
-/** `maxBuffer`: bytes of output read before gh is stopped (default 4 MiB). */
-export type GhOptions = { cwd?: string; signal?: AbortSignal; timeoutMs?: number; json?: boolean; maxBuffer?: number }
+/** `maxBuffer`: bytes of output read before gh is stopped (default 4 MiB). `partial`: a GraphQL
+ *  answer whose only errors say something was not found or not allowed (another org's SAML, say) is
+ *  returned with the data it has (gh exits 1 on any error). */
+export type GhOptions = { cwd?: string; signal?: AbortSignal; timeoutMs?: number; json?: boolean; maxBuffer?: number; partial?: boolean }
 /** runGh with the runner bound: what handlers take, so tests hand them a fake. */
 export type Gh = (args: string[], options?: GhOptions) => Promise<unknown>
 
@@ -38,6 +40,18 @@ function spawnFailure(error: unknown): GhError {
   return new GhError('gh_failed', String(e.message ?? error))
 }
 
+/** A GraphQL answer with data whose errors all say something was not found or not allowed; null
+ *  otherwise. */
+function partialAnswer(stdout: string): unknown {
+  try {
+    const out = JSON.parse(stdout) as { data?: unknown; errors?: { type?: unknown }[] }
+    const notFound = Array.isArray(out?.errors) && out.errors.every((e) => e?.type === 'NOT_FOUND' || e?.type === 'FORBIDDEN')
+    return out?.data && typeof out.data === 'object' && notFound ? out : null
+  } catch {
+    return null
+  }
+}
+
 /** Runs `gh <args>`: its stdout, parsed when `json` is set. Throws a GhError on any failure. */
 export async function runGh(args: string[], options: GhOptions = {}, runner: Run = run): Promise<unknown> {
   let result: RunResult
@@ -47,6 +61,8 @@ export async function runGh(args: string[], options: GhOptions = {}, runner: Run
     throw spawnFailure(error)
   }
   if (result.code !== 0) {
+    const partial = options.json && options.partial ? partialAnswer(result.stdout) : null
+    if (partial) return partial
     const message = result.stderr.trim() || `gh exited with ${result.code}`
     throw new GhError(failureCode(result.stderr, result.code), message)
   }

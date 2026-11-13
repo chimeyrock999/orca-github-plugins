@@ -23,7 +23,7 @@ import {
   Text,
   type KeyValueItem
 } from 'orca'
-import { bytes, count, duration, expiry, localTime, runCause, runLook } from '../look'
+import { bytes, count, duration, expiry, localTime, runCause, runLook } from '../../shared/look'
 import { Glyph, Problem } from '../parts'
 import type { DispatchInput, LogStep, RunArtifact, RunDetail, RunJob, RunLogs } from '../../shared/protocol'
 import {

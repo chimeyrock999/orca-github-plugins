@@ -6,7 +6,6 @@ import {
   Button,
   Callout,
   Code,
-  EmptyState,
   IconButton,
   Link,
   RadioGroup,
@@ -22,26 +21,24 @@ import {
   Textarea,
   Toolbar
 } from 'orca'
-import { checkSummary, checksLook, count, decisionLook, mergeLook, pullLook, type Look } from '../look'
+import { checkSummary, checksLook, count, decisionLook, mergeLook, pullLook, type Look } from '../../shared/look'
 import { Glyph, Problem } from '../parts'
 import type { PullDetail, ReviewEvent } from '../../shared/protocol'
+import { backFrom, handOff } from '../linked/link-store'
+import { backLabel, HandOffProblem, LinkedView, TasksButton } from '../linked/linked-view'
 import {
-  backToFocus,
   canReview,
   cancelReview,
-  dismissHandOff,
-  focused,
-  handOff,
-  handOffError,
   ownPull,
   pull,
   pulls,
   setReview,
   startReview,
   submitReview,
+  workspacePull,
   type PullState
 } from './pull-store'
-import { lists, repo } from '../store'
+import { lists } from '../store'
 import { Byline, EditTitle, LabelsAndAssignees, MetaLine, Post, Timeline } from '../thread/thread-view'
 
 /** A state's glyph and its words. */
@@ -58,7 +55,7 @@ function Status({ look }: { look: Look }) {
  *  lists them with logs and reruns, any other opens its checks on GitHub. */
 function ChecksLine({ d }: { d: PullDetail }) {
   if (!d.checks) return null
-  const own = d.number === focused()?.number
+  const own = d.number === workspacePull() && read(pull).repo === null
   return (
     <MetaLine label="Checks" empty="">
       <Glyph look={checksLook(d.checks)} />
@@ -206,58 +203,21 @@ function Detail({ d, s }: { d: PullDetail; s: PullState }) {
   )
 }
 
-function HandOffProblem() {
-  const error = read(handOffError)
-  return error ? <Problem error={error} onRetry={dismissHandOff} retryLabel="Dismiss" /> : null
-}
-
-/** Tasks: Orca's own page lists, searches and filters the repo's pull requests. */
-function TasksButton() {
-  return (
-    <Button size="sm" variant="outline" icon="layers" tooltip="Orca's Tasks page: every pull request of the repo" onPress={() => handOff('tasks')}>
-      Tasks
-    </Button>
-  )
-}
-
-/** No pull request open: still looking for the workspace's, or it has none. */
-function NoPull() {
-  const f = focused()
-  const r = read(repo)
-  if (!f) return <Skeleton lines={6} label="Finding this workspace's pull request" />
-  return (
-    <Stack gap="md">
-      <EmptyState
-        icon="branch"
-        title="No pull request for this branch"
-        description="Open one from Orca or GitHub, then Refresh. Orca's Tasks page lists the repo's pull requests."
-      />
-      <Row gap="xs" justify="center">
-        <TasksButton />
-        <Button size="sm" variant="outline" icon="open-external" onPress={() => (r?.ok ? shell.openExternal(`${r.url}/pulls`) : undefined)}>
-          Open on GitHub
-        </Button>
-      </Row>
-      <HandOffProblem />
-    </Stack>
-  )
-}
-
 export function PullView() {
   const s = read(pull)
   const d = s.answer?.ok ? s.answer.detail : null
-  const own = focused()?.number ?? null
+  // A pull request opened from a mention or the list leads back to the workspace's own, or the list.
+  const back = backLabel(pulls)
   return (
     <Box grow minHeight={0} gap="sm">
       <Row justify="between" align="center">
         <Row gap="xs">
-          {/* A pull request opened from a mention leads back to the workspace's own. */}
-          {s.number !== own && (
-            <Button size="sm" variant="outline" onPress={backToFocus}>
-              {own ? `← Back to #${own}` : '← Back'}
+          {back && (
+            <Button size="sm" variant="outline" onPress={() => backFrom(pulls)}>
+              {back}
             </Button>
           )}
-          <TasksButton />
+          <TasksButton kind="pulls" />
         </Row>
         <Toolbar label="Pull request" gap="xs">
           {d?.canEdit && !s.editing && <IconButton icon="edit" label="Edit title and body" variant="ghost" onPress={pulls.startEdit} />}
@@ -276,9 +236,9 @@ export function PullView() {
   )
 }
 
-/** The Pull requests tab: the workspace's pull request (or one opened from a mention), or why there
- *  is none. */
+/** The Pull requests tab: a pull request (the workspace's, one from its list or a mention), else the
+ *  linked list or why there is none. */
 export function PullsTab() {
   const open = read(lists.pulls).open
-  return open ? <PullView /> : <NoPull />
+  return open ? <PullView /> : <LinkedView t={pulls} />
 }
