@@ -4,7 +4,7 @@ import { assert, hostError, mockHost, mount, test } from 'orca/testing'
 import * as panel from '../src/panel'
 import { read } from 'orca'
 import { choices, setRepo } from '../src/panel/store'
-import { failed, links, repoOk, runPage, runRows } from './fixtures/fixtures'
+import { failed, links, repoOk, rowOf, runPage, runRows } from './fixtures/fixtures'
 import type { RunListInput } from '../src/shared/protocol'
 
 function host(overrides: Record<string, unknown> = {}) {
@@ -34,6 +34,11 @@ test('shows the repo and the Issues tab; with nothing linked, how to link one an
   const view = await mount(panel, { host: h })
   assert.ok(view.find({ text: 'octo/app' }))
   assert.deepEqual(view.summary().filter((l) => l.startsWith('Tabs')), ['Tabs "GitHub": "Issues" selected'])
+  // Words only, as Orca's own tabs: with icons the row is wider than a narrow sidebar.
+  assert.deepEqual(
+    view.findAll({ type: 'Tab' }).map((t) => [t.props.label, t.props.icon]),
+    [['Issues', undefined], ['Pull requests', undefined], ['Actions', undefined]]
+  )
   assert.ok(view.summary().some((l) => /No issue linked to this workspace/.test(l)))
   assert.ok(view.find({ type: 'Code', text: 'orca reference add https://github.com/octo/app/issues/<number> --worktree current' }))
   assert.ok(view.find({ type: 'Button', text: 'Ask Claude Code to link' }))
@@ -58,6 +63,10 @@ test('Next asks with the cursor the page gave, Previous goes back to the first p
   const h = host()
   const view = await mount(panel, { host: h, ...onRuns })
   assert.equal(view.find({ text: 'Previous' })?.disabled, true)
+  // In a narrow sidebar the buttons drop under the page line, together, instead of past the edge.
+  const buttons = rowOf(view.find({ type: 'Button', text: 'Previous' })!.path)
+  assert.equal(view.findAll({ type: 'Box' }).find((b) => b.path === buttons)?.props.shrink, false)
+  assert.equal(view.findAll({ type: 'Row' }).find((r) => r.path === rowOf(buttons))?.props.wrap, true)
   await view.press({ text: 'Next' })
   assert.deepEqual(h.asked.at(-1), { name: 'runs.list', input: { query: '', after: '2', filters: {}, scope: 'branch' } })
   assert.ok(view.find({ text: 'Page 2 of 2 · 33 total' }))

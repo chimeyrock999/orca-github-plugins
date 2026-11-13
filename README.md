@@ -15,9 +15,22 @@ so the plugin holds no tokens of its own.
 
 ## Plugins
 
-| Plugin | Folder | Type | Status |
-| :--- | :--- | :--- | :--- |
-| gh Focus (`gh-focus`) | [`plugins/gh-focus`](plugins/gh-focus) | `trusted-worker` | Tabs; the issues and pull requests linked to the workspace (opens the only one, lists several, items of other repos read and answered in their own repo, with nothing linked the link command and Ask agent); issue: detail, comments, close/reopen, edit, reactions; pull request: detail, checks line, comments, review, edit, reactions; hand-offs to Orca's Tasks page and Checks tab; Actions: the focused branch's runs, run detail, logs, rerun, cancel, deployment approval, artifacts, Run workflow, live runs |
+| Plugin | Folder | Type |
+| :--- | :--- | :--- |
+| gh Focus (`gh-focus`) | [`plugins/gh-focus`](plugins/gh-focus) | `trusted-worker` |
+
+gh Focus follows the focused workspace, with three tabs and the hand-offs to Orca:
+
+- **Issues**: the issues Orca links to the workspace, those of another repo too (read and
+  answered in their own repo); read, comment, react, close or reopen, edit.
+- **Pull requests**: the workspace's pull request, or a short list of the linked ones; its review state, merge state and checks in a
+  line each; comment, react, edit, review.
+- **Actions**: the branch's runs; jobs, failed logs, rerun, cancel, deployment approval,
+  artifacts, Run workflow, live updates.
+- **Hand-offs**: Orca's Tasks page for the repo's lists and new issues, Orca's Checks tab for
+  review threads and check logs.
+
+Features, requirements and the permissions it asks for: [`plugins/gh-focus/README.md`](plugins/gh-focus/README.md).
 
 ## Install
 
@@ -27,13 +40,22 @@ gh Focus is not affiliated with GitHub.
 
 ## Develop
 
-Needs Orca `1.4.256`+ (`orca` on PATH), Node.js 18+, and `gh` logged in.
+Needs Orca `1.4.256`+ with its `orca` CLI on PATH for the commands below, Node.js 18+, and `gh`
+logged in.
 
 ```sh
-orca plugin validate ./plugins/gh-focus
-orca plugin test ./plugins/gh-focus
-orca plugin dev watch ./plugins/gh-focus
+cd plugins/gh-focus
+orca plugin types .                 # typings, needed before tsc
+npm install
+orca plugin validate .
+orca plugin test .
+orca plugin check .
+npx tsc -p .
+orca plugin dev watch .             # load into Orca with live reload
 ```
+
+All four checks (validate, test, check, tsc) pass before a pull request; pull requests go into
+`dev`. More in [`plugins/gh-focus/README.md`](plugins/gh-focus/README.md#develop) and `CLAUDE.md`.
 
 ## Releases
 

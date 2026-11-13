@@ -4,7 +4,36 @@ For GitHub repos: the issue, pull request and Actions runs of the workspace you'
 
 Small and focused on the work at hand: the everyday reading, answering and reviewing happens beside the code. The detail work (merge, reviewers, the files diff, Projects) stays on Orca's Tasks page and pull request page, and the panel hands off to them. The Issues and Pull requests tabs show only what Orca links to the workspace and hand the repo's lists, search and new issues to Orca's Tasks page.
 
-A right-sidebar panel with the issues and pull requests linked to the focused workspace and the Actions runs of its repo. Every GitHub call goes through the `gh` CLI already logged in on the machine; the plugin stores no tokens. The panel (`src/panel.tsx`) asks with `plugin.request`, the plugin's own worker (`src/worker.ts`) answers with `orca.panels.handle` and runs `gh`; `src/shared/protocol.ts` types both sides. Orca transpiles both files when they load, so there is no build step: save and the panel or worker reloads.
+## Features
+
+A right-sidebar panel that follows the focused workspace, with three tabs:
+
+- **Issues**: the issues Orca links to the workspace. One opens by itself, several make a short list. One Orca links from another repo opens here too, read and answered in its own repo. Read the body and timeline; comment, edit or delete comments, react, close (completed, not planned, duplicate) or reopen, edit the title, body, labels and assignees.
+- **Pull requests**: the workspace's pull request (linked in Orca, or the branch's); several linked make a short list, as on Issues, and one of another repo opens here too. Its review decision, whether it can merge and one line for its checks; comment, react, edit, and review (Comment, Approve, Request changes).
+- **Actions**: the runs of the workspace's branch, or every branch, with search and filters. A run's jobs and steps, the failed steps' logs already open, rerun or cancel, approve or reject a waiting deployment, its artifacts, Run workflow with its inputs, and live updates while it runs.
+- **Hand-offs to Orca**: Tasks opens Orca's Tasks page (the repo's lists, search, new issues), Open in Checks opens Orca's Checks tab (review threads, check logs). With nothing linked, the panel shows how to link an issue and can ask the workspace's agent to do it.
+- **Light on GitHub**: answers are kept in memory for a short while and a write drops what it changes, so the panel spends little of the GitHub budget it shares with Orca, and says so when that budget runs low.
+
+## Requirements
+
+- Orca `1.4.256` or later.
+- The [`gh` CLI](https://cli.github.com), logged in (`gh auth login`) with access to the repo. Every GitHub call goes through it; the plugin stores no tokens.
+- A workspace whose folder is a clone of a GitHub repo.
+- Orca's own CLI, which tells the plugin what Orca links to a workspace. On macOS it ships in the app; on Linux and Windows, put `orca` on PATH. Without it the Issues tab finds no linked issue and the Pull requests tab uses the branch's pull request.
+
+## Install
+
+From the first release on: [Open in Orca](https://orca.dev/plugins/chimeyrock999.gh-focus?catalog=community), or in Orca: Settings → Plugins, community catalog, **gh Focus**. Orca asks you to approve the permissions below; an update that adds one asks again.
+
+## Permissions
+
+gh Focus is a `trusted-worker`: its worker runs `gh` and Orca's CLI on your machine with your user's access.
+
+- `storage:own`: remembers which workspace you picked when Orca cannot tell which one is focused.
+- `workspace:read`: the focused workspace's name, branch and terminals, to find its folder and repo.
+- `workspace:write`: only to open Orca's Tasks page and Checks tab (`commands.run`); it never opens, creates or renames a workspace.
+- `agent:read`: finds a free agent of the workspace for Ask agent.
+- `terminal:send`: types the link request into that agent's terminal, without pressing Enter, so you read it and send it.
 
 ## Panel
 
@@ -22,10 +51,13 @@ The Actions tab starts on the runs of the focused workspace's branch (every even
 
 ## Files
 
+A right-sidebar panel with the issues and pull requests linked to the focused workspace and the Actions runs of its repo. Every GitHub call goes through the `gh` CLI already logged in on the machine; the plugin stores no tokens. The panel (`src/panel.tsx`) asks with `plugin.request`, the plugin's own worker (`src/worker.ts`) answers with `orca.panels.handle` and runs `gh`; `src/shared/protocol.ts` types both sides. Orca transpiles both files when they load, so there is no build step: save and the panel or worker reloads.
+
 `src/` holds only code that runs in Orca: the entries `src/worker.ts` and `src/panel.tsx`, then `src/shared/` (imported by both sides), `src/worker/` (Node side) and `src/panel/` (panel side), each by feature. Tests sit in `tests/` at the same path as the file they test, with canned answers in `tests/fixtures/`.
 
-- `src/shared/protocol.ts`: the requests `repo.get`, `repo.pick`, `repo.unpick`, `repo.links`, `items.get`, `agent.find`, `agent.ask` (a free agent of the workspace, and typing the link request into it, through `agents.list` and `terminal.sendText`, which need `agent:read` and `terminal:send`), `runs.list`, `labels.list`, `workflows.list`, `assignees.list`, `issue.get`, `issue.timeline`, `issue.comment`, `comment.edit`, `comment.delete`, `issue.close`, `issue.reopen`, `issue.edit`, `reaction.set`, `pull.get`, `pull.timeline`, `pull.comment`, `pull.edit`, `pull.review`, `orca.show` (Orca's Tasks page or Checks tab through `commands.run`, which needs `workspace:write`), `run.get`, `run.logs`, `run.rerun`, `run.cancel`, `run.review`, `run.watch`, `workflow.form`, `workflow.run` and the events `repo.changed` and `run.progress`. Every answer is `Answer<T>`: `{ ok: true, ... }` or `{ ok: false, error: { code, message } }`, since a thrown code would reach the panel only as `action_failed`.
+- `src/shared/protocol.ts`: the requests `repo.get`, `repo.pick`, `repo.unpick`, `repo.links`, `items.get`, `agent.find`, `agent.ask` (a free agent of the workspace, and typing the link request into it, through `agents.list` and `terminal.sendText`, which need `agent:read` and `terminal:send`), `runs.list`, `labels.list`, `workflows.list`, `assignees.list`, `issue.get`, `issue.timeline`, `issue.comment`, `comment.edit`, `comment.delete`, `issue.close`, `issue.reopen`, `issue.edit`, `reaction.set`, `pull.get`, `pull.timeline`, `pull.comment`, `pull.edit`, `pull.review`, `orca.show` (Orca's Tasks page or Checks tab through `commands.run`, which needs `workspace:write`), `run.get`, `run.logs`, `run.rerun`, `run.cancel`, `run.review`, `run.watch`, `workflow.form`, `workflow.run`, `cache.drop` (Refresh), `budget.get` and the events `repo.changed`, `run.progress` and `budget.changed`. Every answer is `Answer<T>`: `{ ok: true, ... }` or `{ ok: false, error: { code, message } }`, since a thrown code would reach the panel only as `action_failed`.
 - `src/worker/gh.ts`: `runGh(args, { cwd, signal, json, timeoutMs, maxBuffer, partial })` runs `gh` and throws a `GhError` whose `code` the panel can explain; with `partial`, a GraphQL answer whose only errors are NOT_FOUND or FORBIDDEN (another org's SAML, say) keeps its data (gh exits 1 on any error). Handlers take it injected, so tests never call real GitHub.
+- `src/worker/cache.ts`: what the worker keeps of GitHub's answers, in memory only: a short TTL for what changes and a long one for labels, assignees and workflows, one gh call for identical reads in flight, and what a write can change dropped after it (Refresh drops everything); REST reads ask with the ETag they have, so an unchanged answer (304) costs no budget. Below a tenth of the REST budget, answers are kept longer, `run.watch` reads slower, and the panel shows GitHub budget low until the budget resets.
 - `src/worker/exec.ts`: `run` (child processes, with the user's PATH first), `terminalPath` (the folder a terminal runs in) and `workspaceLinks` (the GitHub issues and pull requests Orca links to a workspace: `linkedItems` in `orca worktree show --json`, the same list `orca reference list` answers, each with the `owner/name` its URL names; plus the one `linkedIssue` and `linkedPR` an older link kept when the list lacks them, as Orca's own reading does; host API has neither), both from the Orca CLI and null on any failure, as its JSON is not part of the plugin contract. The CLI is looked for in the macOS app bundle, then as `orca` on PATH; on Linux and Windows only PATH is tried, so without `orca` on PATH a terminal never breaks a tie and the panel asks for a pick instead.
 - `src/worker/repo/focus.ts`: finds the focused workspace's folder. `workspace.readContext` gives only a branch and a name, so it matches them against `workspace.list`, and when that is not one workspace (root clones are named after their branch, so every repo on `main` looks alike) it asks which folder a focused terminal runs in, since that terminal belongs to the focused workspace, and when none tells it uses the folder the person picked (kept in storage under `picks` per branch, name and the set of projects of the matching workspaces (a JSON array of their project ids, or names before host API 1.7), so it is asked again when a clone of another repo joins or leaves that set; used while the folder is still one of the matches, forgotten with Change workspace). Within one set, clones of different repos still share the pick, since `workspace.readContext` does not name the focused workspace's project (stablyai/orca#40492). With neither, the panel lists the candidates to pick from, each as "<project> · <branch>" (with the folder name added when two choices share both, e.g. "app · main (app-2)") and its path under it.
 - `src/worker/repo/repo.ts`: `gh repo view --json nameWithOwner,url` in that folder, and the tracker behind `repo.get`: it follows `workspace.changed`, keeps a found repo per folder, asks again after an error, and posts `repo.changed` to open panels when the answer changes.
