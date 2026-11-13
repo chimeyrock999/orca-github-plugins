@@ -206,7 +206,7 @@ function Mention({ item }: { item: TimelineMention }) {
   const go = () => (own && item.source.type === 'issue' ? openIssue(item.source.number) : shell.openExternal(item.source.url))
   // One row, the whole of it pressable: what links here first, who and when under it.
   return (
-    <ListItem icon="link" onPress={go}>
+    <ListItem onPress={go}>
       <Stack gap="none">
         <Box direction="row" gap="xs" align="center">
           <Glyph look={sourceLook(item.source)} />
@@ -215,9 +215,12 @@ function Mention({ item }: { item: TimelineMention }) {
               {item.source.title}
             </Text>
           </Box>
-          <Text size="sm" muted>
-            {own ? `#${item.source.number}` : `${item.source.repo}#${item.source.number}`}
-          </Text>
+          {/* The number keeps its width; the title is what gets cut. */}
+          <Box shrink={false}>
+            <Text size="sm" muted>
+              {own ? `#${item.source.number}` : `${item.source.repo}#${item.source.number}`}
+            </Text>
+          </Box>
         </Box>
         <Text size="xs" muted>
           {`${item.actor ?? 'ghost'} mentioned this · `}
