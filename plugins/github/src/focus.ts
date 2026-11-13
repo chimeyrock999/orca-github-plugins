@@ -1,7 +1,7 @@
 // Finds the focused workspace's folder. workspace.readContext gives only its branch and name, and
 // workspace.list gives folders, so the two are matched. Orca names root clones after their branch,
 // so repos on `main` look alike; then a focused terminal decides, through the Orca CLI.
-import type { RepoError, ResolvedBy } from './protocol'
+import type { PanelError, ResolvedBy } from './protocol'
 
 export type WorkspaceEntry = {
   id: string
@@ -23,11 +23,13 @@ export type FocusDeps = {
   /** The workspace folder a terminal runs in, or null when that cannot be told. */
   terminalPath: (terminalId: string) => Promise<string | null>
   exists: (path: string) => boolean
+  /** The folder the person picked for this branch and name, when the context fits several. */
+  picked?: (context: FocusContext) => Promise<string | null>
 }
 
 export type FocusResult =
   | { ok: true; workspace: WorkspaceEntry; resolvedBy: ResolvedBy }
-  | { ok: false; error: RepoError }
+  | { ok: false; error: PanelError }
 
 export function stripRef(branch: string): string {
   return branch.replace(/^refs\/heads\//, '')
@@ -69,10 +71,19 @@ export async function resolveFocus(
   let found: { workspace: WorkspaceEntry; resolvedBy: ResolvedBy } | null = null
   if (matches.length === 1) {
     found = { workspace: matches[0], resolvedBy: 'context' }
-  } else {
+  }
+  if (!found) {
     // A terminal only picks among the matches when there are some; with none it may name any.
     const workspace = await byTerminal(context, matches.length > 1 ? matches : workspaces, deps.terminalPath)
     if (workspace) found = { workspace, resolvedBy: 'terminal' }
+  }
+  if (!found && matches.length > 1 && deps.picked) {
+    // A focused terminal belongs to this very workspace, while a pick is shared by every clone with
+    // its branch and name, so the pick only decides when no terminal did. It counts while it is
+    // still one of the matches: a removed clone is not chosen.
+    const path = await deps.picked(context)
+    const workspace = path ? matches.find((w) => samePath(w.path, path)) : undefined
+    if (workspace) found = { workspace, resolvedBy: 'picked' }
   }
 
   if (!found && matches.length > 1) {

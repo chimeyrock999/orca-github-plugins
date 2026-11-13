@@ -1,9 +1,9 @@
 {
   "manifestVersion": 2,
-  "id": "github-review",
-  "name": "GitHub Review",
+  "id": "github",
+  "name": "GitHub",
   "version": "0.1.0",
-  "description": "A sidebar panel and the worker that answers it.",
+  "description": "Issues, pull requests and Actions of the focused workspace's repo, through the gh CLI.",
   "engines": {
     "orca": ">=1.4.246"
   },
@@ -13,9 +13,9 @@
   "contributes": {
     "panels": [
       {
-        "id": "github-review",
-        "title": "GitHub Review",
-        "icon": "blocks",
+        "id": "github",
+        "title": "GitHub",
+        "icon": "branch",
         "entry": "src/panel.tsx",
         "ui": "components"
       }

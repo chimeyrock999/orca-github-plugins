@@ -20,14 +20,14 @@ so the plugin holds no tokens of its own.
 
 | Plugin | Type | Status |
 | :--- | :--- | :--- |
-| [`plugins/github-review`](plugins/github-review) | `trusted-worker` | Scaffolded, not built yet |
+| [`plugins/github`](plugins/github) | `trusted-worker` | Foundation: tabs, lists, paging, search |
 
 ## Develop
 
 Needs Orca `1.4.248`+ (`orca` on PATH), Node.js 18+, and `gh` logged in.
 
 ```sh
-orca plugin validate ./plugins/github-review
-orca plugin test ./plugins/github-review
-orca plugin dev watch ./plugins/github-review
+orca plugin validate ./plugins/github
+orca plugin test ./plugins/github
+orca plugin dev watch ./plugins/github
 ```

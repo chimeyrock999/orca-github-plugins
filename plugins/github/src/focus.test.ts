@@ -100,3 +100,30 @@ test('a trailing slash on either path still matches', async () => {
   const result = await resolveFocus({ branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }, [app, lib], deps({ t1: '/code/lib/' }))
   assert.equal(result.ok && result.workspace.id, 'w-lib')
 })
+
+test('a focused terminal wins over a stored pick: the pick is shared by every same-named clone', async () => {
+  const d = { ...deps({ t1: '/code/app' }), picked: async () => '/code/lib/' }
+  const result = await resolveFocus({ branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }, [app, lib], d)
+  assert.deepEqual(result, { ok: true, workspace: app, resolvedBy: 'terminal' })
+})
+
+test('a stored pick settles two repos on main when no terminal tells', async () => {
+  const d = { ...deps(), picked: async () => '/code/lib/' }
+  const result = await resolveFocus({ branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }, [app, lib], d)
+  assert.deepEqual(result, { ok: true, workspace: lib, resolvedBy: 'picked' })
+  assert.deepEqual(d.asked, ['t1'])
+})
+
+test('a pick that is no longer among the matches is ignored', async () => {
+  const d = { ...deps(), picked: async () => '/code/removed' }
+  const result = await resolveFocus({ branch: 'main', displayName: 'main', terminals: [] }, [app, lib], d)
+  assert.equal(!result.ok && result.error.code, 'ambiguous_workspace')
+})
+
+test('a pick is not asked for when the context fits one workspace', async () => {
+  let asked = 0
+  const d = { ...deps(), picked: async () => (asked++, '/code/lib') }
+  const result = await resolveFocus({ branch: 'feature/spike', displayName: 'Spike: run gh', terminals: [] }, [app, lib, spike], d)
+  assert.equal(result.ok && result.resolvedBy, 'context')
+  assert.equal(asked, 0)
+})
