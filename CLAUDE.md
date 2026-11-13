@@ -141,8 +141,9 @@ Listing images (`images/issue.png`, also the cover, and `images/pull.png`) are s
 itself, in the dark theme, with the left sidebar collapsed. Capture the window without its shadow
 (`screencapture -o -w <file>.png`), crop it to 16:10 from the left edge and scale it to 1600×1000,
 then blur everything private: the folder path line under the repository name (it holds the home
-directory), tab titles, and any terminal or agent pane with its status line. Better still, close
-those before capturing and keep only an editor on a file of this repo. The catalog takes PNG,
+directory), tab titles, and the text of the terminal or agent pane with its status line. Keep that
+pane in the shot: "beside the code" means beside the work in progress, the agent or terminal
+session next to the panel. The catalog takes PNG,
 JPEG or WEBP; we keep PNG, which `tests/manifest.test.ts` checks: static, a 16:10 cover of at least
 800×500 and at most 1024 KB, screenshots of at least 1280×800 and at most 1536 KB, six at most,
 8 MB in all (`orca plugin validate` checks the limits too). Leave `theme` unset on screenshots: a
