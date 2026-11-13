@@ -142,9 +142,11 @@ What the panel is for:
 ## Release to the community catalog
 
 How to release, hotfix, and retake the listing images: `RELEASING.md`. In short, a `dev` → `main`
-release PR merged with a merge commit, then a `vX.Y.Z` tag on it. Never change after the first
-release: the id `gh-focus`, the folder `plugins/gh-focus`, or a pushed tag. A user-visible change
-adds a line under `## Unreleased` in `CHANGELOG.md`.
+release PR merged with a merge commit, then a `vX.Y.Z` tag on it; pushing the tag runs
+`.github/workflows/release.yml`, which checks it (`.github/release-check.mjs`, tests beside it:
+`node --test .github/release-check.test.mjs`) and creates the GitHub Release. Never change after
+the first release: the id `gh-focus`, the folder `plugins/gh-focus`, or a pushed tag. A
+user-visible change adds a line under `## Unreleased` in `CHANGELOG.md`.
 
 ## Git and GitHub
 
