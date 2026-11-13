@@ -7,7 +7,7 @@ import { commentItem, failed, issueDetail, links, linkedRows, pullDetail, ref, r
 const lists = {
   'repo.get': repoOk,
   'repo.links': links(),
-  'agent.find': { ok: true as const, agent: { name: 'Claude Code', terminalId: 't1' } },
+  'agent.find': { ok: true as const, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null },
   // The Actions tab starts on the workspace's branch.
   'runs.list': runPage(runRows, 296, '2', 1000, 'fix/token-refresh')
 }
@@ -31,7 +31,10 @@ const longTimeline = issueDetail({
 
 export default defineCheck({
   issues: { requests: lists },
-  'issues-no-agent': { requests: { ...lists, 'agent.find': { ok: true, agent: null } } },
+  'issues-no-agent': { requests: { ...lists, 'agent.find': { ok: true, agent: null, busy: null } } },
+  // The workspace's agent is at work, or waits on a question: named, and Ask waits for it.
+  'issues-agent-working': { requests: { ...lists, 'agent.find': { ok: true, agent: null, busy: { name: 'Claude Code', state: 'working' } } } },
+  'issues-agent-blocked': { requests: { ...lists, 'agent.find': { ok: true, agent: null, busy: { name: 'Claude Code', state: 'blocked' } } } },
   'issues-several': { requests: { ...lists, 'repo.links': links([120, 'octo/sdk#45', 98]), 'items.get': linkedRows(several) } },
   // The GitHub budget shared with Orca is low: the panel says so above the tabs.
   'budget-low': {
@@ -56,6 +59,35 @@ export default defineCheck({
           state: 'not_planned',
           closedAt: Date.UTC(2026, 10, 12, 8, 0),
           head: [...issueDetail().head, { kind: 'closed', id: 'CE_1', actor: 'mai-t', createdAt: Date.UTC(2026, 10, 12, 8, 0), reason: 'not_planned' }]
+        })
+      }
+    }
+  },
+  // Merged and done (✓) beside open (◉) mentions, one from a repo with a long name.
+  'issue-mentions': {
+    requests: {
+      ...lists,
+      ...linked,
+      'issue.get': {
+        ok: true,
+        issue: issueDetail({
+          head: [
+            ...issueDetail().head,
+            {
+              kind: 'mention',
+              id: 'CRE_4',
+              actor: 'olu',
+              createdAt: Date.UTC(2026, 10, 12, 9, 0),
+              source: {
+                type: 'pull',
+                number: 135,
+                title: 'feat: stream every export through one writer',
+                url: 'https://github.com/octo-platform-engineering/data-export-service/pull/135',
+                state: 'merged',
+                repo: 'octo-platform-engineering/data-export-service'
+              }
+            }
+          ]
         })
       }
     }

@@ -25,7 +25,7 @@ import {
 } from 'orca'
 import { issues } from '../issues/issue-store'
 import { count, EMOJI, pullLook, reactionTip, reviewLook, sourceLook, stateWords, type Look } from '../../shared/look'
-import { Glyph } from '../parts'
+import { Glyph, GLYPH_WIDTH } from '../parts'
 import { handOff } from '../linked/link-store'
 import { pulls, workspacePull } from '../pulls/pull-store'
 import { REACTIONS, type ReactionGroup, type ThreadDetail, type TimelineComment, type TimelineItem, type TimelineMention, type TimelineReview } from '../../shared/protocol'
@@ -217,7 +217,8 @@ function Mention({ t, item }: { t: AnyThread; item: TimelineMention }) {
   // tab; other repos on GitHub.
   const go = () =>
     focused || own ? openHere(item.source.type, item.source.number, focused ? null : item.source.repo) : shell.openExternal(item.source.url)
-  // One row, the whole of it pressable: what links here first, who and when under it.
+  // One row, the whole of it pressable: what links here first, who and when under it. Another
+  // repo's name goes under it too, so a long one never cuts the title short.
   return (
     <ListItem onPress={go}>
       <Stack gap="none">
@@ -230,15 +231,19 @@ function Mention({ t, item }: { t: AnyThread; item: TimelineMention }) {
           </Box>
           {/* The number keeps its width; the title is what gets cut. */}
           <Box shrink={false}>
-            <Text size="sm" muted>
-              {own ? `#${item.source.number}` : `${item.source.repo}#${item.source.number}`}
+            <Text size="sm" muted>{`#${item.source.number}`}</Text>
+          </Box>
+        </Box>
+        {/* Under the title, past an empty slot as wide as the glyph's. */}
+        <Box direction="row" gap="xs">
+          <Box width={GLYPH_WIDTH} shrink={false} />
+          <Box grow minWidth={0}>
+            <Text size="xs" muted truncate>
+              {`${own ? '' : `${item.source.repo} · `}${item.actor ?? 'ghost'} mentioned this · `}
+              <RelativeTime at={item.createdAt} />
             </Text>
           </Box>
         </Box>
-        <Text size="xs" muted>
-          {`${item.actor ?? 'ghost'} mentioned this · `}
-          <RelativeTime at={item.createdAt} />
-        </Text>
       </Stack>
     </ListItem>
   )
