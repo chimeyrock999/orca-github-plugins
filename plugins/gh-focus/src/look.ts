@@ -209,7 +209,8 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
   gh_logged_out: { title: 'gh is not logged in', hint: 'Run gh auth login in a terminal, then press Retry.', tone: 'warning' },
   not_found: { title: 'Not found on GitHub', hint: 'It is gone, or this gh login cannot see it.', tone: 'warning' },
   rate_limited: { title: 'GitHub rate limit reached', hint: 'Wait a few minutes, then press Retry.', tone: 'warning' },
-  timeout: { title: 'GitHub took too long', hint: 'Press Retry.', tone: 'warning' },
+  // gh, an Orca host call or a panel request: the message says which.
+  timeout: { title: 'No answer in time', hint: 'Press Retry. The message below says what timed out.', tone: 'warning' },
   cancelled: { title: 'Request cancelled', hint: 'Press Retry.', tone: 'neutral' },
   bad_query: { title: 'Search runs with qualifiers', hint: 'For example branch:main status:failure. GitHub cannot search runs by words.', tone: 'warning' },
   gh_failed: { title: 'gh failed', hint: 'Press Retry. The message below is what gh said.', tone: 'danger' },
