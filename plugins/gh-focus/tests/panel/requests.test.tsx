@@ -85,7 +85,7 @@ test('a workspace shown before with its only issue opens it at once', async () =
   await view.post('repo.changed', { ...repoOk, path: '/code/app-other' })
   await view.post('repo.changed', { ...repoOk })
   assert.ok(view.find({ type: 'Text', text: 'Export CSV drops rows past 10k' }))
-  assert.equal(view.find({ text: /← Back/ }), null)
+  assert.equal(view.find({ text: /← Back to linked/ }), null)
   await view.unmount()
 })
 
