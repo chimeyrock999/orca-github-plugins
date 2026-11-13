@@ -2,7 +2,7 @@
 // answers. The JSON follows what GitHub's GraphQL API answered for real pull requests.
 import { assert, test } from 'orca/testing'
 import { GhError, type Gh } from '../../../src/worker/gh'
-import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, reviewPull } from '../../../src/worker/pulls/pulls'
+import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, readyPull, reviewPull } from '../../../src/worker/pulls/pulls'
 import { COMMENT_BYTES } from '../../../src/worker/timeline'
 
 const repo = { nameWithOwner: 'octo/app', path: '/code/app' }
@@ -261,6 +261,20 @@ test('review: approve may be empty; request changes and comment need a body', as
   await assert.rejects(reviewPull(gh, repo, { number: 131, event: 'comment', body: '' }), isGhError('gh_failed'))
   await assert.rejects(reviewPull(gh, repo, { number: 131, event: 'merge' as never, body: 'x' }), isGhError('gh_failed'))
   assert.equal(gh.calls.length, 3)
+})
+
+test('ready: marks a draft ready for review, or converts it back to draft', async () => {
+  const gh = fakeGh('', '')
+  await readyPull(gh, repo, { number: 131, ready: true })
+  await readyPull(gh, repo, { number: 131, ready: false })
+  assert.deepEqual(
+    gh.calls.map((c) => c.args),
+    [
+      ['pr', 'ready', '131'],
+      ['pr', 'ready', '131', '--undo']
+    ]
+  )
+  assert.ok(gh.calls.every((c) => c.cwd === '/code/app' && c.timeoutMs === 60_000))
 })
 
 test('findBranchPull: the pull request gh finds for the checked-out branch, null when there is none, and a gh that cannot tell throws', async () => {

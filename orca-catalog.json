@@ -1,0 +1,80 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stablyai/orca/main/docs/schemas/plugins/orca-catalog.v2.schema.json",
+  "catalogVersion": 2,
+  "name": "gh Focus",
+  "owner": "chimeyrock999",
+  "plugins": [
+    {
+      "id": "chimeyrock999.gh-focus",
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/chimeyrock999/orca-github-plugins.git",
+        "ref": "main",
+        "path": "plugins/gh-focus"
+      },
+      "description": "For GitHub repos: the issue, pull request and Actions runs of the workspace you're in, beside your code. Read, comment, review and rerun without leaving the editor for the Tasks page. Uses the gh CLI; not affiliated with GitHub.",
+      "categories": [
+        "panels"
+      ],
+      "releases": [
+        {
+          "version": "0.1.0",
+          "commit": "0116c0703ef28ce26c94800a7aed67ddec4fa77f",
+          "contentHash": "752a02f701fda563a75ccfd952e14525c0c653f9a9454e1d6a2cacb52d0bf41a",
+          "execution": "trusted-worker",
+          "minimumOrca": "1.4.256",
+          "name": "gh Focus",
+          "contributes": [
+            {
+              "kind": "panels",
+              "name": "gh Focus"
+            },
+            {
+              "kind": "events",
+              "name": "workspace.changed"
+            }
+          ],
+          "capabilities": [
+            "storage:own",
+            "workspace:read",
+            "workspace:write",
+            "agent:read",
+            "terminal:send"
+          ],
+          "images": {
+            "icon": {
+              "path": "plugins/gh-focus/images/icon.png",
+              "alt": "gh Focus",
+              "sha256": "0585c008b71540256a1ae5ae5bd8dab5dad708471f5219348b99146e531bae31",
+              "width": 256,
+              "height": 256
+            },
+            "cover": {
+              "path": "plugins/gh-focus/images/issue.png",
+              "alt": "gh Focus in Orca's right sidebar, showing the workspace's linked issue with its labels, milestone and description",
+              "sha256": "0ca509a0ea9caeb5b6ecdbb184fbda33d4f5ab4131308a798e1c1da3ebf7b719",
+              "width": 1600,
+              "height": 1000
+            },
+            "screenshots": [
+              {
+                "path": "plugins/gh-focus/images/issue.png",
+                "alt": "gh Focus showing the workspace's linked issue with its labels, milestone and description",
+                "sha256": "0ca509a0ea9caeb5b6ecdbb184fbda33d4f5ab4131308a798e1c1da3ebf7b719",
+                "width": 1600,
+                "height": 1000
+              },
+              {
+                "path": "plugins/gh-focus/images/pull.png",
+                "alt": "gh Focus showing the workspace's merged pull request with its branches, checks, reviewers and description",
+                "sha256": "68407cf287cc9a12220b7d6e278bcb6ff2b27ec71c2f59ee32da6279aeaa9f1e",
+                "width": 1600,
+                "height": 1000
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

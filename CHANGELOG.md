@@ -10,12 +10,28 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+### Added
+
+**Issues and pull requests**
+
+- On an open pull request you may edit: Ready for review marks a draft ready, and Convert to draft
+  (asked first) turns it back into one.
+
 ### Changed
 
-- **Issues and pull requests**: Open in Checks, beside a review's comments on the diff, says that
-  Orca's Checks tab opens a comment's file at its line.
-- **Issues and pull requests**: an open issue or pull request has Back on the left and Orca Tasks →
-  (was ← Back to Orca Tasks) on the right of its top row, and Edit and Open on GitHub beside its title.
+**Issues and pull requests**
+
+- Open in Checks, beside a review's comments on the diff, says that Orca's Checks tab opens a
+  comment's file at its line.
+- An open issue or pull request has Back on the left and Orca Tasks → (was ← Back to Orca Tasks) on
+  the right of its top row, and Edit and Open on GitHub beside its title.
+
+### Fixed
+
+**Elsewhere**
+
+- Listed in Orca's community catalog: a root `orca-catalog.json` points the indexer at
+  `plugins/gh-focus`, which it does not search for on its own (0.1.0 was not listed).
 
 ## 0.1.0 - 2026-11-13
 
