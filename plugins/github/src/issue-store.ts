@@ -67,9 +67,13 @@ const remember = (number: number | null) => update(seen, (m) => ({ ...m, [worksp
 /** Writes wait longer than reads: gh issue create makes several API calls. The worker gives gh 60 s. */
 const WRITE = { timeoutMs: 90_000 }
 
-/** A write with no answer may still have landed on GitHub. */
+// Failures that say nothing of whether gh ran: no answer in time, the panel stopped waiting while
+// the worker went on, or the answer broke or was too big on its way back.
+const UNSURE = new Set<PanelError['code']>(['timeout', 'host_failed', 'cancelled', 'action_failed', 'too_large', 'unavailable'])
+
+/** A write that failed this way may still have landed on GitHub. */
 function unsure(error: PanelError): PanelError {
-  if (error.code !== 'timeout' && error.code !== 'host_failed') return error
+  if (!UNSURE.has(error.code)) return error
   return { code: 'unsure', message: error.message }
 }
 // A newer load of the same issue makes an older one stale.

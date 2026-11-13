@@ -20,7 +20,7 @@ export function Problem({
   /** `Dismiss` for a failed write, where pressing again would repeat it. */
   retryLabel?: string
 }) {
-  const problem = problemOf(error.code)
+  const problem = problemOf(error)
   return (
     <Callout tone={problem.tone} title={problem.title} icon="warning">
       <Stack gap="xs">

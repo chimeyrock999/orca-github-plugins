@@ -58,8 +58,25 @@ test('duration reads like GitHub', () => {
 })
 
 test('every error code has words, and an unknown one falls back to gh_failed', () => {
-  assert.equal(problemOf('gh_logged_out').title, 'gh is not logged in')
-  assert.equal(problemOf('nope' as never).title, 'gh failed')
+  assert.equal(problemOf({ code: 'gh_logged_out' }).title, 'gh is not logged in')
+  assert.equal(problemOf({ code: 'nope' as never }).title, 'gh failed')
+})
+
+test("Orca's own failures say what happened", () => {
+  assert.deepEqual(
+    (['action_failed', 'too_large', 'unavailable', 'cancelled', 'host_failed'] as const).map((code) => problemOf({ code }).title),
+    ['Panel error', 'Answer too big for the panel', 'Plugin worker not running', 'Request cancelled', 'Orca did not answer']
+  )
+})
+
+test("a rate limit with a wait is Orca's and says how long; without one it is GitHub's", () => {
+  const orca = problemOf({ code: 'rate_limited', retryAfterMs: 12_000 })
+  assert.equal(orca.title, 'Too many requests')
+  assert.match(orca.hint, /Wait 12s, then press Retry/)
+  assert.equal(problemOf({ code: 'rate_limited', retryAfterMs: 90_000 }).hint.includes('Wait 1m 30s'), true)
+  // Never "Wait 0s".
+  assert.match(problemOf({ code: 'rate_limited', retryAfterMs: 400 }).hint, /Wait 1s,/)
+  assert.equal(problemOf({ code: 'rate_limited' }).title, 'GitHub rate limit reached')
 })
 
 test('pageLine counts pages GitHub lets anyone reach', () => {

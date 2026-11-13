@@ -1,6 +1,6 @@
 // `orca plugin test .` runs this in Node with the same runtime and checks Orca uses. The mock
 // host's `requests` stand in for src/worker.ts.
-import { assert, mockHost, mount, test } from 'orca/testing'
+import { assert, hostError, mockHost, mount, test } from 'orca/testing'
 import * as panel from './panel'
 import { KindView } from './views'
 import { read } from 'orca'
@@ -132,6 +132,38 @@ test('a failed list shows the problem with Retry, which asks again', async () =>
   })
   const view = await mount(panel, { host: h })
   assert.ok(view.summary().some((l) => /GitHub rate limit reached/.test(l)))
+  await view.press({ text: 'Retry' })
+  assert.equal(view.findAll({ type: 'ListItem' }).length, 1)
+  await view.unmount()
+})
+
+test('a request that broke in the plugin says so; Retry stays, the only way to ask again', async () => {
+  let calls = 0
+  const h = host({
+    'repo.get': () => {
+      if (++calls === 1) throw hostError('action_failed', "Cannot read properties of undefined (reading 'nodes')")
+      return repoOk
+    }
+  })
+  const view = await mount(panel, { host: h })
+  assert.ok(view.summary().some((l) => /Panel error/.test(l)))
+  assert.ok(!view.summary().some((l) => /Orca did not answer/.test(l)))
+  await view.press({ text: 'Retry' })
+  assert.ok(view.find({ text: 'octo/app' }))
+  await view.unmount()
+})
+
+test("Orca's rate limit says how long to wait, and Retry asks again", async () => {
+  let calls = 0
+  const h = host({
+    'issues.list': () => {
+      if (++calls === 1) throw hostError('rate_limited', 'plugin.request rate limited', 12_000)
+      return itemPage(issueRows(1), 1, null)
+    }
+  })
+  const view = await mount(panel, { host: h })
+  assert.ok(view.summary().some((l) => /Too many requests/.test(l)))
+  assert.ok(view.find({ text: "Orca paces the panel's requests. Wait 12s, then press Retry." }))
   await view.press({ text: 'Retry' })
   assert.equal(view.findAll({ type: 'ListItem' }).length, 1)
   await view.unmount()

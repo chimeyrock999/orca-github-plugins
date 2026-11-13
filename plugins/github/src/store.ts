@@ -2,7 +2,7 @@
 // search, the page (a stack of cursors, so Previous goes back without asking GitHub for one), the
 // answer, and the row open in detail.
 import { atom, plugin, read, set, update, type Atom } from 'orca'
-import type { Answer, IssueRow, ItemPage, ItemSort, Page, PanelError, PullRow, RepoAnswer, RunRow } from './protocol'
+import type { Answer, ErrorCode, IssueRow, ItemPage, ItemSort, Page, PanelError, PullRow, RepoAnswer, RunRow } from './protocol'
 
 export type Kind = 'issues' | 'pulls' | 'runs'
 export const KINDS: Kind[] = ['issues', 'pulls', 'runs']
@@ -61,10 +61,19 @@ const loads: Record<Kind, number> = { issues: 0, pulls: 0, runs: 0 }
 // Tabs whose first page was asked for since the repo was set.
 const started = new Set<Kind>()
 
-/** A rejected plugin.request as a failed answer: a timeout says so, anything else is Orca's. */
+// Orca's rejection codes the panel has its own words for; any other code is a request the plugin
+// got wrong, which Orca's typings say to treat as action_failed.
+const KEPT = new Set<ErrorCode>(['timeout', 'cancelled', 'rate_limited', 'too_large', 'unavailable', 'action_failed'])
+
+/** A rejected plugin.request as a failed answer, keeping Orca's code; one with no code is Orca not
+ *  answering. */
 export function requestFailed(error: unknown): { ok: false; error: PanelError } {
-  const e = error as { code?: unknown; message?: unknown }
-  return { ok: false, error: { code: e?.code === 'timeout' ? 'timeout' : 'host_failed', message: String(e?.message ?? error) } }
+  const e = error as { code?: unknown; message?: unknown; retryAfterMs?: unknown }
+  const code: ErrorCode =
+    typeof e?.code !== 'string' ? 'host_failed' : KEPT.has(e.code as ErrorCode) ? (e.code as ErrorCode) : 'action_failed'
+  const failure: PanelError = { code, message: String(e?.message ?? error) }
+  if (typeof e?.retryAfterMs === 'number') failure.retryAfterMs = e.retryAfterMs
+  return { ok: false, error: failure }
 }
 
 function ask(kind: Kind, s: ListState): Promise<Answer<ListPage>> {
