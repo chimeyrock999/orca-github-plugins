@@ -10,6 +10,13 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+### Changed
+
+**Elsewhere**
+
+- The catalog listing has a cover of its own: the panel's issue and pull request, beside the line
+  "Your workspace's issue and PR, beside the code."
+
 ## 0.1.1 - 2026-11-13
 
 ### Added

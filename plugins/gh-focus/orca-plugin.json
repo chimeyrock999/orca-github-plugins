@@ -12,8 +12,8 @@
   "license": "MIT",
   "icon": "images/icon.png",
   "cover": {
-    "path": "images/issue.png",
-    "alt": "gh Focus in Orca's right sidebar, showing the workspace's linked issue with its labels, milestone and description"
+    "path": "images/cover.png",
+    "alt": "gh Focus: your workspace's issue and PR, beside the code. The panel's issue and pull request, with an Actions run in progress"
   },
   "screenshots": [
     {

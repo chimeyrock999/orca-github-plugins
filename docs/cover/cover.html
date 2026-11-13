@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>gh Focus Cover</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a fixed 1600×1000 catalog cover drawn in container units (--u = 1px of the cover),
+   thesis on the left, the real panel captures fanned on the right with live status chips. */
+:root {
+  --ink: #0a0d13;          /* night editor */
+  --ink-2: #111622;        /* raised surface */
+  --line: #232b3b;         /* hairlines */
+  --fg: #e9eef7;
+  --muted: #8d98ad;
+  --open: #3fb950;         /* GitHub: open, passed */
+  --merged: #a371f7;       /* GitHub: merged */
+  --pending: #d29922;      /* GitHub: running, waiting */
+  --failed: #f85149;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "Geist", "SF Pro Text", system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { background: var(--ink); color: var(--fg); }
+body {
+  font-family: var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 48px;
+}
+.page { max-width: 1240px; margin: 0 auto; display: grid; gap: 20px; }
+.page-head { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; justify-content: space-between; }
+.page-head h1 { font: 700 22px/1.2 var(--display); margin: 0; letter-spacing: -0.01em; }
+.page-head p { margin: 0; color: var(--muted); font-size: 13px; font-family: var(--mono); }
+
+/* ---------- the cover ---------- */
+.stage { container-type: inline-size; width: 100%; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 0 0 1px var(--line), 0 30px 80px -20px rgb(0 0 0 / .7); }
+.cover {
+  --u: calc(100cqw / 1600);
+  position: relative; width: 100%; aspect-ratio: 16 / 10; overflow: hidden;
+  background:
+    radial-gradient(calc(620 * var(--u)) calc(520 * var(--u)) at 74% 22%, rgb(63 185 80 / .17), transparent 70%),
+    radial-gradient(calc(700 * var(--u)) calc(560 * var(--u)) at 92% 96%, rgb(163 113 247 / .20), transparent 70%),
+    radial-gradient(calc(600 * var(--u)) calc(500 * var(--u)) at 4% 100%, rgb(56 139 253 / .10), transparent 70%),
+    var(--ink);
+  font-size: calc(16 * var(--u));
+}
+/* dot grid, fading toward the copy */
+.cover::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(rgb(233 238 247 / .09) calc(1.2 * var(--u)), transparent calc(1.6 * var(--u)));
+  background-size: calc(28 * var(--u)) calc(28 * var(--u));
+  mask-image: linear-gradient(100deg, transparent 18%, #000 60%);
+}
+/* film grain */
+.cover::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .35; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+}
+
+/* copy column */
+.copy { position: absolute; left: calc(96 * var(--u)); top: calc(92 * var(--u)); width: calc(700 * var(--u));
+  display: flex; flex-direction: column; gap: calc(34 * var(--u)); z-index: 3; }
+.brand { display: flex; align-items: center; gap: calc(18 * var(--u)); }
+.brand img { width: calc(64 * var(--u)); height: calc(64 * var(--u)); border-radius: calc(15 * var(--u));
+  box-shadow: 0 0 0 calc(1 * var(--u)) rgb(255 255 255 / .12), 0 calc(10 * var(--u)) calc(30 * var(--u)) rgb(0 0 0 / .5); }
+.brand b { font: 700 calc(34 * var(--u))/1 var(--display); letter-spacing: -0.02em; }
+.brand small { display: block; margin-top: calc(6 * var(--u)); font: 500 calc(14 * var(--u))/1 var(--mono);
+  color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+
+h2.thesis { margin: calc(26 * var(--u)) 0 0; font: 800 calc(86 * var(--u))/.98 var(--display);
+  letter-spacing: -0.022em; word-spacing: .04em; text-wrap: balance; }
+.shine {
+  background: linear-gradient(100deg, var(--open) 0%, #7ee2b8 22%, #e9eef7 40%, #c9a8ff 62%, var(--merged) 80%, var(--open) 100%);
+  background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: shine 9s ease-in-out infinite alternate;
+}
+@keyframes shine { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+.lede { margin: 0; font: 400 calc(25 * var(--u))/1.42 var(--body); color: var(--muted); max-width: calc(600 * var(--u)); }
+.lede em { font-style: normal; color: var(--fg); }
+
+.tabs { display: flex; gap: calc(10 * var(--u)); }
+.tab { display: inline-flex; align-items: center; gap: calc(9 * var(--u)); padding: calc(11 * var(--u)) calc(18 * var(--u));
+  border-radius: calc(999 * var(--u)); font: 500 calc(19 * var(--u))/1 var(--body); color: var(--fg);
+  background: rgb(255 255 255 / .04); box-shadow: inset 0 0 0 calc(1 * var(--u)) var(--line); }
+.tab svg { width: calc(20 * var(--u)); height: calc(20 * var(--u)); }
+.tab.on { background: rgb(63 185 80 / .12); box-shadow: inset 0 0 0 calc(1 * var(--u)) rgb(63 185 80 / .45); }
+
+.cmd { align-self: flex-start; display: flex; align-items: center; gap: calc(12 * var(--u));
+  margin-top: calc(10 * var(--u)); padding: calc(15 * var(--u)) calc(22 * var(--u));
+  border-radius: calc(12 * var(--u)); background: rgb(17 22 34 / .85);
+  box-shadow: inset 0 0 0 calc(1 * var(--u)) var(--line), 0 calc(14 * var(--u)) calc(40 * var(--u)) rgb(0 0 0 / .45);
+  font: 400 calc(19 * var(--u))/1 var(--mono); }
+.cmd .p { color: var(--open); }
+.cmd .k { color: var(--muted); }
+.caret { width: calc(10 * var(--u)); height: calc(22 * var(--u)); background: var(--fg); animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.fine { margin-top: calc(-14 * var(--u)); font: 400 calc(15 * var(--u))/1 var(--mono); color: var(--muted); }
+.fine i { font-style: normal; color: var(--open); }
+
+/* panel captures */
+.shot { position: absolute; width: calc(430 * var(--u)); aspect-ratio: 504 / 860; overflow: hidden;
+  border-radius: calc(16 * var(--u)); background: var(--ink-2);
+  box-shadow: 0 0 0 calc(1 * var(--u)) rgb(255 255 255 / .10), 0 calc(40 * var(--u)) calc(90 * var(--u)) calc(-10 * var(--u)) rgb(0 0 0 / .8); }
+.shot img { display: block; width: 100%; height: auto; max-width: none; }
+.shot::after { content: ""; position: absolute; inset: auto 0 0; height: 30%;
+  background: linear-gradient(transparent, var(--ink-2)); }
+.shot.back { left: calc(812 * var(--u)); top: calc(150 * var(--u)); transform: rotate(-6deg); filter: saturate(.9) brightness(.82); z-index: 1; }
+.shot.front { left: calc(1088 * var(--u)); top: calc(78 * var(--u)); transform: rotate(2.5deg); z-index: 2; }
+
+/* status chips, in the panel's own words */
+.chip { position: absolute; z-index: 4; display: inline-flex; align-items: center; gap: calc(9 * var(--u));
+  padding: calc(10 * var(--u)) calc(15 * var(--u)); border-radius: calc(999 * var(--u));
+  font: 500 calc(17 * var(--u))/1 var(--body); white-space: nowrap;
+  background: rgb(14 18 28 / .82); backdrop-filter: blur(calc(10 * var(--u)));
+  box-shadow: inset 0 0 0 calc(1 * var(--u)) var(--c, var(--line)), 0 calc(16 * var(--u)) calc(40 * var(--u)) rgb(0 0 0 / .55);
+  animation: float 7s ease-in-out infinite; }
+.chip .g { color: var(--c); font-weight: 600; }
+.chip.mono { font-family: var(--mono); font-size: calc(15 * var(--u)); }
+.c-open { --c: rgb(63 185 80 / .6); left: calc(1030 * var(--u)); top: calc(56 * var(--u)); }
+.c-merged { --c: rgb(163 113 247 / .6); left: calc(760 * var(--u)); top: calc(470 * var(--u)); animation-delay: -2s; }
+.c-ref { --c: var(--line); left: calc(790 * var(--u)); top: calc(538 * var(--u)); animation-delay: -4s; color: var(--muted); }
+.c-ref b { color: var(--fg); font-weight: 500; }
+.c-checks { --c: rgb(210 153 34 / .55); left: calc(1250 * var(--u)); top: calc(424 * var(--u)); animation-delay: -1s; }
+.c-open .g { color: var(--open); } .c-merged .g { color: var(--merged); }
+.dot { width: calc(10 * var(--u)); height: calc(10 * var(--u)); border-radius: 50%; background: var(--open);
+  box-shadow: 0 0 0 calc(4 * var(--u)) rgb(63 185 80 / .2); }
+.n-f { color: var(--failed); } .n-p { color: var(--pending); } .n-ok { color: var(--open); }
+@keyframes float { 0%, 100% { translate: 0 0; } 50% { translate: 0 calc(-8 * var(--u)); } }
+
+/* Actions run card, drawn (no capture of the Actions tab yet) */
+.run { position: absolute; z-index: 5; left: calc(1030 * var(--u)); top: calc(620 * var(--u)); width: calc(470 * var(--u));
+  padding: calc(20 * var(--u)) calc(22 * var(--u)); border-radius: calc(18 * var(--u));
+  background: linear-gradient(180deg, rgb(24 30 44 / .92), rgb(14 18 28 / .94)); backdrop-filter: blur(calc(14 * var(--u)));
+  box-shadow: inset 0 0 0 calc(1 * var(--u)) rgb(255 255 255 / .09), 0 calc(30 * var(--u)) calc(70 * var(--u)) rgb(0 0 0 / .6);
+  display: grid; gap: calc(14 * var(--u)); }
+.run-head { display: flex; align-items: center; justify-content: space-between; gap: calc(12 * var(--u)); }
+.run-title { font: 600 calc(19 * var(--u))/1.2 var(--body); }
+.run-title span { display: block; margin-top: calc(5 * var(--u)); font: 400 calc(14 * var(--u))/1 var(--mono); color: var(--muted); }
+.live { display: inline-flex; align-items: center; gap: calc(7 * var(--u)); font: 500 calc(13 * var(--u))/1 var(--mono);
+  color: var(--pending); letter-spacing: .06em; text-transform: uppercase; }
+.live::before { content: ""; width: calc(8 * var(--u)); height: calc(8 * var(--u)); border-radius: 50%; background: var(--pending);
+  animation: pulse 1.6s ease-out infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgb(210 153 34 / .6); } 100% { box-shadow: 0 0 0 calc(9 * var(--u)) rgb(210 153 34 / 0); } }
+.jobs { display: grid; gap: calc(2 * var(--u)); margin: 0; padding: 0; list-style: none; }
+.jobs li { display: grid; grid-template-columns: calc(26 * var(--u)) 1fr auto; align-items: center;
+  padding: calc(9 * var(--u)) calc(4 * var(--u)); border-top: calc(1 * var(--u)) solid var(--line);
+  font: 400 calc(17 * var(--u))/1 var(--body); }
+.jobs time { font: 400 calc(15 * var(--u))/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ok { color: var(--open); }
+.spin { width: calc(15 * var(--u)); height: calc(15 * var(--u)); border-radius: 50%;
+  border: calc(2.5 * var(--u)) solid rgb(210 153 34 / .3); border-top-color: var(--pending); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(1turn); } }
+.bar { height: calc(4 * var(--u)); border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar::before { content: ""; display: block; height: 100%; width: 68%;
+  background: linear-gradient(90deg, var(--open), var(--pending)); animation: grow 6s ease-in-out infinite alternate; }
+@keyframes grow { from { width: 52%; } to { width: 86%; } }
+
+.page-foot { color: var(--muted); font-size: 13px; line-height: 1.6; max-width: 72ch; }
+.page-foot code { font-family: var(--mono); font-size: 12px; color: var(--fg); }
+button.toggle { justify-self: start; font: 500 13px/1 var(--body); color: var(--fg); background: var(--ink-2);
+  border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; cursor: pointer; }
+button.toggle:hover { border-color: var(--muted); }
+button.toggle:focus-visible { outline: 2px solid var(--open); outline-offset: 2px; }
+.paused * { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) { .cover * { animation: none !important; } }
+
+/* render.sh: #still is the catalog cover, #t=<ms> one frame of the README loop (all motion repeats every 6 s) */
+body { margin: 0; } .export body { padding: 0; } .export .page { max-width: none; gap: 0; }
+.export .page-head, .export .toggle, .export .page-foot { display: none; }
+.export .stage { border-radius: 0; box-shadow: none; }
+.still .cover * { animation: none !important; }
+.loop .shine { animation-duration: 3s; } .loop .chip { animation-duration: 6s; } .loop .caret { animation-duration: 1s; }
+.loop .live::before { animation-duration: 1.5s; } .loop .bar::before { animation-duration: 3s; }
+</style>
+
+<div class="page">
+  <div class="page-head">
+    <h1>gh Focus cover</h1>
+    <p>1600 × 1000 · 16:10 · catalog cover &amp; README hero</p>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="cover" role="img" aria-label="gh Focus cover: Your workspace's issue and PR, beside the code. The panel's issue and pull request views, with an Actions run in progress.">
+      <div class="copy">
+        <div class="brand">
+          <img src="../../plugins/gh-focus/images/icon.png" alt="">
+          <div><b>gh Focus</b><small>Plugin for Orca</small></div>
+        </div>
+        <h2 class="thesis">Your workspace’s issue and PR, <span class="shine">beside the code.</span></h2>
+        <p class="lede">Read, comment, review and rerun from Orca’s right sidebar. <em>No tab switch to the Tasks page.</em></p>
+        <div class="tabs">
+          <span class="tab on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M5.5 4.5a2.5 2.5 0 0 1 5 0M4.5 7h7v3a3.5 3.5 0 0 1-7 0zM8 7v6.5M2 8.5h2.5M11.5 8.5H14M2.5 5l2 2M13.5 5l-2 2M2.5 13l2-1.5M13.5 13l-2-1.5"/></svg>Issues</span>
+          <span class="tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="12.5" r="1.6"/><path d="M4 5.1v5.8M12 10.9V6.5a2 2 0 0 0-2-2H7.5M9 3 7.5 4.5 9 6"/></svg>Pull requests</span>
+          <span class="tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M4.5 2.8v10.4L13 8z"/></svg>Actions</span>
+        </div>
+        <div class="cmd"><span class="p">$</span><span>orca plugin install <span class="k">chimeyrock999.</span>gh-focus</span><span class="caret"></span></div>
+        <div class="fine">uses your <i>gh</i> login · stores no tokens</div>
+      </div>
+
+      <div class="shot back"><img src="pull.jpg" alt=""></div>
+      <div class="shot front"><img src="issue.jpg" alt=""></div>
+
+      <span class="chip c-open"><span class="dot"></span><span class="g">Open</span> #25 · linked to this workspace</span>
+      <span class="chip c-merged"><span class="g">✓ Merged</span> #38</span>
+      <span class="chip mono c-ref"><b>dev</b> ← refactor/organize-src</span>
+      <span class="chip c-checks"><span class="n-f">1 failing</span> · <span class="n-p">2 pending</span> · <span class="n-ok">4 passed</span></span>
+
+      <div class="run">
+        <div class="run-head">
+          <div class="run-title">CI · Run #412<span>on feature/rewrite-readme</span></div>
+          <span class="live">live</span>
+        </div>
+        <ul class="jobs">
+          <li><span class="ok">✓</span>validate</li>
+          <li><span class="ok">✓</span>test<time>1m 12s</time></li>
+          <li><span class="spin"></span>check<time>0m 41s</time></li>
+        </ul>
+        <div class="bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <button class="toggle" id="motion" type="button" aria-pressed="false">Pause motion</button>
+
+  <p class="page-foot">The two panel views are real captures from Orca: issue <code>#25</code> and pull request <code>#38</code>
+  of this repo. The Actions card is drawn in CSS, since there is no capture of that tab yet. The cover keeps its layout at
+  any width; for the catalog it is exported at 1600 × 1000.</p>
+</div>
+
+<script>
+  const hash = location.hash.slice(1);
+  if (hash === 'still') document.documentElement.classList.add('export', 'still');
+  if (hash.startsWith('t=')) {
+    document.documentElement.classList.add('export', 'loop');
+    addEventListener('load', () => document.getAnimations().forEach((a) => { a.pause(); a.currentTime = +hash.slice(2); }));
+  }
+  const btn = document.getElementById('motion');
+  const stage = document.getElementById('stage');
+  btn.addEventListener('click', () => {
+    const paused = stage.classList.toggle('paused');
+    btn.setAttribute('aria-pressed', String(paused));
+    btn.textContent = paused ? 'Play motion' : 'Pause motion';
+  });
+</script>
