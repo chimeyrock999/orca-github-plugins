@@ -236,14 +236,14 @@ test('labels and assignees: pick, then Apply sends what was added and removed', 
   await view.unmount()
 })
 
-test('reactions: press to take yours back, ☺+ to add one; a refusal puts it back', async () => {
+test('reactions: press to take yours back, ☺ + to add one; a refusal puts it back', async () => {
   let refuse = false
   const h = host({ 'reaction.set': () => (refuse ? failed('gh_failed', 'GitHub reaction failed') : ok) })
   const view = await openIssue120(h)
   await view.press({ type: 'Button', text: '👍 2' })
   assert.deepEqual(h.last('reaction.set'), { subjectId: 'I_120', content: 'THUMBS_UP', on: false })
   assert.ok(view.find({ type: 'Button', text: '👍 1' }))
-  await view.press({ type: 'Button', text: '☺+' })
+  await view.press({ type: 'Button', text: '☺ +' })
   await view.press({ type: 'Button', text: '🚀' })
   assert.deepEqual(h.last('reaction.set'), { subjectId: 'I_120', content: 'ROCKET', on: true })
   assert.ok(view.find({ type: 'Button', text: '🚀 1' }))

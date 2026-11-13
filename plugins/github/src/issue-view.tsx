@@ -84,8 +84,8 @@ function Reactions({ subject, groups }: { subject: string; groups: ReactionGroup
             {`${EMOJI[g.content]} ${g.count}`}
           </Button>
         ))}
-        <Button size="xs" variant={open ? 'outline' : 'ghost'} tooltip="Add reaction" onPress={() => toggleReactions(subject)}>
-          ☺+
+        <Button size="xs" variant={open ? 'solid' : 'outline'} tooltip="Add reaction" onPress={() => toggleReactions(subject)}>
+          ☺ +
         </Button>
       </Row>
       {open && (
@@ -120,26 +120,23 @@ function Post({ head, tools, body, url, cut, subject, reactions }: {
   subject: string
   reactions: ReactionGroup[]
 }) {
-  // Reactions sit under the box, as on GitHub, not inside it.
   return (
-    <Stack gap="xs">
-      <Box border radius="md">
-        <Box direction="row" justify="between" align="center" gap="xs" paddingX="sm" paddingY="xs" background="muted">
-          <Text size="sm">{head}</Text>
-          {tools}
-        </Box>
-        <Box padding="sm" gap="sm">
-          {body.trim() ? <Markdown content={linkRefs(body, repoUrl())} /> : <Text size="sm" muted>No description provided.</Text>}
-          {cut && <Cut url={url} />}
-          {hasImage(body) && (
-            <Text size="xs" muted>
-              Images show on GitHub only.
-            </Text>
-          )}
-        </Box>
+    <Box border radius="md">
+      <Box direction="row" justify="between" align="center" gap="xs" paddingX="sm" paddingY="xs" background="muted">
+        <Text size="sm">{head}</Text>
+        {tools}
       </Box>
-      <Reactions subject={subject} groups={reactions} />
-    </Stack>
+      <Box padding="sm" gap="sm">
+        {body.trim() ? <Markdown content={linkRefs(body, repoUrl())} /> : <Text size="sm" muted>No description provided.</Text>}
+        {cut && <Cut url={url} />}
+        {hasImage(body) && (
+          <Text size="xs" muted>
+            Images show on GitHub only.
+          </Text>
+        )}
+        <Reactions subject={subject} groups={reactions} />
+      </Box>
+    </Box>
   )
 }
 
