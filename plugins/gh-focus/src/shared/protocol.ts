@@ -475,8 +475,5 @@ declare module 'orca' {
     /** Posted to every open panel when the low GitHub budget changes, and with null once it is no
      *  longer low. */
     'budget.changed': { budget: GitHubBudget | null }
-    /** Posted to every open panel when an agent of the focused workspace changes state, so a panel
-     *  that offers one asks `agent.find` again. */
-    'agent.changed': Record<string, never>
   }
 }

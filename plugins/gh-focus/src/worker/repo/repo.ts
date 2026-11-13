@@ -59,8 +59,6 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps, changed?: (before
   // A folder's repo does not change with focus, so a found repo is kept; errors are asked again.
   // Concurrent asks for one folder share the gh run.
   const repos = new Map<string, Promise<GhRepoAnswer>>()
-  // Terminal ids stay the same while the terminal lives, and so does its folder.
-  const terminals = new Map<string, string>()
 
   function repoOf(path: string): Promise<GhRepoAnswer> {
     const cached = repos.get(path)
@@ -99,13 +97,8 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps, changed?: (before
       const path = (await withPicks(picks))[pickKey(context, matches)]
       return typeof path === 'string' ? path : null
     },
-    terminalPath: async (id) => {
-      const known = terminals.get(id)
-      if (known) return known
-      const path = await deps.terminalPath(id)
-      if (path) terminals.set(id, path)
-      return path
-    }
+    // The worker keeps each terminal's folder (`folderOf` in src/worker.ts).
+    terminalPath: deps.terminalPath
   }
 
   // A rejected Orca call (workspace.readContext, workspace.list, storage) keeps Orca's code.

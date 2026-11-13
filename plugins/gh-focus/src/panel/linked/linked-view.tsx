@@ -154,7 +154,7 @@ function HowToLink({ kind }: { kind: LinkedKind }) {
         </>
       ) : (
         <Text size="xs" muted>
-          No agent runs in this workspace. Run the command in a terminal of the workspace.
+          No agent here to ask. Run the command in a terminal of the workspace.
         </Text>
       )}
       {a?.error && <Problem error={a.error} onRetry={showCommand} retryLabel="Dismiss" />}

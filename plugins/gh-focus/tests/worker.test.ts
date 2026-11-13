@@ -478,36 +478,38 @@ test('agent.find names a free agent; agent.ask types the link prompt into its te
   await denied.deactivate()
 })
 
-test('an agent of the panel\'s workspace changing state tells the panels; one elsewhere does not', async () => {
-  const folders: Record<string, string> = { 't-here': '/work/spike/', 't-there': '/code/app' }
-  const looked: string[] = []
-  const host = mockHost({
-    results: {
-      'workspace.readContext': { branch: 'feature/spike', displayName: 'Spike', terminals: [] },
-      'workspace.list': { workspaces, truncated: false }
-    }
-  })
+test('the repo tracker and the agent requests share one CLI run per terminal; no answer is asked again', async () => {
+  const asked: string[] = []
   const module = {
     default: (orca: OrcaWorkerApi) =>
       main.activateWith(orca, {
         gh: noGh,
         ghRepo: async (path) => repos[path],
-        terminalPath: async (id) => (looked.push(id), folders[id] ?? null),
+        terminalPath: async (id) => (asked.push(id), id === 't-app' ? '/code/app' : null),
         exists: () => true
       })
   }
+  const agents = [
+    { terminalId: 't-app', title: 'Claude Code', agent: 'claude', state: 'waiting', stateStartedAt: 1 },
+    { terminalId: 't-gone', title: 'Codex', agent: 'codex', state: 'working', stateStartedAt: 2 }
+  ]
+  const context = { branch: 'main', displayName: 'main', terminals: [{ id: 't-app' }] }
+  const host = mockHost({
+    results: {
+      'workspace.readContext': context,
+      'workspace.list': { workspaces, truncated: false },
+      'agents.list': { agents },
+      'terminal.sendText': { accepted: true }
+    }
+  })
   const worker = await mountWorker(module, { host })
-  const changed = () => worker.posts.filter((p) => p.event === 'agent.changed').length
-  const status = (terminalId: string | undefined, state: 'working' | 'done') =>
-    worker.emit('agent.status.changed', { workspaceId: null, paneKey: 'p', ...(terminalId ? { terminalId } : {}), state, receivedAt: 1 })
-  await status('t-here', 'working')
-  await status('t-here', 'done')
-  assert.equal(changed(), 2)
-  await status('t-there', 'done')
-  await status(undefined, 'done')
-  assert.equal(changed(), 2)
-  // A terminal's folder is looked up once.
-  assert.deepEqual(looked.filter((id) => id === 't-here'), ['t-here'])
+  assert.equal((await worker.request('repo.get')).ok, true)
+  await Promise.all([worker.request('agent.find'), worker.request('agent.find')])
+  assert.equal((await worker.request('agent.ask', { kind: 'issues', terminalId: 't-app' })).ok, true)
+  assert.deepEqual(asked.filter((id) => id === 't-app'), ['t-app'])
+  // A terminal the CLI has no folder for is asked again next time.
+  await worker.request('agent.find')
+  assert.ok(asked.filter((id) => id === 't-gone').length >= 2)
   await worker.deactivate()
 })
 

@@ -90,7 +90,7 @@ gh Focus is a `trusted-worker`: its worker runs `gh` and Orca's CLI on your mach
 | `storage:own` | Remembers which workspace you picked when Orca cannot tell which one is focused. |
 | `workspace:read` | The focused workspace's name, branch and terminals, to find its folder and repo. |
 | `workspace:write` | Only to open Orca's Tasks page and Checks tab; it never opens, creates or renames a workspace. |
-| `agent:read` | Finds a free agent of the workspace for Ask agent, and notices when one there starts or stops. |
+| `agent:read` | Finds a free agent of the workspace for Ask agent, and notices when an agent starts or stops. |
 | `terminal:send` | Types the link request into that agent's terminal, without pressing Enter. |
 
 Every feature, the panel in detail and the files behind it: [`plugins/gh-focus/README.md`](plugins/gh-focus/README.md).

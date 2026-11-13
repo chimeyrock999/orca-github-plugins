@@ -18,8 +18,7 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
   under it, and state glyphs (✓, ◉) line up with the same gap everywhere, Actions and linked lists
   included.
 - Link one names the workspace's agent while it works or waits on a question (was "No agent is
-  free"), and offers Ask agent by itself once it stops, without Refresh. Updating asks you to approve
-  gh Focus again: it now listens to Orca's agent status.
+  free"), and offers Ask agent by itself once it stops, without Refresh.
 
 ## 0.1.2 - 2026-11-13
 

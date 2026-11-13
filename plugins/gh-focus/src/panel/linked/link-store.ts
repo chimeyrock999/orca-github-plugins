@@ -31,11 +31,14 @@ export function agentNow(): AgentState | null {
 
 /** Looks for a free agent when the empty state shows for a workspace (or on Refresh, or when an agent
  *  there changes state): a failure, such as Orca not allowing it, is no agent. */
+let finding = 0
 export async function findAgent(again = false): Promise<void> {
   const where = focusKey()
   if (!again && read(agent)?.where === where) return
+  // Agent events come quickly: only the latest look answers.
+  const mine = ++finding
   const answer = await plugin.request('agent.find').catch(requestFailed)
-  if (focusKey() !== where) return
+  if (mine !== finding || focusKey() !== where) return
   set(agent, { where, agent: answer.ok ? answer.agent : null, busy: answer.ok ? answer.busy : null, asking: false, asked: null, error: null })
 }
 
