@@ -15,6 +15,8 @@ type Manifest = {
   repository?: string
   license?: string
   contributes: { panels: { id: string; title: string }[] }
+  icon?: string
+  capabilities: { kind: string }[]
   cover?: { path: string; alt: string }
   screenshots?: { path: string; alt: string; caption?: string; theme?: 'light' | 'dark' }[]
 }
@@ -92,4 +94,21 @@ test('the screenshots fit the catalog limits', () => {
   const paths = new Set([manifest.cover?.path, ...shots.map((s) => s.path)].filter((p) => p !== undefined))
   const total = [...paths].reduce((sum, path) => sum + png(path).bytes, 0)
   assert.ok(total <= 8 * 1024 * KB, `images are ${total} bytes`)
+})
+
+test('the icon fits the catalog limits', () => {
+  assert.ok(manifest.icon, 'no icon')
+  const { width, height, bytes } = png(manifest.icon)
+  assert.equal(width, height, `icon is ${width}×${height}, not square`)
+  assert.ok(width >= 128, `icon is ${width}×${height}`)
+  assert.ok(bytes <= 256 * KB, `icon is ${bytes} bytes`)
+})
+
+// Users approve these before the plugin runs; the README says what each one is for.
+test('the README explains every capability the manifest asks for', () => {
+  const readme = readFileSync(join(root, 'README.md'), 'utf8')
+  const permissions = readme.split(/^## Permissions$/m)[1]?.split(/^## /m)[0] ?? ''
+  assert.ok(permissions.length > 0, 'no Permissions section')
+  const listed = [...permissions.matchAll(/^- `([a-z]+:[a-z]+)`/gm)].map((m) => m[1])
+  assert.deepEqual(listed.sort(), manifest.capabilities.map((c) => c.kind).sort())
 })
