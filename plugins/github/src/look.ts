@@ -124,7 +124,12 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
   timeout: { title: 'GitHub took too long', hint: 'Press Retry.', tone: 'warning' },
   cancelled: { title: 'Request cancelled', hint: 'Press Retry.', tone: 'neutral' },
   bad_query: { title: 'Search runs with qualifiers', hint: 'For example branch:main status:failure. GitHub cannot search runs by words.', tone: 'warning' },
-  gh_failed: { title: 'gh failed', hint: 'Press Retry. The message below is what gh said.', tone: 'danger' }
+  gh_failed: { title: 'gh failed', hint: 'Press Retry. The message below is what gh said.', tone: 'danger' },
+  unsure: {
+    title: 'It may have gone through',
+    hint: 'GitHub did not answer in time. Check the issue (or the list) before you try again, so nothing is posted twice.',
+    tone: 'warning'
+  }
 }
 
 export const problemOf = (code: ErrorCode): Problem => PROBLEMS[code] ?? PROBLEMS.gh_failed

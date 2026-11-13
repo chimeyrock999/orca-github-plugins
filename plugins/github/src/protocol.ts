@@ -21,6 +21,8 @@ export type ErrorCode =
   /** A search the API cannot run, such as plain words in a runs search. */
   | 'bad_query'
   | 'gh_failed'
+  /** Panel only: a write got no answer in time, so it may or may not have landed. */
+  | 'unsure'
 
 export type PanelError = {
   code: ErrorCode

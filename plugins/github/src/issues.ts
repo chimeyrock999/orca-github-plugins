@@ -299,8 +299,11 @@ export async function issueTimeline(
   return { items: taken.items, next: more ? taken.cursor : null }
 }
 
+/** Writes get longer than gh's 15 s default: `gh issue create` makes several API calls. */
+const WRITE_MS = 60_000
+
 function run(gh: Gh, repo: RepoRef, args: string[], signal?: AbortSignal): Promise<unknown> {
-  return gh(args, { cwd: repo.path, signal })
+  return gh(args, { cwd: repo.path, signal, timeoutMs: WRITE_MS })
 }
 
 function needText(text: string, what: string): string {
@@ -392,7 +395,7 @@ export async function setReaction(
 ): Promise<object> {
   if (!(REACTIONS as readonly string[]).includes(input.content)) throw new GhError('gh_failed', `${input.content} is not a GitHub reaction.`)
   const args = ['api', 'graphql', '-f', `query=${REACTION_MUTATION(input.on)}`, '-f', `subjectId=${input.subjectId}`, '-f', `content=${input.content}`]
-  const out = (await gh(args, { cwd: repo.path, signal, json: true })) as { errors?: { message: string }[] } | null
+  const out = (await gh(args, { cwd: repo.path, signal, json: true, timeoutMs: WRITE_MS })) as { errors?: { message: string }[] } | null
   if (out?.errors?.length) throw new GhError('gh_failed', `GitHub reaction failed: ${out.errors.map((e) => e.message).join('; ')}`)
   return {}
 }

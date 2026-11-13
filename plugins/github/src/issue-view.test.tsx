@@ -1,9 +1,10 @@
 // The Issues tab past the list: an issue's detail, its timeline, and every write, over a mock host
 // whose `requests` stand in for src/worker.ts.
-import { assert, mockHost, mount, test } from 'orca/testing'
+import { assert, hostError, mockHost, mount, test } from 'orca/testing'
 import * as panel from './panel'
 import { commentItem, failed, issueDetail, issueRows, itemPage, repoOk } from './fixtures'
 import { backToIssues, loadIssue, mergeTimeline, react } from './issue-store'
+import { setRepo } from './store'
 import type { IssueDetail, ItemListInput } from './protocol'
 
 const ok = { ok: true } as const
@@ -446,5 +447,77 @@ test('another workspace starts on its own linked issue; no link, or no answer, s
   link = -1
   await view.post('repo.changed', { ...repoOk, path: '/code/app-other' })
   assert.equal(view.findAll({ type: 'ListItem' }).length, 3)
+  await view.unmount()
+})
+
+const lib = { ...repoOk, nameWithOwner: 'octo/lib', url: 'https://github.com/octo/lib', path: '/code/lib' }
+
+test('a new issue answered after the focus moved to another repo opens nothing there', async () => {
+  const h = host({
+    'issue.create': async () => {
+      await setRepo(lib)
+      return { ok: true, number: 129, url: 'https://github.com/octo/app/issues/129' }
+    }
+  })
+  const view = await mount(panel, { host: h })
+  await view.press({ label: 'New issue' })
+  await view.type({ label: 'Title' }, 'Search ignores accents')
+  await view.press({ text: 'Create issue' })
+  assert.equal(h.last('issue.get'), undefined)
+  assert.ok(view.find({ text: 'octo/lib' }))
+  assert.equal(view.persisted.workspace.openIssue ?? null, null)
+  await view.unmount()
+})
+
+test('an issue answered after the focus moved to another repo is dropped', async () => {
+  let calls = 0
+  const h = host({
+    'issue.get': async () => {
+      if (++calls === 1) await setRepo(lib)
+      return { ok: true, issue: issueDetail() }
+    }
+  })
+  const view = await openIssue120(h)
+  assert.ok(view.find({ text: 'octo/lib' }))
+  assert.equal(view.find({ text: '← Back to issues' }), null)
+  await view.unmount()
+})
+
+test('a write with no answer may have landed: it says so, keeps the text and loads the issue again', async () => {
+  const h = host({
+    'issue.comment': () => {
+      throw hostError('timeout', 'plugin.request timed out')
+    }
+  })
+  const view = await openIssue120(h)
+  await view.type({ label: 'Comment' }, 'Fixed in #131.')
+  await view.press({ type: 'Button', text: 'Comment' })
+  assert.ok(view.summary().some((l) => /It may have gone through/.test(l)))
+  assert.equal(view.valueOf({ label: 'Comment' }), 'Fixed in #131.')
+  assert.equal(h.asked.filter((a) => a.name === 'issue.get').length, 2)
+  await view.unmount()
+})
+
+test('a new issue with no answer says it may exist, and Back loads the list again', async () => {
+  const h = host({
+    'issue.create': () => {
+      throw hostError('timeout', 'plugin.request timed out')
+    }
+  })
+  const view = await mount(panel, { host: h })
+  await view.press({ label: 'New issue' })
+  await view.type({ label: 'Title' }, 'Search ignores accents')
+  await view.press({ text: 'Create issue' })
+  assert.ok(view.summary().some((l) => /It may have gone through/.test(l)))
+  await view.press({ text: '← Back to issues' })
+  assert.equal(h.asked.filter((a) => a.name === 'issues.list').length, 2)
+  await view.unmount()
+})
+
+test('a write that GitHub refused is not called unsure', async () => {
+  const view = await openIssue120(host({ 'issue.comment': () => failed('gh_failed', 'HTTP 422') }))
+  await view.type({ label: 'Comment' }, 'x')
+  await view.press({ type: 'Button', text: 'Comment' })
+  assert.ok(!view.summary().some((l) => /It may have gone through/.test(l)))
   await view.unmount()
 })

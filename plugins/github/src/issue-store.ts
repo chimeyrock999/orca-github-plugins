@@ -48,6 +48,22 @@ export const newIssue = atom<NewIssue>(blankIssue())
 
 // Opening another issue, the form or the list makes answers for the one before stale.
 let views = 0
+
+/** Where an answer belongs: what is open, in which workspace. A repo or folder change makes an
+ *  answer stale as surely as opening something else does. */
+function here(): string {
+  const r = read(repo)
+  return `${views}\n${r?.ok ? `${r.nameWithOwner}\n${r.path}` : ''}`
+}
+
+/** Writes wait longer than reads: gh issue create makes several API calls. The worker gives gh 60 s. */
+const WRITE = { timeoutMs: 90_000 }
+
+/** A write with no answer may still have landed on GitHub. */
+function unsure(error: PanelError): PanelError {
+  if (error.code !== 'timeout' && error.code !== 'host_failed') return error
+  return { code: 'unsure', message: error.message }
+}
 // A newer load of the same issue makes an older one stale.
 let loads = 0
 // A write changed an issue, so the list is asked for again on the way back.
@@ -61,10 +77,10 @@ export function shown(): IssueDetail | null {
 
 export async function loadIssue(): Promise<void> {
   const mine = ++loads
-  const view = views
+  const view = here()
   const number = read(issue).number
   const answer = await plugin.request('issue.get', { number }).catch(requestFailed)
-  if (mine === loads && view === views) update(issue, (s) => ({ ...s, answer }))
+  if (mine === loads && view === here()) update(issue, (s) => ({ ...s, answer }))
 }
 
 /** Opens an issue by number, from the list, a mention or a new issue. */
@@ -110,10 +126,10 @@ export async function loadMore(): Promise<void> {
   const s = read(issue)
   const detail = shown()
   if (s.busy || !detail?.next) return
-  const view = views
+  const view = here()
   update(issue, (x) => ({ ...x, busy: 'more', error: null }))
   const answer = await plugin.request('issue.timeline', { number: s.number, after: detail.next }).catch(requestFailed)
-  if (view !== views) return
+  if (view !== here()) return
   update(issue, (x) => ({ ...x, busy: null, error: answer.ok ? null : answer.error }))
   // A reload while the page was on its way starts the timeline over; the page then fits nowhere.
   if (answer.ok && shown()?.next === detail.next) changeShown((d) => ({ ...d, ...mergeTimeline(d.head, d.tail, answer.items, answer.next) }))
@@ -122,13 +138,19 @@ export async function loadMore(): Promise<void> {
 /** Runs one write; on success `done` tidies the state and the issue is asked for again. */
 async function write(name: string, request: () => Promise<Answer<object>>, done: (s: IssueState) => IssueState, reload = true): Promise<boolean> {
   if (read(issue).busy) return false
-  const view = views
+  const view = here()
   update(issue, (s) => ({ ...s, busy: name, error: null }))
   const answer = await request().catch(requestFailed)
   if (answer.ok) listStale = true
-  if (view !== views) return false
+  if (view !== here()) return false
   if (!answer.ok) {
-    update(issue, (s) => ({ ...s, busy: null, error: answer.error }))
+    const error = unsure(answer.error)
+    update(issue, (s) => ({ ...s, busy: null, error }))
+    // It may have gone through: show what GitHub has now, keeping what was typed.
+    if (error.code === 'unsure') {
+      listStale = true
+      if (reload) await loadIssue()
+    }
     return false
   }
   update(issue, (s) => done({ ...s, busy: null }))
@@ -142,7 +164,7 @@ export const dismissError = () => update(issue, (s) => ({ ...s, error: null }))
 export function sendComment(): Promise<boolean> | void {
   const { number, draft } = read(issue)
   if (!draft.trim()) return
-  return write('comment', () => plugin.request('issue.comment', { number, body: draft }), (s) => ({ ...s, draft: '' }))
+  return write('comment', () => plugin.request('issue.comment', { number, body: draft }, WRITE), (s) => ({ ...s, draft: '' }))
 }
 
 export const startClose = () => update(issue, (s) => ({ ...s, closing: { reason: 'completed' as CloseReason, duplicateOf: '' } }))
@@ -162,13 +184,13 @@ export function confirmClose(): Promise<boolean> | void {
   const duplicateOf = closing.reason === 'duplicate' ? duplicateNumber(closing.duplicateOf) : null
   if (closing.reason === 'duplicate' && duplicateOf === null) return
   const input = { number, reason: closing.reason, ...(duplicateOf ? { duplicateOf } : {}), ...(draft.trim() ? { comment: draft } : {}) }
-  return write('close', () => plugin.request('issue.close', input), (s) => ({ ...s, draft: '', closing: null }))
+  return write('close', () => plugin.request('issue.close', input, WRITE), (s) => ({ ...s, draft: '', closing: null }))
 }
 
 export function reopen(): Promise<boolean> {
   const { number, draft } = read(issue)
   const input = { number, ...(draft.trim() ? { comment: draft } : {}) }
-  return write('reopen', () => plugin.request('issue.reopen', input), (s) => ({ ...s, draft: '' }))
+  return write('reopen', () => plugin.request('issue.reopen', input, WRITE), (s) => ({ ...s, draft: '' }))
 }
 
 function changeComment(id: number, change: (c: TimelineComment) => TimelineComment | null): void {
@@ -185,7 +207,7 @@ export const cancelEditComment = () => update(issue, (s) => ({ ...s, editingComm
 export async function saveComment(): Promise<void> {
   const editing = read(issue).editingComment
   if (!editing?.body.trim()) return
-  const ok = await write('edit-comment', () => plugin.request('comment.edit', editing), (s) => ({ ...s, editingComment: null }), false)
+  const ok = await write('edit-comment', () => plugin.request('comment.edit', editing, WRITE), (s) => ({ ...s, editingComment: null }), false)
   if (ok) changeComment(editing.id, (c) => ({ ...c, body: editing.body, edited: true, truncated: false }))
 }
 
@@ -195,7 +217,7 @@ export const cancelDelete = () => update(issue, (s) => ({ ...s, deleting: null }
 export async function confirmDelete(): Promise<void> {
   const id = read(issue).deleting
   if (id === null) return
-  const ok = await write('delete', () => plugin.request('comment.delete', { id }), (s) => ({ ...s, deleting: null }), false)
+  const ok = await write('delete', () => plugin.request('comment.delete', { id }, WRITE), (s) => ({ ...s, deleting: null }), false)
   if (ok) {
     changeComment(id, () => null)
     changeShown((d) => ({ ...d, comments: Math.max(0, d.comments - 1), total: Math.max(0, d.total - 1) }))
@@ -220,7 +242,7 @@ export function saveEdit(): Promise<boolean> | void {
     ...(editing.title !== d.title ? { title: editing.title } : {}),
     ...(editing.body !== d.body ? { body: editing.body } : {})
   }
-  return write('edit', () => plugin.request('issue.edit', input), (s) => ({ ...s, editing: null }))
+  return write('edit', () => plugin.request('issue.edit', input, WRITE), (s) => ({ ...s, editing: null }))
 }
 
 // Pickers for labels and assignees, on the issue or on the new issue form.
@@ -261,7 +283,7 @@ export function applyPicker(): Promise<boolean> | void {
   if (add.length + remove.length === 0) return update(issue, (s) => ({ ...s, picking: null }))
   const input =
     picking.kind === 'labels' ? { number, addLabels: add, removeLabels: remove } : { number, addAssignees: add, removeAssignees: remove }
-  return write(picking.kind, () => plugin.request('issue.edit', input), (s) => ({ ...s, picking: null }))
+  return write(picking.kind, () => plugin.request('issue.edit', input, WRITE), (s) => ({ ...s, picking: null }))
 }
 
 export function applyNewPicker(): void {
@@ -308,12 +330,12 @@ function setReactions(subjectId: string, change: (groups: ReactionGroup[]) => Re
 
 export async function react(subjectId: string, content: Reaction): Promise<void> {
   const on = !reactionsOf(subjectId).find((g) => g.content === content)?.viewerHasReacted
-  const view = views
+  const view = here()
   const viewer = shown()?.viewer ?? null
   setReactions(subjectId, (g) => flip(g, content, on, viewer))
   update(issue, (s) => ({ ...s, reacting: null, error: null }))
-  const answer = await plugin.request('reaction.set', { subjectId, content, on }).catch(requestFailed)
-  if (view !== views || answer.ok) return
+  const answer = await plugin.request('reaction.set', { subjectId, content, on }, WRITE).catch(requestFailed)
+  if (view !== here() || answer.ok) return
   setReactions(subjectId, (g) => flip(g, content, !on, viewer))
   update(issue, (s) => ({ ...s, error: answer.error }))
 }
@@ -353,14 +375,18 @@ export const setNewIssue = (change: Partial<Pick<NewIssue, 'title' | 'body'>>) =
 export async function createIssue(): Promise<void> {
   const s = read(newIssue)
   if (s.busy || !s.title.trim()) return
-  const view = views
+  const view = here()
   update(newIssue, (x) => ({ ...x, busy: true, error: null }))
   const answer = await plugin
-    .request('issue.create', { title: s.title, body: s.body, labels: s.labels, assignees: s.assignees })
+    .request('issue.create', { title: s.title, body: s.body, labels: s.labels, assignees: s.assignees }, WRITE)
     .catch(requestFailed)
   if (answer.ok) listStale = true
-  if (view !== views) return set(newIssue, blankIssue())
-  if (!answer.ok) return update(newIssue, (x) => ({ ...x, busy: false, error: answer.error }))
+  if (view !== here()) return set(newIssue, blankIssue())
+  if (!answer.ok) {
+    const error = unsure(answer.error)
+    if (error.code === 'unsure') listStale = true
+    return update(newIssue, (x) => ({ ...x, busy: false, error }))
+  }
   set(newIssue, blankIssue())
   await openIssue(answer.number)
 }

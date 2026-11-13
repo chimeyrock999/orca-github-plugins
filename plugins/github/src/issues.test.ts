@@ -20,10 +20,10 @@ import {
 
 const repo = { nameWithOwner: 'octo/app', path: '/code/app' }
 
-function fakeGh(...answers: unknown[]): Gh & { calls: { args: string[]; cwd?: string; json?: boolean }[] } {
-  const calls: { args: string[]; cwd?: string; json?: boolean }[] = []
+function fakeGh(...answers: unknown[]): Gh & { calls: { args: string[]; cwd?: string; json?: boolean; timeoutMs?: number }[] } {
+  const calls: { args: string[]; cwd?: string; json?: boolean; timeoutMs?: number }[] = []
   const gh: Gh = async (args, options) => {
-    calls.push({ args, cwd: options?.cwd, json: options?.json })
+    calls.push({ args, cwd: options?.cwd, json: options?.json, timeoutMs: options?.timeoutMs })
     const next = answers.shift()
     if (next instanceof Error) throw next
     return next
@@ -213,6 +213,8 @@ test('comment, edit and delete: gh issue comment, then the REST comment by id', 
     ['api', '-X', 'DELETE', 'repos/octo/app/issues/comments/1002']
   ])
   assert.ok(gh.calls.every((c) => c.cwd === '/code/app'))
+  // Writes get a minute, not gh's 15 s default.
+  assert.ok(gh.calls.every((c) => c.timeoutMs === 60_000))
 })
 
 test('an empty comment never reaches gh', async () => {
