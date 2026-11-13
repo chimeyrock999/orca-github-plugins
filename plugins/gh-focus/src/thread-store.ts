@@ -4,14 +4,22 @@
 // shows what GitHub has; comment edits, deletes and reactions change the timeline in place, so
 // pages loaded with Load more stay.
 import { atom, plugin, read, set, update, type Atom } from 'orca'
-import type { Answer, IssueEdit, PanelError, Reaction, ReactionGroup, ThreadDetail, TimelineItem } from './protocol'
-import { back, lists, load, loadChoices, repo, repoEpoch, requestFailed, tab, unsure } from './store'
+import type { Answer, IssueEdit, LinkedKind, LinkedRef, LinkedRow, PanelError, Reaction, ReactionGroup, ThreadDetail, TimelineItem } from './protocol'
+import { back, itemKey, lists, loadChoices, repo, repoEpoch, requestFailed, tab, unsure } from './store'
 
-export type ThreadKind = 'issues' | 'pulls'
-export type Picking = { kind: 'labels' | 'assignees'; selected: string[]; query: string; login: string }
+export type ThreadKind = LinkedKind
+
+/** What Orca links to the focused workspace, of one kind. `where` is the workspace (and repo
+ *  change) it was found for; `refs` null while Orca is asked; `rows` GitHub's answer for them, asked
+ *  only when there is a list to show. */
+export type LinkedState = { where: string; refs: LinkedRef[] | null; rows: Answer<{ rows: LinkedRow[] }> | null }
+/** `of`: the repo whose labels or logins are offered, null for the focused one. */
+export type Picking = { kind: 'labels' | 'assignees'; selected: string[]; query: string; login: string; of: string | null }
 
 export type ThreadState<D extends ThreadDetail> = {
   number: number
+  /** `owner/name` when the thread is of another repo than the focused one (Orca links it), else null. */
+  repo: string | null
   /** null while the thread loads. */
   answer: Answer<{ detail: D }> | null
   /** The write or load running now (`comment`, `close`, `more`, `delete`, ...); one at a time. */
@@ -28,15 +36,20 @@ export type ThreadState<D extends ThreadDetail> = {
   reacting: string | null
 }
 
+/** What a request about the thread adds so the worker asks the thread's repo: `{ repo }` when it is
+ *  of another repo than the focused one, else nothing. */
+export type At = { repo?: string }
+export const atRepo = (s: { repo: string | null }): At => (s.repo ? { repo: s.repo } : {})
+
 /** How a kind of thread is asked for and written. */
 export type ThreadRequests<D extends ThreadDetail> = {
-  get: (number: number) => Promise<Answer<{ detail: D }>>
-  timeline: (number: number, after: string) => Promise<Answer<{ items: TimelineItem[]; next: string | null }>>
-  comment: (number: number, body: string) => Promise<Answer<object>>
-  edit: (input: IssueEdit) => Promise<Answer<object>>
+  get: (number: number, at: At) => Promise<Answer<{ detail: D }>>
+  timeline: (number: number, after: string, at: At) => Promise<Answer<{ items: TimelineItem[]; next: string | null }>>
+  comment: (number: number, body: string, at: At) => Promise<Answer<object>>
+  edit: (input: IssueEdit & At) => Promise<Answer<object>>
 }
 
-/** Writes wait longer than reads: gh issue create makes several API calls. The worker gives gh 60 s. */
+/** Writes wait longer than reads: a write can make several API calls. The worker gives gh 60 s. */
 export const WRITE = { timeoutMs: 90_000 }
 
 
@@ -44,6 +57,16 @@ export const WRITE = { timeoutMs: 90_000 }
 export function workspace(): string {
   const r = read(repo)
   return r?.ok ? `${r.nameWithOwner}\n${r.path}` : ''
+}
+
+/** The workspace, and the repo change it was found after: a tab not on screen when the focus went
+ *  elsewhere and back starts again when shown. */
+export const focusKey = () => `${repoEpoch()}\n${workspace()}`
+
+/** The linked item when it is the only one (of this repo or another): the only one a tab opens by
+ *  itself. */
+export function soleRef(refs: LinkedRef[] | null): LinkedRef | null {
+  return refs?.length === 1 ? refs[0] : null
 }
 
 /** The timeline with a loaded page added after the head; once the head reaches the tail they join. */
@@ -80,10 +103,11 @@ function flip(groups: ReactionGroup[], content: Reaction, on: boolean, viewer: s
     .filter((g) => g.count > 0)
 }
 
-// Pickers are pure changes of a Picking, shared by threads and the new issue form.
-export function startPicking(kind: Picking['kind'], selected: string[]): Picking {
-  void loadChoices(kind === 'labels' ? 'labels' : 'assignees')
-  return { kind, selected: [...selected], query: '', login: '' }
+// Pickers are pure changes of a Picking. `of` is the thread's repo when it is another one, whose
+// labels and assignees are offered.
+export function startPicking(kind: Picking['kind'], selected: string[], of: string | null = null): Picking {
+  void loadChoices(kind === 'labels' ? 'labels' : 'assignees', of)
+  return { kind, selected: [...selected], query: '', login: '', of }
 }
 export const togglePicked = (p: Picking, name: string, on: boolean): Picking => ({
   ...p,
@@ -116,8 +140,9 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   loaded?: (detail: D, current: () => boolean) => void
 ) {
   type S = ThreadState<D> & X
-  const fresh = (number: number): S => ({
+  const fresh = (number: number, repo: string | null = null): S => ({
     number,
+    repo,
     answer: null,
     busy: null,
     error: null,
@@ -131,20 +156,17 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   })
   const state: Atom<S> = atom<S>(fresh(0))
 
-  // Opening another thread, a form or the list makes answers for the one before stale.
+  // Opening another thread or the list makes answers for the one before stale.
   let views = 0
   /** Where an answer belongs: what is open, in which workspace. A repo or folder change makes an
    *  answer stale as surely as opening something else does. */
   const here = () => `${views}\n${workspace()}`
-  /** What each workspace showed last in this panel run: a number, or null for the list. Coming back
-   *  to a workspace shows it again; a new panel run starts from Orca's link. */
-  const seen = atom<Record<string, number | null>>({})
-  const remember = (number: number | null) => update(seen, (m) => ({ ...m, [workspace()]: number }))
   // A newer load of the same thread makes an older one stale.
   let loads = 0
-  // A write changed a thread, so the list is asked for again on the way back. An atom, so a new
-  // panel run starts clean.
+  // A write changed a thread, so the linked list is asked for again on the way back. An atom, so a
+  // new panel run starts clean.
   const listStale = atom(false)
+  const linked = atom<LinkedState | null>(null)
 
   /** The thread on screen, once it has loaded. */
   function shown(): D | null {
@@ -155,35 +177,63 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   async function loadThread(): Promise<void> {
     const mine = ++loads
     const view = here()
-    const answer = await requests.get(read(state).number).catch(requestFailed)
+    const answer = await requests.get(read(state).number, atRepo(read(state))).catch(requestFailed)
     if (mine !== loads || view !== here()) return
     update(state, (s) => ({ ...s, answer }))
     if (answer.ok) loaded?.(answer.detail, () => mine === loads && view === here())
   }
 
-  /** Opens a thread by number, from the list, a mention or a new issue. */
-  function open(number: number): Promise<void> {
-    remember(number)
+  /** Opens a thread by number (of `repo`, when another repo's), from the linked list, a mention, or
+   *  as the workspace's only link. */
+  function open(number: number, repo: string | null = null): Promise<void> {
     views++
-    update(lists[kind], (s) => ({ ...s, open: String(number) }))
-    set(state, fresh(number))
+    update(lists[kind], (s) => ({ ...s, open: itemKey(number, repo) }))
+    set(state, fresh(number, repo))
     return loadThread()
   }
 
-  /** Leaves the thread for another view of the tab (the new issue form). */
+  /** Leaves the thread for the linked list or the empty state. */
   function leave(): void {
     views++
-    remember(null)
   }
 
-  /** Back to the list, asking for it again when a write changed a thread. */
+  /** What Orca links to the workspace on screen, once found. */
+  function linkedNow(): LinkedState | null {
+    const l = read(linked)
+    return l && l.where === focusKey() ? l : null
+  }
+
+  /** The workspace's only linked item of this repo, when there is just one. */
+  const sole = () => soleRef(linkedNow()?.refs ?? null)
+
+  /** Whether the thread open is this linked item. */
+  function isShown(ref: Pick<LinkedRef, 'number' | 'repo'>): boolean {
+    const s = read(state)
+    return s.number === ref.number && (s.repo ?? '').toLowerCase() === (ref.repo ?? '').toLowerCase()
+  }
+
+  /** Asks GitHub for the linked items' title and state, for the list. */
+  async function loadRows(): Promise<void> {
+    const l = linkedNow()
+    if (!l?.refs?.length) return
+    const { where, refs } = l
+    const mine = (x: LinkedState | null) => !!x && x.where === where && x.refs === refs
+    update(linked, (x) => (mine(x) ? { ...x!, rows: null } : x))
+    const rows = await plugin.request('items.get', { kind, items: refs }).catch(requestFailed)
+    update(linked, (x) => (mine(x) ? { ...x!, rows } : x))
+  }
+
+  /** Back from a thread: to the workspace's only link when another one (a mention) is open, else to
+   *  the linked list (asked for again when a write changed a thread, or never loaded) or the empty
+   *  state. */
   function backToList(): Promise<void> | void {
+    const one = sole()
+    if (one && !isShown(one)) return open(one.number, one.repo)
     leave()
     back(kind)
-    if (!read(listStale)) return
+    if (!read(listStale) && linkedNow()?.rows) return
     set(listStale, false)
-    update(lists[kind], (s) => ({ ...s, counts: null }))
-    return load(kind)
+    return loadRows()
   }
 
   const markStale = () => set(listStale, true)
@@ -198,7 +248,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     if (s.busy || !detail?.next) return
     const view = here()
     update(state, (x) => ({ ...x, busy: 'more', error: null }))
-    const answer = await requests.timeline(s.number, detail.next).catch(requestFailed)
+    const answer = await requests.timeline(s.number, detail.next, atRepo(s)).catch(requestFailed)
     if (view !== here()) return
     update(state, (x) => ({ ...x, busy: null, error: answer.ok ? null : answer.error }))
     // A reload while the page was on its way starts the timeline over; the page then fits nowhere.
@@ -235,7 +285,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   function sendComment(): Promise<boolean> | void {
     const { number, draft } = read(state)
     if (!draft.trim()) return
-    return write('comment', () => requests.comment(number, draft), (s) => ({ ...s, draft: '' }))
+    return write('comment', () => requests.comment(number, draft, atRepo(read(state))), (s) => ({ ...s, draft: '' }))
   }
 
   function changeComment(id: number, change: (item: TimelineItem) => TimelineItem | null): void {
@@ -250,7 +300,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   async function saveComment(): Promise<void> {
     const editing = read(state).editingComment
     if (!editing?.body.trim()) return
-    const ok = await write('edit-comment', () => plugin.request('comment.edit', editing, WRITE), (s) => ({ ...s, editingComment: null }), false)
+    const ok = await write('edit-comment', () => plugin.request('comment.edit', { ...editing, ...atRepo(read(state)) }, WRITE), (s) => ({ ...s, editingComment: null }), false)
     if (ok) changeComment(editing.id, (c) => ({ ...c, body: editing.body, edited: true, truncated: false }))
   }
 
@@ -260,7 +310,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
   async function confirmDelete(): Promise<void> {
     const id = read(state).deleting
     if (id === null) return
-    const ok = await write('delete', () => plugin.request('comment.delete', { id }, WRITE), (s) => ({ ...s, deleting: null }), false)
+    const ok = await write('delete', () => plugin.request('comment.delete', { id, ...atRepo(read(state)) }, WRITE), (s) => ({ ...s, deleting: null }), false)
     if (ok) {
       changeComment(id, () => null)
       changeShown((d) => ({ ...d, comments: Math.max(0, d.comments - 1), total: Math.max(0, d.total - 1) }))
@@ -282,6 +332,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     // A cut body is not sent back unless it was changed: saving it would drop the rest.
     const input = {
       number,
+      ...atRepo(read(state)),
       ...(editing.title !== d.title ? { title: editing.title } : {}),
       ...(editing.body !== d.body ? { body: editing.body } : {})
     }
@@ -290,7 +341,7 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
 
   function openPicker(which: Picking['kind']): void {
     const d = shown()
-    if (d) update(state, (s) => ({ ...s, picking: startPicking(which, which === 'labels' ? d.labels : d.assignees) }))
+    if (d) update(state, (s) => ({ ...s, picking: startPicking(which, which === 'labels' ? d.labels : d.assignees, s.repo) }))
   }
   const changePicker = (change: (p: Picking) => Picking | null) => update(state, (s) => (s.picking ? { ...s, picking: change(s.picking) } : s))
 
@@ -302,8 +353,9 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     const add = picking.selected.filter((x) => !before.includes(x))
     const remove = before.filter((x) => !picking.selected.includes(x))
     if (add.length + remove.length === 0) return update(state, (s) => ({ ...s, picking: null }))
+    const at = atRepo(read(state))
     const input =
-      picking.kind === 'labels' ? { number, addLabels: add, removeLabels: remove } : { number, addAssignees: add, removeAssignees: remove }
+      picking.kind === 'labels' ? { number, ...at, addLabels: add, removeLabels: remove } : { number, ...at, addAssignees: add, removeAssignees: remove }
     return write(picking.kind, () => requests.edit(input), (s) => ({ ...s, picking: null }))
   }
 
@@ -342,28 +394,26 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     setReactions(subjectId, (g) => flip(g, content, !on, viewer))
   }
 
-  /** The workspace (repo and folder) the tab last started in, and since which repo change: a tab
-   *  that was not on screen when the focus went elsewhere and back starts again when shown. */
-  const startedIn = atom<string | null>(null)
-
-  /** When the tab shows for a workspace it is not showing yet: what the workspace showed last in
-   *  this panel run, else what Orca links to it (a workspace made from an issue or pull request),
-   *  else the list. */
-  async function start(): Promise<void> {
-    const r = read(repo)
-    if (!r?.ok || read(tab) !== kind) return
-    const where = workspace()
-    const started = `${repoEpoch()}\n${where}`
-    if (read(startedIn) === started) return
-    set(startedIn, started)
-    if (read(lists[kind]).open) return
-    const last = read(seen)
-    if (where in last) return last[where] === null ? undefined : open(last[where]!)
-    const links = await plugin.request('repo.links', {}).catch(() => null)
-    // The person may have opened something, or moved to another workspace, meanwhile.
-    if (read(startedIn) !== started || read(lists[kind]).open || read(tab) !== kind) return
-    const linked = links?.ok ? (kind === 'issues' ? links.issue : links.pull) : null
-    if (linked) return open(linked)
+  /** When the tab shows for a workspace it has not asked Orca about yet, or on Refresh (`again`):
+   *  what Orca links to it. The only linked item of this repo opens by itself; several, or one of
+   *  another repo, make a list, never opened by themselves; none leaves the empty state. Refresh
+   *  keeps what is on screen until the new answer. */
+  async function start(again = false): Promise<void> {
+    if (!read(repo)?.ok) return
+    // Refresh on another tab: this one asks Orca again when it next shows.
+    if (read(tab) !== kind) return again ? set(linked, null) : undefined
+    const where = focusKey()
+    if (!again && read(linked)?.where === where) return
+    if (!again || read(linked)?.where !== where) set(linked, { where, refs: null, rows: null })
+    const links = await plugin.request('repo.links', kind === 'pulls' ? { branch: true } : {}).catch(() => null)
+    // The person may have moved to another workspace meanwhile.
+    if (focusKey() !== where) return
+    const refs = links?.ok ? links[kind] : []
+    set(linked, { where, refs, rows: null })
+    const one = soleRef(refs)
+    if (read(lists[kind]).open || read(tab) !== kind) return
+    if (one) return open(one.number, one.repo)
+    return loadRows()
   }
 
   /** Whether `here` still names the view a write began in. */
@@ -379,6 +429,10 @@ export function makeThread<D extends ThreadDetail, X extends object = object>(
     open,
     leave,
     backToList,
+    linkedNow,
+    sole,
+    isShown,
+    loadRows,
     markStale,
     loadMore,
     write,

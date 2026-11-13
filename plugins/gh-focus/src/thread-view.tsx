@@ -26,15 +26,25 @@ import {
 import { issues } from './issue-store'
 import { count, EMOJI, pullLook, reactionTip, reviewLook, sourceLook, stateWords, type Look } from './look'
 import { Glyph } from './parts'
-import { findPull, focused, handOff, pulls } from './pull-store'
+import { handOff } from './link-store'
+import { pulls, workspacePull } from './pull-store'
 import { REACTIONS, type ReactionGroup, type ThreadDetail, type TimelineComment, type TimelineItem, type TimelineMention, type TimelineReview } from './protocol'
 import { hasImage, linkRefs } from './refs'
-import { choices, repo, selectTab } from './store'
+import { choicesOf, repo, selectTab } from './store'
 import { hiddenCount, type AnyThread, type Picking, type PickerOps, type ThreadState } from './thread-store'
 
-function repoUrl(): string {
+/** The thread's repo as `owner/name`: the focused one, or the other repo it is of. */
+function threadRepo(t: AnyThread): string | null {
   const r = read(repo)
-  return r?.ok ? r.url : 'https://github.com'
+  return read(t.state).repo ?? (r?.ok ? r.nameWithOwner : null)
+}
+
+/** The thread's repo on the web, so `#12` in its text links into it. */
+function repoUrl(t: AnyThread): string {
+  const r = read(repo)
+  const host = r?.ok ? new URL(r.url).origin : 'https://github.com'
+  const name = threadRepo(t)
+  return name ? `${host}/${name}` : host
 }
 
 function Reactions({ t, subject, groups }: { t: AnyThread; subject: string; groups: ReactionGroup[] }) {
@@ -104,7 +114,7 @@ export function Post({ t, head, tools, body, url, cut, subject, reactions, empty
       </Box>
       <Box padding="sm" gap="sm">
         {body.trim() ? (
-          <Markdown content={linkRefs(body, repoUrl())} />
+          <Markdown content={linkRefs(body, repoUrl(t))} />
         ) : (
           empty !== null && (
             <Text size="sm" muted>
@@ -189,19 +199,24 @@ function CommentItem({ t, c, s }: { t: AnyThread; c: TimelineComment; s: ThreadS
   )
 }
 
-/** Opens an issue or pull request of this repo in its tab. */
-function openHere(type: 'issue' | 'pull', number: number): Promise<void> {
+/** Opens an issue or pull request in its tab: of the focused repo (`repo` null), or of the repo of
+ *  the thread it is mentioned in. */
+function openHere(type: 'issue' | 'pull', number: number, repo: string | null): Promise<void> {
   const t = type === 'issue' ? issues : pulls
   void selectTab(t.kind)
-  // The Pull requests tab also learns the workspace's own, for Back.
-  return t.open(number).then(() => (type === 'pull' ? findPull() : undefined))
+  // The tab also learns what is linked to the workspace, for Back.
+  return t.open(number, repo).then(() => t.start())
 }
 
-function Mention({ item }: { item: TimelineMention }) {
+function Mention({ t, item }: { t: AnyThread; item: TimelineMention }) {
   const r = read(repo)
-  const own = r?.ok && item.source.repo.toLowerCase() === r.nameWithOwner.toLowerCase()
-  // Issues and pull requests of this repo open here, in their own tab; other repos on GitHub.
-  const go = () => (own ? openHere(item.source.type, item.source.number) : shell.openExternal(item.source.url))
+  const of = item.source.repo.toLowerCase()
+  const focused = r?.ok && of === r.nameWithOwner.toLowerCase()
+  const own = of === threadRepo(t)?.toLowerCase()
+  // Issues and pull requests of the focused repo, or of the thread's own, open here, in their own
+  // tab; other repos on GitHub.
+  const go = () =>
+    focused || own ? openHere(item.source.type, item.source.number, focused ? null : item.source.repo) : shell.openExternal(item.source.url)
   // One row, the whole of it pressable: what links here first, who and when under it.
   return (
     <ListItem onPress={go}>
@@ -250,7 +265,7 @@ function EventLine({ look, actor, words, at }: { look: Look; actor: string | nul
 /** A review's comments on the diff: Orca's Checks tab shows and answers them for the workspace's own
  *  pull request; any other opens on GitHub. */
 function DiffComments({ t, r }: { t: AnyThread; r: TimelineReview }) {
-  const own = t.kind === 'pulls' && read(t.state).number === focused()?.number
+  const own = t.kind === 'pulls' && read(t.state).number === workspacePull() && read(t.state).repo === null
   return (
     <Row gap="xs" align="center" wrap>
       <Text size="xs" muted>
@@ -287,7 +302,7 @@ function ReviewItem({ t, r }: { t: AnyThread; r: TimelineReview }) {
 
 function Item({ t, item, s }: { t: AnyThread; item: TimelineItem; s: ThreadState<ThreadDetail> }) {
   if (item.kind === 'comment') return <CommentItem t={t} c={item} s={s} />
-  if (item.kind === 'mention') return <List label="Mentioned in"><Mention item={item} /></List>
+  if (item.kind === 'mention') return <List label="Mentioned in"><Mention t={t} item={item} /></List>
   if (item.kind === 'review') return <ReviewItem t={t} r={item} />
   if (item.kind === 'merged') {
     return <EventLine look={pullLook({ state: 'merged' })} actor={item.actor} words={`merged commit ${item.commit} into ${item.into}`} at={item.createdAt} />
@@ -310,7 +325,7 @@ function Run({ t, items, s }: { t: AnyThread; items: TimelineItem[]; s: ThreadSt
         run[0].kind === 'mention' ? (
           <List key={run[0].id} label="Mentioned in">
             {run.map((item) => (
-              <Mention key={item.id} item={item as TimelineMention} />
+              <Mention key={item.id} t={t} item={item as TimelineMention} />
             ))}
           </List>
         ) : (
@@ -369,8 +384,8 @@ export function MetaLine({ label, empty, onEdit, children }: { label: string; em
 
 /** Checkboxes over the repo's labels or assignable logins, with a filter; Apply sends the change. */
 export function PickerBox({ ops, picking, busy }: { ops: PickerOps; picking: Picking; busy: boolean }) {
-  const c = read(choices)
-  const known = picking.kind === 'labels' ? c.labels : c.assignees
+  // Only the picking repo's: another repo's open picker keeps its own.
+  const known = choicesOf(picking.kind, picking.of)
   const query = picking.query.trim().toLowerCase()
   // What is picked shows even when the repo's list lacks it, such as a login typed in.
   const all = known === null ? picking.selected : [...picking.selected.filter((x) => !known.includes(x)), ...known]

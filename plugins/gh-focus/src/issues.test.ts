@@ -6,7 +6,6 @@ import {
   closeIssue,
   commentOn,
   COMMENT_BYTES,
-  createIssue,
   deleteComment,
   editComment,
   editIssue,
@@ -217,6 +216,25 @@ test('comment, edit and delete: gh issue comment, then the REST comment by id', 
   assert.ok(gh.calls.every((c) => c.timeoutMs === 60_000))
 })
 
+test('another repo: gh commands name it with -R, API paths and GraphQL name it as they always do', async () => {
+  const other = { nameWithOwner: 'octo/sdk', path: '/code/app', other: true }
+  const gh = fakeGh('', '', '', '', { data: { repository: null } })
+  await commentOn(gh, other, 45, 'Same here.')
+  await closeIssue(gh, other, { number: 45, reason: 'completed' })
+  await editIssue(gh, other, { number: 45, addLabels: ['bug'] })
+  await editComment(gh, other, 7, 'edited')
+  assert.deepEqual(gh.calls.map((c) => c.args), [
+    ['issue', 'comment', '45', '--body', 'Same here.', '-R', 'octo/sdk'],
+    ['issue', 'close', '45', '--reason', 'completed', '-R', 'octo/sdk'],
+    ['issue', 'edit', '45', '--add-label', 'bug', '-R', 'octo/sdk'],
+    ['api', '-X', 'PATCH', 'repos/octo/sdk/issues/comments/7', '-f', 'body=edited']
+  ])
+  // gh still runs in the workspace folder.
+  assert.ok(gh.calls.every((c) => c.cwd === '/code/app'))
+  await assert.rejects(getIssue(gh, other, 45), isGhError)
+  assert.deepEqual([field(gh.calls[4].args, 'owner'), field(gh.calls[4].args, 'name')], ['octo', 'sdk'])
+})
+
 test('an empty comment never reaches gh', async () => {
   const gh = fakeGh()
   await assert.rejects(commentOn(gh, repo, 8, '  \n'), isGhError)
@@ -257,15 +275,6 @@ test('edit sends only what changed, one flag per label and login', async () => {
   // Nothing to change runs nothing.
   await editIssue(gh, repo, { number: 8, addLabels: [] })
   assert.equal(gh.calls.length, 2)
-})
-
-test('create reads the new number from the URL gh prints', async () => {
-  const gh = fakeGh('\nCreating issue in octo/app\n\nhttps://github.com/octo/app/issues/129\n')
-  const made = await createIssue(gh, repo, { title: 'Search ignores accents', body: '', labels: ['bug'], assignees: ['@me'] })
-  assert.deepEqual(made, { number: 129, url: 'https://github.com/octo/app/issues/129' })
-  assert.deepEqual(gh.calls[0].args, ['issue', 'create', '--title', 'Search ignores accents', '--body', '', '--label', 'bug', '--assignee', '@me'])
-  await assert.rejects(createIssue(fakeGh('no url'), repo, { title: 'x', body: '' }), isGhError)
-  await assert.rejects(createIssue(fakeGh(), repo, { title: ' ', body: '' }), isGhError)
 })
 
 test('reactions: addReaction or removeReaction on the node id', async () => {

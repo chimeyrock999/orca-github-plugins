@@ -4,10 +4,12 @@ import type { Tone } from 'orca'
 import type {
   CheckCounts,
   ErrorCode,
-  IssueRow,
+  IssueState,
+  LinkedKind,
+  LinkedRow,
   MergeState,
   PanelError,
-  PullRow,
+  PullState,
   Reaction,
   ReactionGroup,
   ReviewDecision,
@@ -20,12 +22,12 @@ import type {
 export type Look = { glyph: string; tone: Tone; label: string }
 
 // ListItem's icon takes no tone, so the state shows as a tinted glyph in Text instead.
-const ISSUE: Record<IssueRow['state'], Look> = {
+const ISSUE: Record<IssueState, Look> = {
   open: { glyph: '◉', tone: 'success', label: 'Open' },
   done: { glyph: '✓', tone: 'accent', label: 'Done' },
   not_planned: { glyph: '⊘', tone: 'neutral', label: 'Not planned' }
 }
-const PULL: Record<PullRow['state'], Look> = {
+const PULL: Record<PullState, Look> = {
   open: { glyph: '◉', tone: 'success', label: 'Open' },
   draft: { glyph: '◌', tone: 'neutral', label: 'Draft' },
   merged: { glyph: '✓', tone: 'accent', label: 'Merged' },
@@ -41,12 +43,19 @@ const RUN: Record<RunRow['state'], Look> = {
   skipped: { glyph: '⊖', tone: 'neutral', label: 'Skipped' }
 }
 
-export const issueLook = (row: Pick<IssueRow, 'state'>): Look => ISSUE[row.state]
-export const pullLook = (row: Pick<PullRow, 'state'>): Look => PULL[row.state]
+export const issueLook = (row: { state: IssueState }): Look => ISSUE[row.state]
+export const pullLook = (row: { state: PullState }): Look => PULL[row.state]
 
 /** The state glyph of an issue or pull request another one mentions. */
 export function sourceLook(source: TimelineMention['source']): Look {
-  return source.type === 'pull' ? pullLook({ state: source.state as PullRow['state'] }) : issueLook({ state: source.state as IssueRow['state'] })
+  return source.type === 'pull' ? pullLook({ state: source.state as PullState }) : issueLook({ state: source.state as IssueState })
+}
+
+/** A linked item's glyph, read in its tab's kind first: Orca can keep a pull request as an issue
+ *  link, and GitHub then answers a pull request state. One GitHub did not answer for is grey. */
+export function linkedLook(kind: LinkedKind, row: LinkedRow): Look {
+  const [first, second]: Record<string, Look>[] = kind === 'pulls' ? [PULL, ISSUE] : [ISSUE, PULL]
+  return (row.state && (first[row.state] ?? second[row.state])) || { glyph: '◌', tone: 'neutral', label: 'Unknown' }
 }
 
 /** What a closed or reopened event says after its actor: "closed this as not planned". A pull
@@ -142,13 +151,6 @@ export function reactionTip(group: ReactionGroup, viewer: string | null = null):
 }
 export const runLook = (row: Pick<RunRow, 'state'>): Look => RUN[row.state]
 
-/** What happened last to an issue or pull request, and when: "opened", "closed" or "merged". */
-export function itemEvent(row: IssueRow | PullRow): { verb: string; at: number } {
-  if ('mergedAt' in row && row.state === 'merged' && row.mergedAt) return { verb: 'merged', at: row.mergedAt }
-  if (row.state !== 'open' && row.state !== 'draft' && row.closedAt) return { verb: 'closed', at: row.closedAt }
-  return { verb: 'opened', at: row.createdAt }
-}
-
 /** What started a run, as GitHub's run list says it: "Commit 233b470 pushed by mai-t". */
 export function runCause(row: RunRow): string {
   const by = row.actor ? ` by ${row.actor}` : ''
@@ -157,6 +159,12 @@ export function runCause(row: RunRow): string {
   if (row.event === 'schedule') return 'Scheduled'
   if (row.event === 'workflow_dispatch') return `Manually run${by}`
   return `${row.event.replace(/_/g, ' ')}${by}`
+}
+
+/** The command that links an issue or pull request of the repo to the current workspace, with the
+ *  number left for the person (or an agent) to fill in. */
+export function linkCommand(repoUrl: string, kind: LinkedKind): string {
+  return `orca reference add ${repoUrl}/${kind === 'issues' ? 'issues' : 'pull'}/<number> --worktree current`
 }
 
 /** "1,234": counts as GitHub writes them. */
@@ -240,6 +248,7 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
   cancelled: { title: 'Request cancelled', hint: 'Press Retry.', tone: 'neutral' },
   bad_query: { title: 'Search runs with qualifiers', hint: 'For example branch:main status:failure. GitHub cannot search runs by words.', tone: 'warning' },
   gh_failed: { title: 'gh failed', hint: 'Press Retry. The message below is what gh said.', tone: 'danger' },
+  no_agent: { title: 'No agent free', hint: 'Every agent here is busy, or none runs. Use the command in a terminal instead.', tone: 'neutral' },
   unsure: {
     title: 'It may have gone through',
     hint: 'GitHub did not answer in time. Check what is on screen (or the list) before you try again, so nothing is posted twice.',

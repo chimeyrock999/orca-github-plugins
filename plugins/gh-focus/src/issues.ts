@@ -2,8 +2,8 @@
 // may do; writes through gh's own issue commands, which take label and login names. Comments are
 // edited and deleted through the REST API by id, reactions through GraphQL by node id.
 import { GhError, type Gh } from './gh'
-import { issueState, type RepoRef } from './lists'
-import { PAGE_SIZE, REACTIONS, type CloseReason, type IssueCreate, type IssueDetail, type IssueEdit, type Reaction, type TimelineItem } from './protocol'
+import { issueState, repoFlag, type RepoRef } from './lists'
+import { PAGE_SIZE, REACTIONS, type CloseReason, type IssueDetail, type IssueEdit, type Reaction, type TimelineItem } from './protocol'
 import {
   BODY_BYTES,
   bothEnds,
@@ -122,11 +122,12 @@ export async function issueTimeline(
   return laterPage(page)
 }
 
-/** Writes get longer than gh's 15 s default: `gh issue create` makes several API calls. */
+/** Writes get longer than gh's 15 s default: a close with a comment, or an edit of labels and assignees, makes several API calls. */
 const WRITE_MS = 60_000
 
 export function run(gh: Gh, repo: RepoRef, args: string[], signal?: AbortSignal): Promise<unknown> {
-  return gh(args, { cwd: repo.path, signal, timeoutMs: WRITE_MS })
+  const flag = args[0] === 'api' ? [] : repoFlag(repo)
+  return gh([...args, ...flag], { cwd: repo.path, signal, timeoutMs: WRITE_MS })
 }
 
 export function needText(text: string, what: string): string {
@@ -196,17 +197,6 @@ export async function editIssue(gh: Gh, repo: RepoRef, input: IssueEdit, signal?
   if (args.length === 3) return {}
   await run(gh, repo, args, signal)
   return {}
-}
-
-export async function createIssue(gh: Gh, repo: RepoRef, input: IssueCreate, signal?: AbortSignal): Promise<{ number: number; url: string }> {
-  const args = ['issue', 'create', '--title', needText(input.title, 'The title'), '--body', input.body]
-  args.push(...each('--label', input.labels), ...each('--assignee', input.assignees))
-  const out = String(await run(gh, repo, args, signal))
-  // gh prints the new issue's URL as its last line.
-  const url = out.trim().split('\n').pop()?.trim() ?? ''
-  const number = Number(/\/issues\/(\d+)$/.exec(url)?.[1])
-  if (!number) throw new GhError('gh_failed', `gh created the issue but printed no URL: ${out.slice(0, 200)}`)
-  return { number, url }
 }
 
 const REACTION_MUTATION = (on: boolean) => `mutation($subjectId: ID!, $content: ReactionContent!) {

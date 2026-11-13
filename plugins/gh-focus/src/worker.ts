@@ -8,7 +8,6 @@ import { hostFailure } from './host-error'
 import {
   closeIssue,
   commentOn,
-  createIssue,
   deleteComment,
   editComment,
   editIssue,
@@ -18,8 +17,9 @@ import {
   reopenIssue,
   setReaction
 } from './issues'
-import { listIssues, listLabels, listRuns, listWorkflows, type RepoRef } from './lists'
-import type { Answer, OrcaView } from './protocol'
+import { agentName, freeAgent, linkedRefs, linkedRows, linkPrompt, type AgentRow } from './linked'
+import { listLabels, listRuns, listWorkflows, type RepoRef } from './lists'
+import { isRepoName, type Answer, type LinkedKind, type LinkedRef, type OrcaView } from './protocol'
 import { branchPull, commentOnPull, editPull, getPull, pullTimeline, reviewPull } from './pulls'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './repo'
 import { cancelRun, dispatchWorkflow, getRun, rerunRun, reviewDeployments, runLogs, watchRun, workflowForm, type WatchDeps } from './runs'
@@ -43,14 +43,55 @@ const defaultDeps: WorkerDeps = {
   branch: (path) => currentBranch(path)
 }
 
-/** The issue and pull request Orca links to the focused workspace, when they are of its repo. Orca
- *  links a pull request only when the workspace was made from it or it was made in Orca, so with
- *  none and `branch` asked, the branch's pull request (one opened with gh or on GitHub) stands in. */
-async function repoLinks(deps: WorkerDeps, repo: RepoRef, branch: boolean, signal?: AbortSignal): Promise<{ issue: number | null; pull: number | null }> {
-  const links = await deps.links?.(repo.path)
-  const ours = links?.project?.toLowerCase() === `github:${repo.nameWithOwner}`.toLowerCase()
-  const linked = ours && links ? { issue: links.issue, pull: links.pull } : { issue: null, pull: null }
-  return linked.pull || !branch ? linked : { ...linked, pull: await branchPull(deps.gh, repo, signal) }
+/** What Orca links to the focused workspace, of its repo or another. Orca links a pull request when
+ *  the workspace was made from it, it was made in Orca or someone linked it, so with none of this
+ *  repo and `branch` asked, the branch's pull request (one opened with gh or on GitHub) comes first. */
+async function repoLinks(deps: WorkerDeps, repo: RepoRef & { url?: string }, branch: boolean, signal?: AbortSignal): Promise<{ issues: LinkedRef[]; pulls: LinkedRef[] }> {
+  const linked = linkedRefs((await deps.links?.(repo.path)) ?? null, repo)
+  if (!branch || linked.pulls.some((p) => p.repo === null)) return linked
+  const own = await branchPull(deps.gh, repo, signal)
+  return own ? { ...linked, pulls: [{ number: own, repo: null, title: null, url: null }, ...linked.pulls] } : linked
+}
+
+const samePath = (a: string, b: string) => a.replace(/[\\/]+$/, '') === b.replace(/[\\/]+$/, '')
+
+/** The free agent to ask among those of Orca's focused workspace, keeping only agents whose terminal
+ *  runs in the panel's workspace folder `path`: the panel's workspace can be a pick shared by clones,
+ *  not the one Orca focuses, and that agent would link its own workspace. An agent whose folder the
+ *  CLI cannot tell is not offered. */
+async function findAgent(orca: OrcaWorkerApi, deps: WorkerDeps, path: string): Promise<Answer<{ agent: (AgentRow & { terminalId: string }) | null }>> {
+  let agents: AgentRow[]
+  try {
+    agents = (await orca.host.call('agents.list')).agents
+  } catch (error) {
+    return { ok: false, error: hostFailure(error) }
+  }
+  const here = await Promise.all(
+    agents.map(async (a) => (a.terminalId && samePath((await deps.terminalPath(a.terminalId).catch(() => null)) ?? '', path) ? [a] : []))
+  )
+  return { ok: true, agent: freeAgent(here.flat()) }
+}
+
+/** Types the link prompt into the agent the panel offered, while it is still free and in the
+ *  workspace folder `path`, without Enter: the person reads it and sends it. */
+async function askAgent(orca: OrcaWorkerApi, deps: WorkerDeps, path: string, repoUrl: string, kind: LinkedKind, terminalId: string): Promise<Answer<{ agent: string }>> {
+  let agent: AgentRow | undefined
+  try {
+    agent = (await orca.host.call('agents.list')).agents.find((a) => a.terminalId === terminalId)
+  } catch (error) {
+    return { ok: false, error: hostFailure(error) }
+  }
+  const folder = agent ? await deps.terminalPath(terminalId).catch(() => null) : null
+  if (!agent || !freeAgent([agent]) || !folder || !samePath(folder, path)) {
+    return { ok: false, error: { code: 'no_agent', message: 'That agent is busy now, gone, or not in this workspace.' } }
+  }
+  try {
+    const { accepted } = await orca.host.call('terminal.sendText', { terminalId, text: linkPrompt(repoUrl, kind), enter: false })
+    if (!accepted) return { ok: false, error: { code: 'no_agent', message: `${agentName(agent)} did not take the text.` } }
+    return { ok: true, agent: agentName(agent) }
+  } catch (error) {
+    return { ok: false, error: hostFailure(error) }
+  }
 }
 
 const ORCA_ACTIONS: Record<OrcaView, 'view.tasks' | 'sidebar.checks.toggle'> = { tasks: 'view.tasks', checks: 'sidebar.checks.toggle' }
@@ -67,15 +108,19 @@ async function showView(orca: OrcaWorkerApi, view: OrcaView): Promise<Answer<Rec
   }
 }
 
-/** One page from `fetch` for the focused repo, or why there is none. */
+/** What `fetch` answers for the focused repo, or for `other` (`owner/name`, an item Orca links from
+ *  another repo; gh still runs in the workspace folder), or why there is none. */
 async function inRepo<T extends object>(
   tracker: RepoTracker,
-  fetch: (repo: RepoRef) => Promise<T>
+  fetch: (repo: RepoRef) => Promise<T>,
+  other?: string
 ): Promise<Answer<T>> {
   const repo = await tracker.get()
   if (!repo.ok) return repo
+  const ours = !other || other.toLowerCase() === repo.nameWithOwner.toLowerCase()
+  if (!ours && !isRepoName(other)) return { ok: false, error: { code: 'gh_failed', message: `${other} is not a repo name.` } }
   try {
-    return { ok: true, ...(await fetch(repo)) }
+    return { ok: true, ...(await fetch(ours ? repo : { nameWithOwner: other, path: repo.path, other: true })) }
   } catch (error) {
     return toFailure(error)
   }
@@ -88,32 +133,41 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   orca.panels.handle('repo.pick', ({ path }) => tracker.pick(path))
   orca.panels.handle('repo.unpick', () => tracker.unpick())
   orca.panels.handle('repo.links', (input, { signal }) => inRepo(tracker, (repo) => repoLinks(deps, repo, !!input?.branch, signal)))
+  orca.panels.handle('items.get', ({ kind, items }, { signal }) => inRepo(tracker, (repo) => linkedRows(deps.gh, repo, kind, items, signal)))
+  orca.panels.handle('agent.find', async () => {
+    const repo = await tracker.get()
+    if (!repo.ok) return repo
+    const found = await findAgent(orca, deps, repo.path)
+    return found.ok ? { ok: true as const, agent: found.agent && { name: agentName(found.agent), terminalId: found.agent.terminalId } } : found
+  })
+  orca.panels.handle('agent.ask', async ({ kind, terminalId }) => {
+    const repo = await tracker.get()
+    return repo.ok ? askAgent(orca, deps, repo.path, repo.url, kind, terminalId) : repo
+  })
   orca.panels.handle('orca.show', ({ view }) => showView(orca, view))
-  orca.panels.handle('issues.list', (input, { signal }) => inRepo(tracker, (repo) => listIssues(deps.gh, repo, input, signal)))
   orca.panels.handle('runs.list', (input, { signal }) =>
     inRepo(tracker, async (repo) => listRuns(deps.gh, repo, input, signal, input.scope === 'branch' ? ((await deps.branch?.(repo.path)) ?? null) : null))
   )
-  orca.panels.handle('labels.list', (_, { signal }) => inRepo(tracker, (repo) => listLabels(deps.gh, repo, signal)))
+  orca.panels.handle('labels.list', (input, { signal }) => inRepo(tracker, (repo) => listLabels(deps.gh, repo, signal), input?.repo))
   orca.panels.handle('workflows.list', (_, { signal }) => inRepo(tracker, (repo) => listWorkflows(deps.gh, repo, signal)))
-  orca.panels.handle('assignees.list', (_, { signal }) => inRepo(tracker, (repo) => listAssignees(deps.gh, repo, signal)))
+  orca.panels.handle('assignees.list', (input, { signal }) => inRepo(tracker, (repo) => listAssignees(deps.gh, repo, signal), input?.repo))
 
-  orca.panels.handle('issue.get', ({ number }, { signal }) => inRepo(tracker, (repo) => getIssue(deps.gh, repo, number, signal)))
-  orca.panels.handle('issue.timeline', ({ number, after }, { signal }) =>
-    inRepo(tracker, (repo) => issueTimeline(deps.gh, repo, number, after, signal))
+  orca.panels.handle('issue.get', ({ number, repo: other }, { signal }) => inRepo(tracker, (repo) => getIssue(deps.gh, repo, number, signal), other))
+  orca.panels.handle('issue.timeline', ({ number, after, repo: other }, { signal }) =>
+    inRepo(tracker, (repo) => issueTimeline(deps.gh, repo, number, after, signal), other)
   )
-  orca.panels.handle('issue.comment', ({ number, body }, { signal }) => inRepo(tracker, (repo) => commentOn(deps.gh, repo, number, body, signal)))
-  orca.panels.handle('comment.edit', ({ id, body }, { signal }) => inRepo(tracker, (repo) => editComment(deps.gh, repo, id, body, signal)))
-  orca.panels.handle('comment.delete', ({ id }, { signal }) => inRepo(tracker, (repo) => deleteComment(deps.gh, repo, id, signal)))
-  orca.panels.handle('issue.close', (input, { signal }) => inRepo(tracker, (repo) => closeIssue(deps.gh, repo, input, signal)))
-  orca.panels.handle('issue.reopen', (input, { signal }) => inRepo(tracker, (repo) => reopenIssue(deps.gh, repo, input, signal)))
-  orca.panels.handle('issue.edit', (input, { signal }) => inRepo(tracker, (repo) => editIssue(deps.gh, repo, input, signal)))
-  orca.panels.handle('issue.create', (input, { signal }) => inRepo(tracker, (repo) => createIssue(deps.gh, repo, input, signal)))
+  orca.panels.handle('issue.comment', ({ number, body, repo: other }, { signal }) => inRepo(tracker, (repo) => commentOn(deps.gh, repo, number, body, signal), other))
+  orca.panels.handle('comment.edit', ({ id, body, repo: other }, { signal }) => inRepo(tracker, (repo) => editComment(deps.gh, repo, id, body, signal), other))
+  orca.panels.handle('comment.delete', ({ id, repo: other }, { signal }) => inRepo(tracker, (repo) => deleteComment(deps.gh, repo, id, signal), other))
+  orca.panels.handle('issue.close', (input, { signal }) => inRepo(tracker, (repo) => closeIssue(deps.gh, repo, input, signal), input.repo))
+  orca.panels.handle('issue.reopen', (input, { signal }) => inRepo(tracker, (repo) => reopenIssue(deps.gh, repo, input, signal), input.repo))
+  orca.panels.handle('issue.edit', (input, { signal }) => inRepo(tracker, (repo) => editIssue(deps.gh, repo, input, signal), input.repo))
 
-  orca.panels.handle('pull.get', ({ number }, { signal }) => inRepo(tracker, (repo) => getPull(deps.gh, repo, number, signal)))
-  orca.panels.handle('pull.timeline', ({ number, after }, { signal }) => inRepo(tracker, (repo) => pullTimeline(deps.gh, repo, number, after, signal)))
-  orca.panels.handle('pull.comment', ({ number, body }, { signal }) => inRepo(tracker, (repo) => commentOnPull(deps.gh, repo, number, body, signal)))
-  orca.panels.handle('pull.edit', (input, { signal }) => inRepo(tracker, (repo) => editPull(deps.gh, repo, input, signal)))
-  orca.panels.handle('pull.review', (input, { signal }) => inRepo(tracker, (repo) => reviewPull(deps.gh, repo, input, signal)))
+  orca.panels.handle('pull.get', ({ number, repo: other }, { signal }) => inRepo(tracker, (repo) => getPull(deps.gh, repo, number, signal), other))
+  orca.panels.handle('pull.timeline', ({ number, after, repo: other }, { signal }) => inRepo(tracker, (repo) => pullTimeline(deps.gh, repo, number, after, signal), other))
+  orca.panels.handle('pull.comment', ({ number, body, repo: other }, { signal }) => inRepo(tracker, (repo) => commentOnPull(deps.gh, repo, number, body, signal), other))
+  orca.panels.handle('pull.edit', (input, { signal }) => inRepo(tracker, (repo) => editPull(deps.gh, repo, input, signal), input.repo))
+  orca.panels.handle('pull.review', (input, { signal }) => inRepo(tracker, (repo) => reviewPull(deps.gh, repo, input, signal), input.repo))
   orca.panels.handle('reaction.set', (input, { signal }) => inRepo(tracker, (repo) => setReaction(deps.gh, repo, input, signal)))
 
   orca.panels.handle('run.get', ({ id }, { signal }) => inRepo(tracker, (repo) => getRun(deps.gh, repo, id, signal)))

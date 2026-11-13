@@ -16,19 +16,29 @@ import {
   Toolbar,
   type PanelContext
 } from 'orca'
-import { issue, issues, newIssue } from './issue-store'
-import { findPull, pull, pulls } from './pull-store'
-import { githubUrl, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
+import { issue, issues } from './issue-store'
+import { findAgent } from './link-store'
+import { pull, pulls } from './pull-store'
+import { githubUrl, itemKey, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './store'
 import { Problem } from './parts'
 import { DISPATCH, loadForm, loadRun, progress, tabShown } from './run-store'
 import { KindView } from './views'
 
-/** Runs `step`, then lets the tab on screen start on the workspace's issue or pull request if it
- *  has not yet (each thread starts only when its tab shows). */
-async function thenStart(step: Promise<void> | void): Promise<void> {
+/** Runs `step`, then lets the tab on screen ask Orca what it links to the workspace if it has not
+ *  yet (each tab starts only when it shows); with nothing linked, a free agent is looked for. */
+async function thenStart(step: Promise<void> | void, again = false): Promise<void> {
   await step
-  await issues.start()
-  await findPull()
+  await issues.start(again)
+  await pulls.start(again)
+  await agentIfNone(again)
+}
+
+/** The empty state offers a free agent to ask; it is looked for only when that state shows. */
+async function agentIfNone(again: boolean): Promise<void> {
+  const kind = read(tab)
+  if (kind === 'runs' || read(lists[kind]).open) return
+  const t = kind === 'issues' ? issues : pulls
+  if (t.linkedNow()?.refs?.length === 0) await findAgent(again)
 }
 
 /** Runs once before the first render; what it pushes to `subscriptions` ends with the panel. */
@@ -41,21 +51,23 @@ export function setup(ctx: PanelContext): void {
   )
 }
 
-/** Refresh: the repo and the list, and the issue or pull request on screen. */
+/** Refresh: the repo, the list or what Orca links to the workspace (something may be linked by now,
+ *  or the branch have a pull request), and the issue, pull request or run on screen. */
 async function refreshAll(): Promise<void> {
-  await thenStart(refresh())
+  const shown = (kind: 'issues' | 'pulls') => {
+    const s = kind === 'issues' ? read(issue) : read(pull)
+    return read(lists[kind]).open === itemKey(s.number, s.repo)
+  }
+  const was = { issues: shown('issues'), pulls: shown('pulls') }
+  await thenStart(refresh(), true)
   // Refresh drops the label and assignee choices; an open picker asks for its own again.
-  const picking = read(issue).picking ?? read(newIssue).picking ?? read(pull).picking
-  if (picking) void loadChoices(picking.kind)
-  if (read(tab) === 'issues' && read(lists.issues).open === String(read(issue).number)) await issues.load()
+  const picking = read(issue).picking ?? read(pull).picking
+  if (picking) void loadChoices(picking.kind, picking.of)
+  if (read(tab) === 'issues' && was.issues && shown('issues')) await issues.load()
+  if (read(tab) === 'pulls' && was.pulls && shown('pulls')) await pulls.load()
   const run = read(lists.runs).open
   if (read(tab) === 'runs' && run === DISPATCH) await Promise.all([loadChoices('workflows'), loadForm()])
   else if (read(tab) === 'runs' && run) await loadRun()
-  if (read(tab) !== 'pulls') return
-  // The one on screen loads again; with none, the branch may have one by now.
-  const shown = read(lists.pulls).open === String(read(pull).number)
-  await findPull(true)
-  if (shown) await pulls.load()
 }
 
 function openOnGitHub(): unknown {

@@ -41,6 +41,12 @@
     },
     {
       "kind": "workspace:write"
+    },
+    {
+      "kind": "agent:read"
+    },
+    {
+      "kind": "terminal:send"
     }
   ]
 }
