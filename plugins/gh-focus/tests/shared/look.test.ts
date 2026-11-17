@@ -73,12 +73,13 @@ test('every error code has words, and an unknown one falls back to gh_failed', (
 test("Orca's own failures say what happened", () => {
   assert.deepEqual(
     (['action_failed', 'not_allowed', 'too_large', 'unavailable', 'cancelled', 'host_failed'] as const).map((code) => problemOf({ code }).title),
-    ['Panel error', 'Not allowed by Orca', 'Answer too big for the panel', 'Not available in Orca', 'Request cancelled', 'Orca did not answer']
+    ['Could not finish', 'Not allowed by Orca', 'Answer too big for the panel', 'Not available in Orca', 'Request cancelled', 'Orca did not answer']
   )
   assert.ok(!/report/i.test(problemOf({ code: 'not_allowed' }).hint))
   // Orca shows the plugin by its name when it asks for approval.
   assert.match(problemOf({ code: 'not_allowed' }).hint, /gh Focus/)
-  assert.match(problemOf({ code: 'action_failed' }).hint, /gh Focus/)
+  // Since host API 1.7 Orca's own runtime failures come as action_failed too, with a fixed message.
+  assert.match(problemOf({ code: 'action_failed' }).hint, /gh Focus or Orca/)
 })
 
 test('a timeout blames neither GitHub nor Orca: either may be the one that timed out', () => {

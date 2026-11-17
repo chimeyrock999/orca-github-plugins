@@ -8,7 +8,7 @@ import { hostFocused, noGh, repos, repoWorker, workspaces } from './fixtures/wor
 
 test('repo.get answers the focused workspace repo and its path', async () => {
   const worker = await mountWorker(repoWorker(), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
-  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/app', url: 'https://github.com/octo/app', path: '/work/spike', resolvedBy: 'context' })
+  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/app', url: 'https://github.com/octo/app', path: '/work/spike', workspaceId: 'w-spike', resolvedBy: 'context' })
   assert.deepEqual(worker.refusals, [])
   await worker.deactivate()
 })
@@ -103,6 +103,9 @@ test('a failed host call is an answer that keeps what Orca said', async () => {
     [hostError('capability_denied', 'workspace:read'), { code: 'not_allowed', message: 'workspace:read' }],
     [hostError('rate_limited', 'slow down', 5_000), { code: 'host_rate_limited', message: 'slow down', retryAfterMs: 5_000 }],
     [hostError('invalid_params', 'bad'), { code: 'action_failed', message: 'bad' }],
+    // Host API 1.7's fixed messages for runtime refusals.
+    [hostError('action_failed', 'Orca could not complete this action'), { code: 'action_failed', message: 'Orca could not complete this action' }],
+    [hostError('conflict', "the terminal's tab is pinned; unpin it in Orca first"), { code: 'action_failed', message: "the terminal's tab is pinned; unpin it in Orca first" }],
     [new Error('socket closed'), { code: 'host_failed', message: 'socket closed' }]
   ]
   for (const [error, expected] of cases) {
@@ -227,7 +230,7 @@ test('repo.get asks again after an error, with no focus change', async () => {
   const first = await worker.request('repo.get')
   assert.equal(!first.ok && first.error.code, 'gh_logged_out')
   loggedIn = true
-  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/out', url: 'https://github.com/octo/out', path: '/code/out', resolvedBy: 'context' })
+  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/out', url: 'https://github.com/octo/out', path: '/code/out', workspaceId: 'w-out', resolvedBy: 'context' })
   // Other open panels hear the new answer too.
   const last = worker.posts.filter((p) => p.event === 'repo.changed').at(-1)
   assert.equal((last?.payload as { ok: boolean }).ok, true)

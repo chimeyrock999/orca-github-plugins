@@ -154,3 +154,36 @@ test('project names with commas cannot make two project sets share a key', () =>
   assert.notEqual(one, two)
   assert.equal(one, 'main\nmain\n["a,b","c"]')
 })
+
+// Host API 1.7: readContext names the workspace by the id workspace.list gives.
+
+test('an id in the context resolves by id alone: no terminal, no pick', async () => {
+  let picks = 0
+  const d = { ...deps({ t1: '/code/app' }), picked: async () => (picks++, '/code/app') }
+  const result = await resolveFocus({ workspaceId: 'w-lib', branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }, [app, lib], d)
+  assert.deepEqual(result, { ok: true, workspace: lib, resolvedBy: 'id' })
+  assert.deepEqual(d.asked, [])
+  assert.equal(picks, 0)
+})
+
+test('an id wins over a branch and name that fit another workspace', async () => {
+  const result = await resolveFocus({ workspaceId: 'w-app', branch: 'feature/spike', displayName: 'Spike: run gh', terminals: [] }, [app, spike], deps())
+  assert.equal(result.ok && result.workspace.id, 'w-app')
+})
+
+test('an id workspace.list does not have is not found, without guessing from the branch', async () => {
+  const d = deps({ t1: '/work/app/spike' })
+  const result = await resolveFocus({ workspaceId: 'w-gone', branch: 'feature/spike', displayName: 'Spike: run gh', terminals: [{ id: 't1' }] }, [app, spike], d)
+  assert.equal(!result.ok && result.error.code, 'workspace_not_found')
+  assert.deepEqual(d.asked, [])
+})
+
+test('a workspace found by id on another host is remote', async () => {
+  const result = await resolveFocus({ workspaceId: 'w-remote', branch: 'dev', displayName: 'remote', terminals: [] }, [remote], deps())
+  assert.equal(!result.ok && result.error.code, 'remote_workspace')
+})
+
+test('an empty id is no id: the branch and name still decide', async () => {
+  const result = await resolveFocus({ workspaceId: '', branch: 'feature/spike', displayName: 'Spike: run gh', terminals: [] }, [app, spike], deps())
+  assert.equal(result.ok && result.resolvedBy, 'context')
+})

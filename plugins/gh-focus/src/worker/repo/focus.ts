@@ -1,7 +1,8 @@
-// Finds the focused workspace's folder. workspace.readContext gives only its branch and name, and
-// workspace.list gives folders, so the two are matched. Orca names root clones after their branch,
-// so repos on `main` look alike; then a focused terminal decides, through the Orca CLI, or the
-// person's pick, kept per branch, name and the projects of the workspaces that share them.
+// Finds the focused workspace's folder. Since host API 1.7 workspace.readContext names the workspace
+// by the id workspace.list gives, and that row is the answer. An older Orca gives only its branch and
+// name, so the two are matched. Orca names root clones after their branch, so repos on `main` look
+// alike; then a focused terminal decides, through the Orca CLI, or the person's pick, kept per
+// branch, name and the projects of the workspaces that share them.
 import type { PanelError, ResolvedBy } from '../../shared/protocol'
 
 export type WorkspaceEntry = {
@@ -10,8 +11,7 @@ export type WorkspaceEntry = {
   name: string
   /** The repo's name in Orca (host API 1.5). */
   project?: string | null
-  /** Orca's id of the repo (host API 1.7, not in the typings yet); preferred over `project`, which
-   *  two repos may share. */
+  /** Orca's id of the repo (host API 1.7); preferred over `project`, which two repos may share. */
   projectId?: string | null
   path: string
   branch: string | null
@@ -19,6 +19,8 @@ export type WorkspaceEntry = {
 }
 
 export type FocusContext = {
+  /** The id workspace.list gives the focused workspace (host API 1.7). */
+  workspaceId?: string
   branch: string
   displayName: string
   terminals: { id: string; title?: string }[]
@@ -91,6 +93,12 @@ export async function resolveFocus(
   if (!context) return { ok: false, error: { code: 'no_workspace', message: 'No workspace is focused in Orca.' } }
 
   const branch = stripRef(context.branch)
+  if (context.workspaceId) {
+    // Orca names the workspace, so nothing is guessed from the branch, a terminal or a pick.
+    const workspace = workspaces.find((w) => w.id === context.workspaceId)
+    if (!workspace) return { ok: false, error: { code: 'workspace_not_found', message: `Orca did not list the focused workspace ${context.displayName}.` } }
+    return located({ workspace, resolvedBy: 'id' }, deps.exists)
+  }
   const matches = matchesOf(context, workspaces)
   let found: { workspace: WorkspaceEntry; resolvedBy: ResolvedBy } | null = null
   if (matches.length === 1) {
@@ -132,7 +140,12 @@ export async function resolveFocus(
       error: { code: 'workspace_not_found', message: `No workspace is on ${branch} and named ${context.displayName}.` }
     }
   }
-  if (!isLocal(found.workspace, deps.exists)) {
+  return located(found, deps.exists)
+}
+
+/** The workspace found, when gh can run in its folder here. */
+function located(found: { workspace: WorkspaceEntry; resolvedBy: ResolvedBy }, exists: FocusDeps['exists']): FocusResult {
+  if (!isLocal(found.workspace, exists)) {
     return {
       ok: false,
       error: { code: 'remote_workspace', message: 'The workspace is not on this machine.', path: found.workspace.path }

@@ -234,8 +234,8 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
   remote_workspace: { title: 'Workspace is on another machine', hint: 'The panel runs gh on this machine only.', tone: 'warning' },
   host_failed: { title: 'Orca did not answer', hint: 'Press Retry.', tone: 'warning' },
   action_failed: {
-    title: 'Panel error',
-    hint: 'Something in gh Focus broke; the message below says what. Report it if Retry does not help.',
+    title: 'Could not finish',
+    hint: 'gh Focus or Orca could not finish this; the message below says what. Report it if Retry does not help.',
     tone: 'danger'
   },
   not_allowed: { title: 'Not allowed by Orca', hint: 'Orca has not allowed this for gh Focus; the message below says what.', tone: 'warning' },
