@@ -105,7 +105,7 @@ test('a failed host call is an answer that keeps what Orca said', async () => {
     [hostError('invalid_params', 'bad'), { code: 'action_failed', message: 'bad' }],
     // Host API 1.7's fixed messages for runtime refusals.
     [hostError('action_failed', 'Orca could not complete this action'), { code: 'action_failed', message: 'Orca could not complete this action' }],
-    [hostError('conflict', 'the terminal tab is pinned'), { code: 'action_failed', message: 'the terminal tab is pinned' }],
+    [hostError('conflict', "the terminal's tab is pinned; unpin it in Orca first"), { code: 'action_failed', message: "the terminal's tab is pinned; unpin it in Orca first" }],
     [new Error('socket closed'), { code: 'host_failed', message: 'socket closed' }]
   ]
   for (const [error, expected] of cases) {
