@@ -57,11 +57,13 @@ export type PanelError = {
  *  as `action_failed`, so every request answers `{ ok: false, error }` instead. */
 export type Answer<T> = ({ ok: true } & T) | { ok: false; error: PanelError }
 
-/** How the focused workspace was found: its branch and name alone, the person's pick among
- *  workspaces that share them, or one of its terminals. */
-export type ResolvedBy = 'context' | 'picked' | 'terminal'
+/** How the focused workspace was found: the id Orca names it by (host API 1.7), or on an older Orca
+ *  its branch and name alone, the person's pick among workspaces that share them, or one of its
+ *  terminals. */
+export type ResolvedBy = 'id' | 'context' | 'picked' | 'terminal'
 
-export type RepoAnswer = Answer<{ nameWithOwner: string; url: string; path: string; resolvedBy: ResolvedBy }>
+/** `workspaceId`: the id workspace.list gives the workspace found. */
+export type RepoAnswer = Answer<{ nameWithOwner: string; url: string; path: string; workspaceId: string; resolvedBy: ResolvedBy }>
 
 /** A page of a list. `next` is the cursor of the page after it, null on the last page. `limit` is
  *  how many rows GitHub lets anyone page through (its filtered runs list stops at 1,000 however many
