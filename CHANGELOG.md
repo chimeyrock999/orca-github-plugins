@@ -10,6 +10,13 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+### Changed
+
+**Issues and pull requests**
+
+- On Orca 1.4.260 or later, Link one finds the workspace's agent from Orca itself instead of asking
+  the Orca CLI where each agent's terminal runs.
+
 ## 0.1.3 - 2026-11-13
 
 ### Fixed

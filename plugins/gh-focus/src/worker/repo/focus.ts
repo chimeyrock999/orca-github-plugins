@@ -19,6 +19,8 @@ export type WorkspaceEntry = {
 }
 
 export type FocusContext = {
+  /** Orca's id of the focused workspace, the one workspace.list gives it (host API 1.7). */
+  workspaceId?: string
   branch: string
   displayName: string
   terminals: { id: string; title?: string }[]
