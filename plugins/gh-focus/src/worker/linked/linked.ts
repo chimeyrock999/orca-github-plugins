@@ -117,8 +117,14 @@ export function busyAgent(agents: AgentRow[]): (AgentRow & { terminalId: string;
 /** How the panel names an agent: its terminal title, else its kind. */
 export const agentName = (a: AgentRow): string => a.title?.trim() || a.agent || 'the agent'
 
-/** What the agent is asked: it knows which issue or pull request it works on. */
+/**
+ * What the agent is asked: to link the issue or pull request it works on, or to ask when it does
+ * not know which (a guess links the wrong item). One line, the command last so nothing sticks to it.
+ */
 export function linkPrompt(repoUrl: string, kind: LinkedKind): string {
   const noun = kind === 'issues' ? 'issue' : 'pull request'
-  return `Link the GitHub ${noun} this workspace is working on to it in Orca: ${linkCommand(repoUrl, kind)}`
+  return (
+    `Link the GitHub ${noun} this workspace is working on to it in Orca. ` +
+    `If you are not sure which ${noun}, ask me instead of guessing. Run: ${linkCommand(repoUrl, kind)}`
+  )
 }
