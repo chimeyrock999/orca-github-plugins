@@ -90,14 +90,13 @@ function github() {
 function mount(gh: Gh) {
   let t = 0
   let links = { project: 'github:octo/app', items: [8, 9].map((n) => ({ provider: 'github', type: 'issue', number: n, url: `https://github.com/octo/app/issues/${n}` })) }
-  let context = { branch: 'feature/spike', displayName: 'Spike', terminals: [] as { id: string }[] }
+  let context = { workspaceId: 'w-spike', branch: 'feature/spike', displayName: 'Spike', terminals: [] as { id: string }[] }
   const host = mockHost({ results: { 'workspace.readContext': () => context, 'workspace.list': { workspaces, truncated: false } } })
   const module = {
     default: (orca: OrcaWorkerApi) =>
       main.activateWith(orca, {
         gh,
         ghRepo: async (path) => (path === '/code/lib' ? { ok: true, nameWithOwner: 'octo/lib', url: 'https://github.com/octo/lib' } : repos[path]),
-        terminalPath: async (id) => (id === 'app' ? '/code/app' : id === 'lib' ? '/code/lib' : null),
         exists: () => true,
         links: async () => links as never,
         branch: async () => 'feature/spike',
@@ -109,7 +108,7 @@ function mount(gh: Gh) {
     worker,
     /** Moves Orca's focus to another workspace of the same repo, or back. */
     focus: (to: 'app' | 'spike') => {
-      context = to === 'app' ? { branch: 'main', displayName: 'main', terminals: [{ id: 'app' }] } : { branch: 'feature/spike', displayName: 'Spike', terminals: [] }
+      context = to === 'app' ? { workspaceId: 'w-app', branch: 'main', displayName: 'main', terminals: [{ id: 'app' }] } : { workspaceId: 'w-spike', branch: 'feature/spike', displayName: 'Spike', terminals: [] }
       return worker.emit('workspace.changed', { context })
     },
     unlink: () => (links = { project: 'github:octo/app', items: [] })
@@ -191,13 +190,13 @@ test('a repo the workspace no longer shows keeps nothing', async () => {
   await worker.request('issue.get', { number: 8 })
   assert.deepEqual(await worker.request('budget.get'), { ok: true, budget: null })
   // A folder with no GitHub repo keeps it; another repo drops it.
-  await worker.emit('workspace.changed', { context: { branch: 'main', displayName: 'gl', terminals: [] } })
-  await worker.emit('workspace.changed', { context: { branch: 'feature/spike', displayName: 'Spike', terminals: [] } })
+  await worker.emit('workspace.changed', { context: { workspaceId: 'w-gl', branch: 'main', displayName: 'gl', terminals: [] } })
+  await worker.emit('workspace.changed', { context: { workspaceId: 'w-spike', branch: 'feature/spike', displayName: 'Spike', terminals: [] } })
   let before = hub.calls.length
   await worker.request('issue.get', { number: 8 })
   assert.equal(hub.calls.length - before, 0)
-  await worker.emit('workspace.changed', { context: { branch: 'main', displayName: 'lib', terminals: [{ id: 'lib' }] } })
-  await worker.emit('workspace.changed', { context: { branch: 'feature/spike', displayName: 'Spike', terminals: [] } })
+  await worker.emit('workspace.changed', { context: { workspaceId: 'w-lib', branch: 'main', displayName: 'main', terminals: [{ id: 'lib' }] } })
+  await worker.emit('workspace.changed', { context: { workspaceId: 'w-spike', branch: 'feature/spike', displayName: 'Spike', terminals: [] } })
   before = hub.calls.length
   await worker.request('issue.get', { number: 8 })
   assert.equal(hub.calls.length - before, 1)
@@ -292,9 +291,9 @@ test('a repo left through a folder with no repo keeps nothing once another repo 
   const hub = github()
   const { worker } = await mount(hub.gh)
   await worker.request('issue.get', { number: 8 })
-  await worker.emit('workspace.changed', { context: { branch: 'main', displayName: 'gl', terminals: [] } })
-  await worker.emit('workspace.changed', { context: { branch: 'main', displayName: 'lib', terminals: [{ id: 'lib' }] } })
-  await worker.emit('workspace.changed', { context: { branch: 'feature/spike', displayName: 'Spike', terminals: [] } })
+  await worker.emit('workspace.changed', { context: { workspaceId: 'w-gl', branch: 'main', displayName: 'gl', terminals: [] } })
+  await worker.emit('workspace.changed', { context: { workspaceId: 'w-lib', branch: 'main', displayName: 'main', terminals: [{ id: 'lib' }] } })
+  await worker.emit('workspace.changed', { context: { workspaceId: 'w-spike', branch: 'feature/spike', displayName: 'Spike', terminals: [] } })
   const before = hub.calls.length
   await worker.request('issue.get', { number: 8 })
   assert.equal(hub.calls.length - before, 1)

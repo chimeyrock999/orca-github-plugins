@@ -214,16 +214,6 @@ export function setRepo(answer: RepoAnswer): Promise<void> | void {
   if (answer.ok) return ensure(read(tab))
 }
 
-/** Picks the folder among workspaces that share the focused branch and name. */
-export async function pickRepo(path: string): Promise<void> {
-  await setRepo(await plugin.request('repo.pick', { path }).catch(requestFailed))
-}
-
-/** Forgets that pick, so the choice shows again. */
-export async function unpickRepo(): Promise<void> {
-  await setRepo(await plugin.request('repo.unpick').catch(requestFailed))
-}
-
 /** Asks for the repo again (an error may be gone), then reloads the page on screen. The worker
  *  forgets what it kept first, so all of it comes from GitHub. */
 export async function refresh(): Promise<void> {
