@@ -10,6 +10,16 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+### Added
+
+**Elsewhere**
+
+- Since you were here: coming back to a workspace after 10 minutes or more in another one, a short
+  block above the tabs says what changed meanwhile: new comments, reviews, and closes, reopens and
+  merges on its linked issues and pull requests (and the branch's pull request), and the branch's
+  runs that finished. Each line opens the item or run; Dismiss hides it until the next absence.
+  The panel remembers when you left each workspace in memory only, so a restart of Orca forgets it.
+
 ### Changed
 
 **Issues and pull requests**

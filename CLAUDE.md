@@ -40,6 +40,8 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
       branch's pull request (`gh pr view`).
     - `runs/` (`runs.ts`, `logs.ts`, `workflow-inputs.ts`): one run, its logs, rerun, cancel, the
       `run.watch` lease, and the Run workflow form.
+    - `since/` (`away.ts`, `since.ts`): when the person left each workspace (in memory), and what
+      changed since on its linked items (one GraphQL query) and the branch's runs, for `since.get`.
   - `src/panel/`: panel side only; no DOM, no `node:`, only the `orca` catalog; state in atoms.
     - `views.tsx`, `store.ts`, `parts.tsx`: the tabs, their atoms, shared pieces; `refs.ts`: `#N`
       links.
@@ -51,6 +53,7 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
     - `issues/` (`issue-view.tsx`, `issue-store.ts`): the issue detail and state.
     - `pulls/` (`pull-view.tsx`, `pull-store.ts`): a pull request and its review.
     - `runs/` (`run-store.ts`, `run-view.tsx`): the panel side of runs.
+    - `since/` (`since-store.ts`, `since-view.tsx`): the Since you were here block above the tabs.
 - `tests/` mirrors `src/`: the test of `src/<path>/<name>.ts` is `tests/<path>/<name>.test.ts(x)`
   (`orca plugin test` finds it there). `tests/fixtures/` holds the canned answers (`fixtures.ts` for
   the panel and the check scenarios, `worker-fixtures.ts` for the worker). `tests/manifest.test.ts`

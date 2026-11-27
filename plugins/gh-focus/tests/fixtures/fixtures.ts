@@ -14,6 +14,8 @@ import type {
   RunPage,
   RunRow,
   RunStep,
+  Since,
+  SinceItem,
   TimelineComment,
   TimelineItem,
   TimelineReview
@@ -310,4 +312,26 @@ export function before(a: string, b: string): boolean {
     if (as[i] !== bs[i]) return as[i] < bs[i]
   }
   return as.length < bs.length
+}
+
+/** A linked item that changed while the person was away: issue 120 got two comments by default. */
+export function sinceItem(change: Partial<SinceItem> = {}): SinceItem {
+  return { kind: 'issues', number: 120, repo: null, title: titles[2], state: 'open', comments: 2, commenters: ['olu', 'ana'], reviews: [], events: [], at: now - 600_000, ...change }
+}
+
+/** What `since.get` answers after an hour away: issue 120's comments, pull request 131 approved and
+ *  merged, and the branch's failed run. */
+export function sinceAnswer(change: Partial<Since> = {}): Answer<Since> {
+  return {
+    ok: true,
+    since: now - hour,
+    items: [
+      sinceItem({ kind: 'pulls', number: 131, title: 'Fix token refresh loop', state: 'merged', comments: 0, commenters: [], reviews: [{ author: 'kenji', state: 'approved' }], events: ['merged'], at: now - 300_000 }),
+      sinceItem()
+    ],
+    runs: [{ ...runRows[2], id: 9002, runNumber: 297, workflow: 'CI', branch: 'fix/token-refresh', startedAt: now - 1_800_000, durationMs: 240_000 }],
+    skipped: false,
+    viewer: 'ana',
+    ...change
+  }
 }
