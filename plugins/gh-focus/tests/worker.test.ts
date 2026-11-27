@@ -520,8 +520,11 @@ test('before host API 1.10, the repo tracker and the agent requests share one CL
 
 test('on host API 1.10, the agents are those Orca lists for the panel\'s workspace id, with no Orca CLI call', async () => {
   const asked: string[] = []
-  let agents = [
+  // A live terminal Orca restored but has not shown yet has no id (Orca up to v1.4.278): nothing to type into.
+  const unshown = { terminalId: null, title: 'Restored Claude', agent: 'claude', state: 'waiting', stateStartedAt: 99 }
+  let agents: Array<{ terminalId: string | null; title: string; agent: string; state: string; stateStartedAt: number }> = [
     { terminalId: 't-busy', title: 'Codex', agent: 'codex', state: 'working', stateStartedAt: 9 },
+    unshown,
     { terminalId: 't-free', title: 'Claude Code', agent: 'claude', state: 'waiting', stateStartedAt: 5 }
   ]
   let refusal: Error | null = null
@@ -548,8 +551,10 @@ test('on host API 1.10, the agents are those Orca lists for the panel\'s workspa
   // Still only the agent the panel offered, while it is free.
   const busy = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-busy' })
   assert.equal(!busy.ok && busy.error.code, 'no_agent')
-  agents = agents.slice(0, 1)
+  agents = agents.slice(0, 2)
   assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: { name: 'Codex', state: 'working' } })
+  agents = [unshown]
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: null })
   // Orca no longer has the workspace: no agent, not an error.
   refusal = hostError('action_failed', 'no workspace has this id')
   assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: null })
