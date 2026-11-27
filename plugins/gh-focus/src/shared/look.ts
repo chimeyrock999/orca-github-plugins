@@ -15,6 +15,7 @@ import type {
   ReviewDecision,
   ReviewState,
   RunRow,
+  SinceItem,
   TimelineMention,
   TimelineState
 } from '../shared/protocol'
@@ -57,6 +58,40 @@ export function linkedLook(kind: LinkedKind, row: LinkedRow): Look {
   const [first, second]: Record<string, Look>[] = kind === 'pulls' ? [PULL, ISSUE] : [ISSUE, PULL]
   return (row.state && (first[row.state] ?? second[row.state])) || { glyph: '◌', tone: 'neutral', label: 'Unknown' }
 }
+
+/** A login as the panel names it: the viewer is "you". */
+const who = (login: string, viewer: string | null) => (login === viewer ? 'you' : login)
+
+const REVIEWED: [SinceItem['reviews'][number]['state'], string][] = [
+  ['approved', 'approved by'],
+  ['changes_requested', 'changes requested by'],
+  ['commented', 'reviewed by']
+]
+
+/** What changed on an item while the person was away: "2 comments (olu, you) · approved by olu ·
+ *  merged". */
+export function sinceWords(item: SinceItem, viewer: string | null): string {
+  const parts: string[] = []
+  if (item.comments) {
+    const names = item.commenters.map((c) => who(c, viewer))
+    const more = item.comments > names.length && names.length ? ', …' : ''
+    parts.push(`${count(item.comments)} ${item.comments === 1 ? 'comment' : 'comments'}${names.length ? ` (${names.join(', ')}${more})` : ''}`)
+  }
+  for (const [state, words] of REVIEWED) {
+    const by = item.reviews.filter((r) => r.state === state).map((r) => who(r.author, viewer))
+    if (by.length) parts.push(`${words} ${by.join(', ')}`)
+  }
+  parts.push(...item.events)
+  return parts.join(' · ')
+}
+
+/** An item's glyph by its kind and state now. */
+export const sinceLook = (item: SinceItem): Look => (item.kind === 'pulls' ? PULL[item.state as PullState] : ISSUE[item.state as IssueState]) ?? linkedLook(item.kind, { state: item.state } as LinkedRow)
+
+const ENDED: Partial<Record<RunRow['state'], string>> = { success: 'succeeded', failure: 'failed', cancelled: 'cancelled', skipped: 'skipped' }
+
+/** How a finished run ended, after its name: "failed". */
+export const endedWords = (row: Pick<RunRow, 'state'>): string => ENDED[row.state] ?? RUN[row.state].label.toLowerCase()
 
 /** What a closed or reopened event says after its actor: "closed this as not planned". A pull
  *  request's close has no reason. */

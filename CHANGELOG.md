@@ -14,9 +14,17 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 **Actions**
 
-- A failed run offers "Ask <agent> to fix": it types one line into the workspace's free agent (the
+- A failed run offers "Ask <agent> to fix": it types one line into the workspace's agent (the
   run, its failed jobs, and the `gh run view --log-failed` command to read their log), without
   Enter. While the agent waits on a question the button waits, disabled, and says why.
+
+**Elsewhere**
+
+- Since you were here: coming back to a workspace after 10 minutes or more in another one, a short
+  block above the tabs says what changed meanwhile: new comments, reviews, and closes, reopens and
+  merges on its linked issues and pull requests (and the branch's pull request), and the branch's
+  runs that finished. Each line opens the item or run; Dismiss hides it until the next absence.
+  The panel remembers when you left each workspace in memory only, so a restart of Orca forgets it.
 
 ### Changed
 

@@ -141,6 +141,10 @@ export type RunFilters = { workflow?: string; status?: string; event?: string; b
  *  `filters` win over the same qualifier. The runs API has no order: newest first. `scope: 'branch'`
  *  lists the runs of the focused workspace's branch unless a branch is asked for already. */
 export type RunListInput = { query: string; after: string | null; filters?: RunFilters; scope?: 'branch' | 'all' }
+/** The Actions tab's first page: the workspace branch's runs, no search or filter. The panel's
+ *  first runs.list is exactly this (tests/panel/requests.test.tsx), so since.get reads the same
+ *  kept page. */
+export const BRANCH_RUNS: RunListInput = { query: '', after: null, filters: {}, scope: 'branch' }
 /** `branch`: the workspace branch the page was narrowed to by `scope`, else null. */
 export type RunPage = Page<RunRow> & { branch: string | null }
 
@@ -373,6 +377,28 @@ export type Done = Answer<Record<never, never>>
  *  for the thread again; null when GitHub's answer could not be read (the panel then asks). */
 export type Commented = Answer<{ comment: TimelineComment | null }>
 
+/** What changed on a linked issue or pull request since the person left the workspace: new comments
+ *  (how many, and who wrote the newest), each reviewer's latest review, and state changes, oldest
+ *  first. `at`: the newest of them, in milliseconds since the epoch. */
+export type SinceItem = {
+  kind: LinkedKind
+  number: number
+  repo: string | null
+  title: string
+  state: IssueState | PullState
+  comments: number
+  commenters: string[]
+  reviews: { author: string; state: Exclude<ReviewState, 'dismissed'> }[]
+  events: ('closed' | 'reopened' | 'merged')[]
+  at: number
+}
+
+/** What changed in the focused workspace while the person was away: `since` is when they left it
+ *  (null when they were not away, or dismissed it), with the linked items that changed (newest
+ *  first) and the branch's runs that finished since. `skipped`: the items were not asked for, as
+ *  the budget is low. `viewer`: the gh login, which the panel names "you". */
+export type Since = { since: number | null; items: SinceItem[]; runs: RunRow[]; skipped: boolean; viewer: string | null }
+
 /** The REST budget GitHub says is left (shared with Orca) while it is low: under a tenth of the
  *  limit until `resetAt` (milliseconds since the epoch). */
 export type GitHubBudget = { limit: number; remaining: number; resetAt: number }
@@ -405,6 +431,12 @@ declare module 'orca' {
     'agent.ask': { input: { about: AskAbout; terminalId: string }; output: Answer<{ agent: string; working: boolean }> }
     /** One page of the focused repo's workflow runs, newest first. */
     'runs.list': { input: RunListInput; output: Answer<RunPage> }
+    /** What changed in the focused workspace since the person left it, after an absence: one
+     *  GraphQL query over the linked items (and the branch's pull request) and the branch's runs
+     *  page as the Actions tab reads it. Nothing is asked when they were not away. */
+    'since.get': { input: { workspaceId: string }; output: Answer<Since> }
+    /** Forgets the absence, so since.get answers nothing until the next one. */
+    'since.dismiss': { input: { workspaceId: string }; output: Done }
     /** The focused repo's label names, for the label picker. */
     'labels.list': { input: { repo?: string }; output: Answer<{ names: string[] }> }
     /** One issue with its body and the start and end of its timeline. */

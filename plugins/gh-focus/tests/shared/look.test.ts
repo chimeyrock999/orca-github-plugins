@@ -1,7 +1,8 @@
 // The words and tones rows and errors show with.
 import { assert, test } from 'orca/testing'
-import { bytes, count, duration, expiry, pageLine, issueLook, linkCommand, linkedLook, problemOf, pullLook, reactionTip, runCause, runLook, stateWords } from '../../src/shared/look'
+import { bytes, count, duration, endedWords, sinceLook, sinceWords, expiry, pageLine, issueLook, linkCommand, linkedLook, problemOf, pullLook, reactionTip, runCause, runLook, stateWords } from '../../src/shared/look'
 import type { IssueState, LinkedRow, PullState, RunRow } from '../../src/shared/protocol'
+import { sinceItem } from '../fixtures/fixtures'
 
 const issue: { state: IssueState } = { state: 'open' }
 const pull: { state: PullState } = { state: 'open' }
@@ -193,4 +194,41 @@ test('artifact sizes and expiry read as GitHub writes them', () => {
   assert.equal(expiry(false, now + 30 * hour, now), 'Expires in 1 day')
   assert.equal(expiry(false, now + 5 * hour, now), 'Expires in 5 hours')
   assert.equal(expiry(false, now + 1_000, now), 'Expires soon')
+})
+
+test('what changed while away reads as one line: comments with who wrote them, reviews by kind, state changes; the viewer is "you"', () => {
+  assert.equal(sinceWords(sinceItem({ comments: 2, commenters: ['olu', 'ana'] }), 'ana'), '2 comments (olu, you)')
+  assert.equal(sinceWords(sinceItem({ comments: 1, commenters: ['olu'] }), null), '1 comment (olu)')
+  // More comments than names: the rest are an ellipsis.
+  assert.equal(sinceWords(sinceItem({ comments: 12, commenters: ['olu', 'ana', 'kim'] }), null), '12 comments (olu, ana, kim, …)')
+  // The newest few all by one person: the others still show as an ellipsis.
+  assert.equal(sinceWords(sinceItem({ comments: 12, commenters: ['olu'] }), null), '12 comments (olu, …)')
+  assert.equal(
+    sinceWords(
+      sinceItem({
+        kind: 'pulls',
+        comments: 0,
+        commenters: [],
+        reviews: [
+          { author: 'kim', state: 'commented' },
+          { author: 'olu', state: 'approved' },
+          { author: 'ana', state: 'changes_requested' },
+          { author: 'mai', state: 'approved' }
+        ],
+        events: ['merged']
+      }),
+      'ana'
+    ),
+    'approved by olu, mai · changes requested by you · reviewed by kim · merged'
+  )
+  assert.equal(sinceWords(sinceItem({ comments: 0, commenters: [], events: ['closed', 'reopened'] }), null), 'closed · reopened')
+})
+
+test('a changed item’s glyph is its state now, by its kind; a finished run says how it ended', () => {
+  assert.deepEqual(sinceLook(sinceItem({ kind: 'pulls', state: 'merged' })), pullLook({ state: 'merged' }))
+  assert.deepEqual(sinceLook(sinceItem({ state: 'not_planned' })), issueLook({ state: 'not_planned' }))
+  assert.deepEqual(
+    (['success', 'failure', 'cancelled', 'skipped'] as const).map((state) => endedWords({ state })),
+    ['succeeded', 'failed', 'cancelled', 'skipped']
+  )
 })

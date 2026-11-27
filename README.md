@@ -57,6 +57,8 @@ Three tabs, each about the workspace in focus. Switch workspace and the panel fo
 
 **A run failed?** **Ask agent to fix** types one line into the same agent: the run, its failed jobs, and the `gh run view --log-failed` command that reads their log. Again without Enter.
 
+**Since you were here.** Come back to a workspace after 10 minutes or more in another one and a short block above the tabs says what changed meanwhile: new comments and reviews, closes and merges on its linked issues and pull requests, and how the branch's runs ended. Each line opens what it names; Dismiss hides it until the next time.
+
 **Light on your GitHub budget.** The panel shares the budget with Orca, so answers are kept in memory for a short while, an unchanged REST answer costs nothing (ETag), and a write drops only what it changes. When the budget runs low the panel reads less often and says so.
 
 ## What stays in Orca
