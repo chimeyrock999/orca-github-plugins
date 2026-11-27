@@ -18,6 +18,8 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
   agent's terminal runs.
 - The agent Link one offers is looked for again only when an agent of the workspace changes state,
   not when one in another workspace does.
+- Once the asked agent links the issue or pull request and stops, the tab opens it (or lists them,
+  when it linked several) without Refresh.
 
 **Elsewhere**
 
