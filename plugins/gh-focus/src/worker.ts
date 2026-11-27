@@ -20,7 +20,7 @@ import {
 } from './worker/issues/issues'
 import { agentName, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, takesPrompt, type AgentRow } from './worker/linked/linked'
 import { listLabels, listRuns, listWorkflows, type RepoRef } from './worker/lists'
-import { BRANCH_RUNS, isRepoName, type Answer, type GitHubBudget, type LinkedKind, type LinkedRef, type OrcaView, type RunListInput, type RunState, type Since } from './shared/protocol'
+import { BRANCH_RUNS, isRepoName, type Answer, type GitHubBudget, type LinkedRef, type OrcaView, type RunListInput, type RunState, type Since } from './shared/protocol'
 import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, readyPull, reviewPull } from './worker/pulls/pulls'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './worker/repo/repo'
 import { fixRunPrompt } from './worker/runs/ask'
