@@ -49,9 +49,9 @@ export function setup(ctx: PanelContext): void {
   ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void thenStart(setRepo(answer))))
   ctx.subscriptions.push(plugin.on('run.progress', ({ run }) => progress(run)))
   ctx.subscriptions.push(plugin.on('budget.changed', (answer) => budgetChanged(answer.budget)))
-  // An agent started or stopped (in any workspace; `agent:read` is enough): the empty state's offer
-  // follows it, with one agent.find and no GitHub call.
-  ctx.subscriptions.push(on('agent.status.changed', () => void (mayRefindAgent() && agentIfNone(true))))
+  // An agent of the panel's workspace started or stopped (`agent:read` is enough): the empty state's
+  // offer follows it, with one agent.find and no GitHub call.
+  ctx.subscriptions.push(on('agent.status.changed', (e) => void (mayRefindAgent(e.workspaceListId) && agentIfNone(true))))
   void plugin.request('budget.get').then(
     (answer) => answer.ok && budgetAnswered(answer.budget),
     () => undefined

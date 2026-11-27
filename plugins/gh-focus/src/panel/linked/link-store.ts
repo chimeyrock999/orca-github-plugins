@@ -2,7 +2,7 @@
 // page and Checks tab, and, with nothing linked, a free agent to ask to link one.
 import { atom, plugin, read, set } from 'orca'
 import type { BusyAgent, FreeAgent, LinkedKind, OrcaView, PanelError } from '../../shared/protocol'
-import { lists, requestFailed } from '../store'
+import { lists, repo, requestFailed } from '../store'
 import { focusKey, type AnyThread } from '../thread/thread-store'
 
 /** Why the last hand-off to Orca did not happen; null when it did. */
@@ -42,9 +42,13 @@ export async function findAgent(again = false): Promise<void> {
   set(agent, { where, agent: answer.ok ? answer.agent : null, busy: answer.ok ? answer.busy : null, asking: false, asked: null, error: null })
 }
 
-/** Whether an agent changing state is looked for again: not while it is being asked or once it was
- *  asked (Enter on the prompt sets it working, and the callout stays until Refresh). */
-export function mayRefindAgent(): boolean {
+/** Whether an agent changing state is looked for again: not when Orca names its workspace and that is
+ *  not the panel's (`workspaceListId`, host API 1.7; only the panel's agents are offered), nor while
+ *  it is being asked or once it was asked (Enter on the prompt sets it working, and the callout
+ *  stays until Refresh). */
+export function mayRefindAgent(workspaceListId?: string): boolean {
+  const r = read(repo)
+  if (workspaceListId && r?.ok && r.workspaceId !== workspaceListId) return false
   const a = agentNow()
   return !a?.asking && !a?.asked
 }
