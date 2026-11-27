@@ -156,7 +156,7 @@ function Actions({ s, run }: { s: OpenRun; run: RunDetail }) {
       )}
       {fix && !asked && !fix.agent && fix.busy && (
         <Text size="xs" muted>
-          {fix.busy.state === 'blocked' ? `${fix.busy.name} is waiting on a question. Answer it, then ask.` : `${fix.busy.name} is working. Ask it once it stops.`}
+          {`${fix.busy.name} is waiting on a question. Answer it, then ask.`}
         </Text>
       )}
       {failedAsk && <Problem error={failedAsk} onRetry={forgetAsked} retryLabel="Dismiss" />}
@@ -164,7 +164,7 @@ function Actions({ s, run }: { s: OpenRun; run: RunDetail }) {
   )
 }
 
-/** Asks the workspace's free agent to fix the failed run: never while it works or waits on a
+/** Asks the workspace's agent to fix the failed run, at work or not: never while it waits on a
  *  question (the button shows disabled, with why below it), and not at all with no agent. */
 function AskToFix({ run }: { run: RunDetail }) {
   const a = agentNow()

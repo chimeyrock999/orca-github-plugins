@@ -249,7 +249,7 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
   cancelled: { title: 'Request cancelled', hint: 'Press Retry.', tone: 'neutral' },
   bad_query: { title: 'Search runs with qualifiers', hint: 'For example branch:main status:failure. GitHub cannot search runs by words.', tone: 'warning' },
   gh_failed: { title: 'gh failed', hint: 'Press Retry. The message below is what gh said.', tone: 'danger' },
-  no_agent: { title: 'No agent free', hint: 'Every agent here is busy, or none runs. Ask again once one is free.', tone: 'neutral' },
+  no_agent: { title: 'No agent free', hint: 'Every agent here waits on a question, or none runs. Ask again once one is free.', tone: 'neutral' },
   not_failed: { title: 'Nothing to fix', hint: 'The run has not failed: it runs again, or it passed. Refresh to see it as it is now.', tone: 'neutral' },
   unsure: {
     title: 'It may have gone through',

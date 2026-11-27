@@ -574,7 +574,7 @@ test('Run workflow: a gh failure keeps the form and what was typed', async () =>
 })
 
 const free = { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null }
-const busyAs = (state: 'working' | 'blocked') => ({ ok: true, agent: null, busy: { name: 'Claude Code', state } })
+const blocked = { ok: true, agent: null, busy: { name: 'Claude Code', state: 'blocked' } }
 const fails = (view: Awaited<ReturnType<typeof mount>>, text: RegExp) => view.summary().some((l) => text.test(l))
 /** What Orca sends a panel when an agent of the panel's workspace starts or stops. */
 const agentStatus = { workspaceId: 'raw-app', workspaceListId: repoOk.workspaceId, paneKey: 'p1', terminalId: 't1', state: 'done' as const, receivedAt: 1 }
@@ -602,24 +602,22 @@ test('a failed run asks the free agent to fix it: the prompt is typed, and the c
   await view.unmount()
 })
 
-test('a busy agent is named and the button waits; with no agent, or a run that did not fail, there is none', async () => {
-  let found: unknown = busyAs('working')
+test('an agent waiting on a question is named and the button waits; with no agent, or a run that did not fail, there is none', async () => {
+  let found: unknown = blocked
   const h = host({ 'agent.find': () => found })
   const view = await openRun(h)
   assert.equal(view.find({ type: 'Button', text: 'Ask Claude Code to fix' })?.props.disabled, true)
-  assert.ok(view.find({ text: 'Claude Code is working. Ask it once it stops.' }))
-  found = busyAs('blocked')
-  await view.emit('agent.status.changed', agentStatus)
   assert.ok(view.find({ text: 'Claude Code is waiting on a question. Answer it, then ask.' }))
-  // It stops: Orca says so, and the button comes by itself.
+  // Answered, it works on: it takes the prompt (it waits in its input), so the button comes by itself.
   found = free
-  await view.emit('agent.status.changed', agentStatus)
+  await view.emit('agent.status.changed', { ...agentStatus, state: 'working' })
   assert.equal(view.find({ type: 'Button', text: 'Ask Claude Code to fix' })?.props.disabled, false)
+  assert.equal(view.find({ text: /waiting on a question/ }), null)
   // Refresh looks again too.
   found = { ok: true, agent: null, busy: null }
   await view.press({ label: 'Refresh' })
   assert.equal(view.find({ type: 'Button', text: /^Ask / }), null)
-  assert.equal(h.count('agent.find'), 4)
+  assert.equal(h.count('agent.find'), 3)
   await view.unmount()
 
   for (const run of [runDetail({ state: 'success', jobs: runDetail().jobs.map((j) => ({ ...j, state: 'success' as const })) }), runDetail({ state: 'cancelled' })]) {
@@ -636,7 +634,7 @@ test('the agent busy by the time it is asked: it says why and looks again', asyn
   const h = host({
     'agent.find': () => found,
     'agent.ask': () => {
-      found = busyAs('working')
+      found = blocked
       return { ok: false, error: { code: 'no_agent', message: 'That agent is busy now, gone, or not in this workspace.' } }
     }
   })
@@ -644,7 +642,7 @@ test('the agent busy by the time it is asked: it says why and looks again', asyn
   await view.press({ type: 'Button', text: 'Ask Claude Code to fix' })
   assert.ok(fails(view, /No agent free/))
   assert.equal(view.find({ type: 'Button', text: 'Ask Claude Code to fix' })?.props.disabled, true)
-  assert.ok(view.find({ text: 'Claude Code is working. Ask it once it stops.' }))
+  assert.ok(view.find({ text: 'Claude Code is waiting on a question. Answer it, then ask.' }))
   assert.equal(h.count('agent.find'), 2)
   await view.unmount()
 })

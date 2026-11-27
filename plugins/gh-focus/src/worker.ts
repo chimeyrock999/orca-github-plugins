@@ -18,7 +18,7 @@ import {
   reopenIssue,
   setReaction
 } from './worker/issues/issues'
-import { agentName, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, type AgentRow } from './worker/linked/linked'
+import { agentName, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, takesPrompt, type AgentRow } from './worker/linked/linked'
 import { listLabels, listRuns, listWorkflows, type RepoRef } from './worker/lists'
 import { isRepoName, type Answer, type GitHubBudget, type LinkedRef, type OrcaView, type RunState } from './shared/protocol'
 import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, readyPull, reviewPull } from './worker/pulls/pulls'
@@ -82,8 +82,8 @@ async function workspaceAgents(orca: OrcaWorkerApi, at: AgentPlace, terminalId?:
   }
 }
 
-/** The free agent to ask in the panel's workspace; with none free, the busy one there, for the
- *  panel to name. */
+/** The agent to ask in the panel's workspace (`takesPrompt`); with none, the one waiting on a
+ *  question there, for the panel to name. */
 async function findAgent(
   orca: OrcaWorkerApi,
   at: AgentPlace
@@ -94,14 +94,14 @@ async function findAgent(
   return { ok: true, agent, busy: agent ? null : busyAgent(here.agents) }
 }
 
-/** Types a prompt into the agent the panel offered, while it is still free and in the panel's
+/** Types a prompt into the agent the panel offered, while it still takes one and is in the panel's
  *  workspace, without Enter: the person reads it and sends it. */
 async function askAgent(orca: OrcaWorkerApi, at: AgentPlace, terminalId: string, text: string): Promise<Answer<{ agent: string }>> {
   const here = await workspaceAgents(orca, at, terminalId)
   if (!here.ok) return here
   const [agent] = here.agents
-  if (!agent || !freeAgent([agent])) {
-    return { ok: false, error: { code: 'no_agent', message: 'That agent is busy now, gone, or not in this workspace.' } }
+  if (!agent || !takesPrompt(agent)) {
+    return { ok: false, error: { code: 'no_agent', message: 'That agent waits on a question now, is gone, or is not in this workspace.' } }
   }
   try {
     const { accepted } = await orca.host.call('terminal.sendText', { terminalId, text, enter: false })

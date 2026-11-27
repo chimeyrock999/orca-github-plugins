@@ -32,8 +32,7 @@ const longTimeline = issueDetail({
 export default defineCheck({
   issues: { requests: lists },
   'issues-no-agent': { requests: { ...lists, 'agent.find': { ok: true, agent: null, busy: null } } },
-  // The workspace's agent is at work, or waits on a question: named, and Ask waits for it.
-  'issues-agent-working': { requests: { ...lists, 'agent.find': { ok: true, agent: null, busy: { name: 'Claude Code', state: 'working' } } } },
+  // The workspace's agent waits on a question: named, and Ask waits for it.
   'issues-agent-blocked': { requests: { ...lists, 'agent.find': { ok: true, agent: null, busy: { name: 'Claude Code', state: 'blocked' } } } },
   'issues-several': { requests: { ...lists, 'repo.links': links([120, 'octo/sdk#45', 98]), 'items.get': linkedRows(several) } },
   // The GitHub budget shared with Orca is low: the panel says so above the tabs.

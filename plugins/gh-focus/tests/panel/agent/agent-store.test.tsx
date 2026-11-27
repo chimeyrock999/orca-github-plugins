@@ -7,7 +7,7 @@ import { failed, failedLogs, links, linkedRows, pullDetail, repoOk, runDetail, r
 import type { LinkedRef } from '../../../src/shared/protocol'
 
 const free = { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null }
-const working = { ok: true, agent: null, busy: { name: 'Claude Code', state: 'working' } }
+const blocked = { ok: true, agent: null, busy: { name: 'Claude Code', state: 'blocked' } }
 
 /** Nothing linked, a failed run on the Actions tab, and the agent as `agent()` answers. */
 function host(agent: () => unknown, overrides: Record<string, unknown> = {}) {
@@ -40,16 +40,16 @@ async function onFailedRun(h: ReturnType<typeof host>) {
   return view
 }
 
-test('asked to fix a run, the agent works on it: Link one looks it up again and waits for it', async () => {
+test('asked to fix a run, the agent then waits on a question: Link one looks it up again and waits for it', async () => {
   let agent: unknown = free
   const h = host(() => agent)
   const view = await onFailedRun(h)
   await view.press({ type: 'Button', text: 'Ask Claude Code to fix' })
   assert.ok(says(view, /Typed into Claude Code/))
-  agent = working
+  agent = blocked
   await view.select({ type: 'Tabs' }, 'issues')
   assert.equal(view.find({ type: 'Button', text: 'Ask Claude Code to link' })?.props.disabled, true)
-  assert.ok(view.find({ text: /Claude Code is working/ }))
+  assert.ok(view.find({ text: /Claude Code is waiting on a question/ }))
   await view.unmount()
 })
 
@@ -59,7 +59,7 @@ test('back on a failed run from another tab, the agent is looked up again', asyn
   const view = await onFailedRun(h)
   assert.equal(view.find({ type: 'Button', text: 'Ask Claude Code to fix' })?.props.disabled, false)
   await view.select({ type: 'Tabs' }, 'pulls')
-  agent = working
+  agent = blocked
   const before = h.count('agent.find')
   await view.select({ type: 'Tabs' }, 'runs')
   assert.ok(h.count('agent.find') > before)
@@ -101,9 +101,11 @@ test('a failed run looked at while the agent links a pull request: once it stops
   await view.select({ type: 'Tabs' }, 'runs')
   await view.press({ type: 'ListItem', text: /Fix token refresh loop/ })
   assert.ok(view.find({ type: 'Button', text: 'Ask Claude Code to fix' }))
-  // The agent links 124 and stops, while the run shows.
+  // The agent works on it, links 124 and stops, while the run shows.
+  const status = { workspaceId: 'raw-app', workspaceListId: repoOk.workspaceId, paneKey: 'p1', terminalId: 't1', receivedAt: 1 }
+  await view.emit('agent.status.changed', { ...status, state: 'working' })
   now = links([], [124])
-  await view.emit('agent.status.changed', { workspaceId: 'raw-app', workspaceListId: repoOk.workspaceId, paneKey: 'p1', terminalId: 't1', state: 'done', receivedAt: 1 })
+  await view.emit('agent.status.changed', { ...status, state: 'done' })
   // The Pull requests tab asks Orca again once it shows, and opens what the agent linked.
   await view.select({ type: 'Tabs' }, 'pulls')
   assert.deepEqual(h.last('pull.get'), { number: 124 })

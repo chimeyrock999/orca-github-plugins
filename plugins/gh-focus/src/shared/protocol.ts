@@ -36,7 +36,7 @@ export type ErrorCode =
   | 'gh_failed'
   /** Panel only: a write got no answer in time, so it may or may not have landed. */
   | 'unsure'
-  /** No agent in the focused workspace is free to take a prompt (all working, or none). */
+  /** No agent in the focused workspace can take a prompt (each waits on a question, or none runs). */
   | 'no_agent'
   /** The agent was asked to fix a run that has not failed (it runs again, or passed). */
   | 'not_failed'
@@ -94,9 +94,9 @@ export type LinkedRef = { number: number; repo: string | null; title: string | n
 /** An agent of the focused workspace that can take a prompt, by the name the panel shows. */
 export type FreeAgent = { name: string; terminalId: string }
 
-/** An agent of the focused workspace that cannot take a prompt now: at work, or waiting on a
- *  question. */
-export type BusyAgent = { name: string; state: 'working' | 'blocked' }
+/** An agent of the focused workspace that cannot take a prompt now: it waits on a question. (One at
+ *  work takes a prompt: the text waits in its input.) */
+export type BusyAgent = { name: string; state: 'blocked' }
 
 /** What the agent is asked about: to link the workspace's issue or pull request, or to fix a
  *  finished run that failed. */
@@ -394,8 +394,9 @@ declare module 'orca' {
     'repo.links': { input: { branch?: boolean }; output: Answer<{ issues: LinkedRef[]; pulls: LinkedRef[] }> }
     /** The linked issues or pull requests as GitHub has them now (one call), newest activity first. */
     'items.get': { input: { kind: LinkedKind; items: LinkedRef[] }; output: Answer<{ rows: LinkedRow[] }> }
-    /** A free agent of the focused workspace (one not working or blocked): its name and terminal;
-     *  null when none, and then `busy` names the one working or blocked there, if any. */
+    /** An agent of the focused workspace that takes a prompt (one with a terminal, not waiting on a
+     *  question; at work or not): its name and terminal; null when none, and then `busy` names the
+     *  one waiting on a question there, if any. */
     'agent.find': { output: Answer<{ agent: FreeAgent | null; busy: BusyAgent | null }> }
     /** Types a prompt into that agent's terminal, when it is still free: to link the workspace's
      *  issue or pull request with `orca reference add`, or to fix a failed run, reading its failed

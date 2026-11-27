@@ -53,7 +53,7 @@ Three tabs, each about the workspace in focus. Switch workspace and the panel fo
   </tr>
 </table>
 
-**Nothing linked yet?** The panel shows the `orca reference add` command that links an issue to the workspace, and **Ask agent** types that request into the workspace's free agent, without pressing Enter, so you read it and send it. While the agent works or waits on a question, the panel names it and offers Ask agent by itself once it stops.
+**Nothing linked yet?** The panel shows the `orca reference add` command that links an issue to the workspace, and **Ask agent** types that request into the workspace's agent, without pressing Enter, so you read it and send it. An agent at work takes it too: the text waits in its input. While the agent waits on a question, the panel names it and offers Ask agent by itself once it is answered.
 
 **A run failed?** **Ask agent to fix** types one line into the same agent: the run, its failed jobs, and the `gh run view --log-failed` command that reads their log. Again without Enter.
 

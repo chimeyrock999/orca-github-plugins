@@ -19,8 +19,10 @@ export type AgentState = {
 }
 
 /** What the agent was asked about last, the terminal the prompt went into and the name it answered
- *  as: kept while the agent is looked up again (it works on it by then), until Dismiss. */
-export type AskedAgent = { about: AskAbout; terminalId: string; name: string }
+ *  as: kept while the agent is looked up again (it works on it by then), until Dismiss. `started`
+ *  once that terminal was seen at work since the ask: an agent asked while at work stops first from
+ *  its earlier task, and only a stop after it started again can be the end of the ask. */
+export type AskedAgent = { about: AskAbout; terminalId: string; name: string; started: boolean }
 export const agent = atom<AgentState | null>(null)
 
 /** The agent state for the workspace on screen, once found. */
@@ -76,13 +78,19 @@ export function offerAgent(about: AskAbout, again = false): Promise<void> | void
   return findAgent(again || !!a?.asked)
 }
 
-/** The kind to ask Orca about again when an agent changes state: the one the agent on screen was
- *  asked to link, once that agent (its terminal) stops (`waiting` or `done`), since it may have
- *  linked one by then; null for any other agent or state, while it works or asks a question, or
- *  when it was asked to fix a run. */
+/** The kind to ask Orca about again when an agent changes state: the one the agent was asked to
+ *  link, once its terminal stops (`waiting` or `done`) after it was seen at work since the ask (it may
+ *  have linked one by then); null for any other terminal or state, before it started, or when it was
+ *  asked to fix a run. A `working` event of that terminal marks it started. */
 export function askedStopped(e: { terminalId?: string; state: string }): LinkedKind | null {
-  const asked = agentNow()?.asked
-  if (!asked || !('link' in asked.about) || !e.terminalId || e.terminalId !== asked.terminalId) return null
+  const a = agentNow()
+  const asked = a?.asked
+  if (!a || !asked || !e.terminalId || e.terminalId !== asked.terminalId) return null
+  if (e.state === 'working') {
+    if (!asked.started) set(agent, { ...a, asked: { ...asked, started: true } })
+    return null
+  }
+  if (!('link' in asked.about) || !asked.started) return null
   return e.state === 'waiting' || e.state === 'done' ? asked.about.link : null
 }
 
@@ -95,7 +103,7 @@ export async function askAgent(about: AskAbout): Promise<void> {
   const answer = await plugin.request('agent.ask', { about, terminalId: offered.terminalId }).catch(requestFailed)
   if (focusKey() !== where) return
   if (answer.ok) {
-    const asked = { about, terminalId: offered.terminalId, name: answer.agent }
+    const asked = { about, terminalId: offered.terminalId, name: answer.agent, started: false }
     return set(agent, { ...a, agent: { ...offered, name: answer.agent }, asking: false, asked, error: null })
   }
   const error = { about, error: answer.error }

@@ -16,7 +16,7 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 - A failed run offers "Ask <agent> to fix": it types one line into the workspace's free agent (the
   run, its failed jobs, and the `gh run view --log-failed` command to read their log), without
-  Enter. While the agent works or waits on a question the button waits, disabled, and says why.
+  Enter. While the agent waits on a question the button waits, disabled, and says why.
 
 ### Changed
 
@@ -30,6 +30,9 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
   when it linked several) without Refresh.
 - Ask agent tells the agent to ask which issue or pull request to link when it is not sure, instead
   of guessing a number.
+- Ask agent types into the workspace's agent while it works, too: the text waits in its input until
+  you send it. Only an agent waiting on a question is not asked ("<name> is waiting on a question").
+  The item opens once the agent stops after it started on the ask, not when it ends an earlier task.
 - "No agent free" no longer points to the link command: it says to ask again once an agent is free.
 
 **Elsewhere**

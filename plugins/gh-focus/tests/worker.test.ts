@@ -372,7 +372,7 @@ test('the agents are those Orca lists for the panel\'s workspace id; agent.ask t
   // A live terminal Orca restored but has not shown yet has no id (Orca up to v1.4.278): nothing to type into.
   const unshown = { terminalId: null, title: 'Restored Claude', agent: 'claude', state: 'waiting', stateStartedAt: 99 }
   let agents: Array<{ terminalId: string | null; title: string; agent: string; state: string; stateStartedAt: number }> = [
-    { terminalId: 't-busy', title: 'Codex', agent: 'codex', state: 'working', stateStartedAt: 9 },
+    { terminalId: 't-busy', title: 'Codex', agent: 'codex', state: 'blocked', stateStartedAt: 9 },
     unshown,
     { terminalId: 't-free', title: 'Claude Code', agent: 'claude', state: 'waiting', stateStartedAt: 5 }
   ]
@@ -408,7 +408,7 @@ test('the agents are those Orca lists for the panel\'s workspace id; agent.ask t
   const busy = await worker.request('agent.ask', { about: { link: 'issues' }, terminalId: 't-busy' })
   assert.equal(!busy.ok && busy.error.code, 'no_agent')
   agents = agents.slice(0, 2)
-  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: { name: 'Codex', state: 'working' } })
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: { name: 'Codex', state: 'blocked' } })
   agents = [unshown]
   assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: null })
   // Orca no longer has the workspace: no agent, not an error.
@@ -462,8 +462,13 @@ test('agent.ask about a failed run types the fix prompt, read as run.get reads t
       enter: false
     }
   ])
-  // The agent started working meanwhile: refused, nothing typed.
+  // At work, it still takes the prompt: the text waits in its input, without Enter.
   agents = [{ ...agents[0], state: 'working' }]
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Claude Code', terminalId: 't-free' }, busy: null })
+  assert.deepEqual(await worker.request('agent.ask', { about: { run: 9 }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code' })
+  assert.deepEqual(await worker.request('agent.ask', { about: { link: 'issues' }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code' })
+  // Waiting on a question meanwhile: refused, nothing typed.
+  agents = [{ ...agents[0], state: 'blocked' }]
   const busy = await worker.request('agent.ask', { about: { run: 9 }, terminalId: 't-free' })
   assert.equal(!busy.ok && busy.error.code, 'no_agent')
   // A run that did not fail has nothing to fix.
@@ -472,7 +477,7 @@ test('agent.ask about a failed run types the fix prompt, read as run.get reads t
   await worker.request('cache.drop')
   const passed = await worker.request('agent.ask', { about: { run: 9 }, terminalId: 't-free' })
   assert.equal(!passed.ok && passed.error.code, 'not_failed')
-  assert.equal(host.callsOf('terminal.sendText').length, 1)
+  assert.equal(host.callsOf('terminal.sendText').length, 3)
   await worker.deactivate()
 })
 

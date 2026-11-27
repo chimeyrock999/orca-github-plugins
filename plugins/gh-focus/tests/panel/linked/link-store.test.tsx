@@ -33,11 +33,13 @@ function host(linked: () => Links) {
 const stopped = { workspaceId: 'raw-app', workspaceListId: repoOk.workspaceId, paneKey: 'p1', terminalId: 't1', state: 'done' as const, receivedAt: 1 }
 const says = (view: Awaited<ReturnType<typeof mount>>, text: RegExp) => view.summary().some((l) => text.test(l))
 
-/** The panel on `tab` with nothing linked, the agent asked to link one. */
+/** The panel on `tab` with nothing linked, the agent asked to link one, and Enter pressed there: it
+ *  works on it. */
 async function asked(tab: 'issues' | 'pulls', h: ReturnType<typeof host>) {
   const view = await mount(panel, { host: h, persisted: { plugin: { tab } } })
   await view.press({ type: 'Button', text: 'Ask Claude Code to link' })
   assert.ok(says(view, /Typed into Claude Code/))
+  await view.emit('agent.status.changed', { ...stopped, state: 'working' })
   return view
 }
 
@@ -105,5 +107,24 @@ test('another terminal stopping, or the asked agent working or blocked, asks Orc
 test('the callout says the item opens by itself once linked', async () => {
   const view = await asked('issues', host(() => links()))
   assert.ok(view.find({ type: 'Text', text: /Once the issue is linked, it opens here\. Refresh if it does not\./ }))
+  await view.unmount()
+})
+
+test('asked while at work, the agent stopping from its earlier task reads nothing; it starts on the ask, then its stop does', async () => {
+  let now = links()
+  const h = host(() => now)
+  const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'pulls' } } })
+  await view.press({ type: 'Button', text: 'Ask Claude Code to link' })
+  const before = h.count('repo.links')
+  // The earlier task ends: the prompt still waits in its input.
+  await view.emit('agent.status.changed', stopped)
+  assert.equal(h.count('repo.links'), before)
+  assert.ok(says(view, /Typed into Claude Code/))
+  // Enter sends it: it works on the ask, links 124 and stops.
+  await view.emit('agent.status.changed', { ...stopped, state: 'working' })
+  now = links([], [124])
+  await view.emit('agent.status.changed', stopped)
+  assert.equal(h.count('repo.links'), before + 1)
+  assert.deepEqual(h.last('pull.get'), { number: 124 })
   await view.unmount()
 })
