@@ -42,13 +42,14 @@ export async function findAgent(again = false): Promise<void> {
   set(agent, { where, agent: answer.ok ? answer.agent : null, busy: answer.ok ? answer.busy : null, asking: false, asked: null, error: null })
 }
 
-/** Whether an agent changing state is looked for again: not when Orca names its workspace and that is
- *  not the panel's (`workspaceListId`, host API 1.7; only the panel's agents are offered), nor while
+/** Whether an agent changing state is looked for again: only when Orca names its workspace and that is
+ *  the panel's (`workspaceListId`; only the panel's agents are offered, and Orca names none for a pane
+ *  tied to no workspace), and not while
  *  it is being asked or once it was asked (Enter on the prompt sets it working, and the callout
  *  stays until Refresh). */
 export function mayRefindAgent(workspaceListId?: string): boolean {
   const r = read(repo)
-  if (workspaceListId && r?.ok && r.workspaceId !== workspaceListId) return false
+  if (!workspaceListId || (r?.ok && r.workspaceId !== workspaceListId)) return false
   const a = agentNow()
   return !a?.asking && !a?.asked
 }
