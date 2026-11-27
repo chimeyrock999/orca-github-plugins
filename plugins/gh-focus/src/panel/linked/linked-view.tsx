@@ -111,7 +111,7 @@ function HowToLink({ kind }: { kind: LinkedKind }) {
     return (
       <Callout tone="success" title={`Typed into ${a.agent?.name ?? 'the agent'}`}>
         <Stack gap="xs">
-          <Text size="sm">{`Read it in the agent's terminal and press Enter there. Once the ${noun} is linked, Refresh opens it.`}</Text>
+          <Text size="sm">{`Read it in the agent's terminal and press Enter there. Once the ${noun} is linked, it opens here. Refresh if it does not.`}</Text>
           <Row>
             <Button size="sm" variant="ghost" onPress={showCommand}>
               Show the command again

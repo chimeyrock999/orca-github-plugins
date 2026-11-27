@@ -45,12 +45,21 @@ export async function findAgent(again = false): Promise<void> {
 /** Whether an agent changing state is looked for again: not when Orca names its workspace and that is
  *  not the panel's (`workspaceListId`, host API 1.7; only the panel's agents are offered), nor while
  *  it is being asked or once it was asked (Enter on the prompt sets it working, and the callout
- *  stays until Refresh). */
+ *  stays until the agent stops, see `askedStopped`). */
 export function mayRefindAgent(workspaceListId?: string): boolean {
   const r = read(repo)
   if (workspaceListId && r?.ok && r.workspaceId !== workspaceListId) return false
   const a = agentNow()
   return !a?.asking && !a?.asked
+}
+
+/** The kind to ask Orca about again when an agent changes state: the one the agent on screen was
+ *  asked to link, once that agent (its terminal) stops (`waiting` or `done`), since it may have
+ *  linked one by then; null for any other agent or state, or while it works or asks a question. */
+export function askedStopped(e: { terminalId?: string; state: string }): LinkedKind | null {
+  const a = agentNow()
+  if (!a?.asked || !e.terminalId || e.terminalId !== a.agent?.terminalId) return null
+  return e.state === 'waiting' || e.state === 'done' ? a.asked : null
 }
 
 /** Types the link prompt into the free agent's terminal; the person presses Enter there. */
