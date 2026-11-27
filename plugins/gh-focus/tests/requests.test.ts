@@ -7,6 +7,8 @@ import * as main from '../src/worker'
 import { Conditional, GhError, type Gh, type GhOptions } from '../src/worker/gh'
 import type { RateLimit } from '../src/worker/gh'
 import { repos, workspaces } from './fixtures/worker-fixtures'
+import { AWAY_MS } from '../src/worker/since/away'
+import { BRANCH_RUNS } from '../src/shared/protocol'
 
 const NOW = Date.parse('2026-11-13T07:00:00Z')
 
@@ -89,6 +91,8 @@ function github() {
 
 function mount(gh: Gh) {
   let t = 0
+  // The worker's clock: the cache's, the budget's and the absences'.
+  let later = 0
   let links = { project: 'github:octo/app', items: [8, 9].map((n) => ({ provider: 'github', type: 'issue', number: n, url: `https://github.com/octo/app/issues/${n}` })) }
   let context = { workspaceId: 'w-spike', branch: 'feature/spike', displayName: 'Spike', terminals: [] as { id: string }[] }
   const host = mockHost({ results: { 'workspace.readContext': () => context, 'workspace.list': { workspaces, truncated: false } } })
@@ -100,7 +104,7 @@ function mount(gh: Gh) {
         exists: () => true,
         links: async () => links as never,
         branch: async () => 'feature/spike',
-        now: () => NOW,
+        now: () => NOW + later,
         watch: { now: () => t, sleep: async (ms) => void (t += ms) }
       })
   }
@@ -111,7 +115,8 @@ function mount(gh: Gh) {
       context = to === 'app' ? { workspaceId: 'w-app', branch: 'main', displayName: 'main', terminals: [{ id: 'app' }] } : { workspaceId: 'w-spike', branch: 'feature/spike', displayName: 'Spike', terminals: [] }
       return worker.emit('workspace.changed', { context })
     },
-    unlink: () => (links = { project: 'github:octo/app', items: [] })
+    unlink: () => (links = { project: 'github:octo/app', items: [] }),
+    wait: (ms: number) => void (later += ms)
   }))
 }
 
@@ -297,5 +302,93 @@ test('a repo left through a folder with no repo keeps nothing once another repo 
   const before = hub.calls.length
   await worker.request('issue.get', { number: 8 })
   assert.equal(hub.calls.length - before, 1)
+  await worker.deactivate()
+})
+
+/** A fake GitHub for what changed while away: issue 8 got a comment, and the branch's one run
+ *  finished; REST reads are conditional, with `remaining` the budget left. */
+const here = { workspaceId: 'w-spike' }
+
+function sinceHub(remaining = 4_000) {
+  const calls: string[] = []
+  const gh: Gh = async (args, options = {}) => {
+    const text = args.join(' ')
+    calls.push(text.includes('timelineItems') ? 'graphql since' : args.slice(0, 2).join(' '))
+    const rate: RateLimit = { resource: 'core', limit: 5_000, remaining, resetAt: NOW + 3_600_000 }
+    if (args[1] === 'graphql') {
+      const comments = { filteredCount: 1, nodes: [{ createdAt: '2026-11-13T07:05:00Z', author: { login: 'olu' } }] }
+      return { data: { viewer: { login: 'ana' }, r0: { n8: { ...issueNode(8), stateReason: null, ic: comments, ie: { nodes: [] } }, n9: null } } }
+    }
+    const page = { total_count: 1, workflow_runs: [{ ...runJson, status: 'completed', conclusion: 'failure', run_started_at: '2026-11-13T07:15:00Z', updated_at: '2026-11-13T07:18:00Z' }] }
+    return options.etag !== undefined ? new Conditional(options.etag ? 304 : 200, 'W/"runs"', options.etag ? null : page, rate) : page
+  }
+  return { gh, calls }
+}
+
+test('coming back after an absence costs one GraphQL query and one conditional runs read; nothing is asked otherwise', async () => {
+  const hub = sinceHub()
+  const { worker, focus, wait } = await mount(hub.gh)
+  const cost = async (step: () => Promise<unknown>) => {
+    const before = hub.calls.length
+    await step()
+    return hub.calls.slice(before)
+  }
+  await focus('spike')
+  // Not away: no GitHub call.
+  assert.deepEqual(await cost(() => worker.request('since.get', here)), [])
+  assert.deepEqual(await worker.request('since.get', here), { ok: true, since: null, items: [], runs: [], skipped: false, viewer: null })
+  // A short visit elsewhere is no absence.
+  await focus('app')
+  wait(AWAY_MS - 60_000)
+  await focus('spike')
+  assert.deepEqual(await cost(() => worker.request('since.get', here)), [])
+  // Away long enough: what changed since focus left.
+  const left = NOW + AWAY_MS - 60_000
+  await focus('app')
+  wait(AWAY_MS)
+  await focus('spike')
+  const before = hub.calls.length
+  const answer = await worker.request('since.get', here)
+  assert.deepEqual(hub.calls.slice(before).sort(), ['api repos/octo/app/actions/runs?per_page=30&page=1&branch=feature%2Fspike', 'graphql since'].sort())
+  if (!answer.ok) throw new Error(answer.error.message)
+  assert.equal(answer.since, left)
+  assert.deepEqual(
+    answer.items.map((i) => [i.number, i.comments, i.commenters]),
+    [[8, 1, ['olu']]]
+  )
+  assert.deepEqual(
+    answer.runs.map((r) => [r.id, r.state]),
+    [[9, 'failure']]
+  )
+  assert.equal(answer.viewer, 'ana')
+  // Asked for a workspace focus has left meanwhile: nothing, and nothing is asked.
+  assert.deepEqual(await cost(() => worker.request('since.get', { workspaceId: 'w-app' })), [])
+  const elsewhere = await worker.request('since.get', { workspaceId: 'w-app' })
+  assert.equal(elsewhere.ok && elsewhere.since, null)
+  // Asked again (the panel reopened): kept. The Actions tab's first page is the same read.
+  assert.deepEqual(await cost(() => worker.request('since.get', here)), [])
+  assert.deepEqual(await cost(() => worker.request('runs.list', BRANCH_RUNS)), [])
+  // Dismissed: nothing until the next absence.
+  await worker.request('since.dismiss', here)
+  assert.deepEqual(await cost(() => worker.request('since.get', here)), [])
+  const dismissed = await worker.request('since.get', here)
+  assert.equal(dismissed.ok && dismissed.since, null)
+  await worker.deactivate()
+})
+
+test('while the budget is low, coming back reads only the runs page (a 304 costs nothing) and says the rest was skipped', async () => {
+  const hub = sinceHub(300)
+  const { worker, focus, wait } = await mount(hub.gh)
+  await focus('spike')
+  // A REST answer tells the worker the budget is low.
+  await worker.request('runs.list', BRANCH_RUNS)
+  await focus('app')
+  wait(AWAY_MS)
+  await focus('spike')
+  const before = hub.calls.length
+  const answer = await worker.request('since.get', here)
+  assert.deepEqual(hub.calls.slice(before), ['api repos/octo/app/actions/runs?per_page=30&page=1&branch=feature%2Fspike'])
+  assert.equal(answer.ok && answer.skipped, true)
+  assert.equal(answer.ok && answer.items.length, 0)
   await worker.deactivate()
 })
