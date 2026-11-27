@@ -28,6 +28,8 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
   not when one in another workspace does.
 - Once the asked agent links the issue or pull request and stops, the tab opens it (or lists them,
   when it linked several) without Refresh.
+- Ask agent tells the agent to ask which issue or pull request to link when it is not sure, instead
+  of guessing a number.
 - "No agent free" no longer points to the link command: it says to ask again once an agent is free.
 
 **Elsewhere**
