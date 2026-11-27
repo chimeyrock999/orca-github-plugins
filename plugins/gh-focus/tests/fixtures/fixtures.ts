@@ -27,8 +27,7 @@ export const repoOk: Extract<RepoAnswer, { ok: true }> = {
   nameWithOwner: 'octo/app',
   url: 'https://github.com/octo/app',
   path: '/code/app',
-  workspaceId: 'w-app',
-  resolvedBy: 'context'
+  workspaceId: 'w-app'
 }
 
 export function failed(code: Extract<RepoAnswer, { ok: false }>['error']['code'], message: string): { ok: false; error: { code: typeof code; message: string } } {

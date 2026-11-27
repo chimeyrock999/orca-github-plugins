@@ -79,7 +79,7 @@ flowchart LR
   panel -. "hand-offs" .-> tasks["Orca Tasks · Checks"]
 ```
 
-The panel asks, the plugin's own worker answers and runs `gh` in the workspace's folder. Nothing is written to disk but the workspace you picked when Orca cannot tell which one is focused.
+The panel asks, the plugin's own worker answers and runs `gh` in the workspace's folder. Nothing is written to disk.
 
 ## Permissions
 
@@ -87,8 +87,7 @@ gh Focus is a `trusted-worker`: its worker runs `gh` and Orca's CLI on your mach
 
 | Permission | Why |
 | :--- | :--- |
-| `storage:own` | Remembers which workspace you picked when Orca cannot tell which one is focused. |
-| `workspace:read` | The focused workspace's name, branch and terminals, to find its folder and repo. |
+| `workspace:read` | The focused workspace's id and Orca's list of workspaces, to find its folder and repo. |
 | `workspace:write` | Only to open Orca's Tasks page and Checks tab; it never opens, creates or renames a workspace. |
 | `agent:read` | Finds a free agent of the workspace for Ask agent, and notices when an agent starts or stops. |
 | `terminal:send` | Types the link request into that agent's terminal, without pressing Enter. |

@@ -58,9 +58,15 @@ function atLeast(range: string, floor: string): boolean {
   return true
 }
 
-// 1.4.277 is the first release that draws a panel's SVG path icon (stablyai/orca#42558).
+// 1.4.277 is the first release that draws a panel's SVG path icon (stablyai/orca#42558). It also
+// has host API 1.10 (from 1.4.261): the focused workspace's id in readContext (1.7) and
+// agents.list({ workspaceId }) (1.10), which the panel uses with no fallback.
 test('engines.orca is the release the features were tested on', () => {
   assert.ok(atLeast(manifest.engines.orca, '1.4.277'), manifest.engines.orca)
+})
+
+test('the plugin asks for no storage: it keeps nothing between runs', () => {
+  assert.ok(!manifest.capabilities.some((c) => c.kind.startsWith('storage:')), JSON.stringify(manifest.capabilities))
 })
 
 // The activity-bar tab draws one theme-coloured path (manifest format 2). Only its shape is

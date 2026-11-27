@@ -1,5 +1,5 @@
 // The worker tests' shared setup: a mock workspace list, the repo gh names for each folder, and
-// the worker wired to them with no real gh or Orca CLI.
+// the worker wired to them with no real gh.
 import { mockHost } from 'orca/testing'
 import type { OrcaWorkerApi } from 'orca/worker'
 import type { Gh } from '../../src/worker/gh'
@@ -11,11 +11,11 @@ export const noGh: Gh = async () => {
 }
 
 export const workspaces = [
-  { id: 'w-app', kind: 'worktree', name: 'main', project: 'app', path: '/code/app', branch: 'main', hostId: null },
-  { id: 'w-lib', kind: 'worktree', name: 'main', project: 'lib', path: '/code/lib', branch: 'main', hostId: null },
-  { id: 'w-spike', kind: 'worktree', name: 'Spike', project: 'app', path: '/work/spike', branch: 'feature/spike', hostId: 'local' },
-  { id: 'w-gl', kind: 'folder', name: 'gl', project: 'gl', path: '/code/gl', branch: 'main', hostId: null },
-  { id: 'w-out', kind: 'worktree', name: 'out', project: 'out', path: '/code/out', branch: 'main', hostId: null }
+  { id: 'w-app', kind: 'worktree', name: 'main', path: '/code/app', branch: 'main', hostId: null },
+  { id: 'w-lib', kind: 'worktree', name: 'main', path: '/code/lib', branch: 'main', hostId: null },
+  { id: 'w-spike', kind: 'worktree', name: 'Spike', path: '/work/spike', branch: 'feature/spike', hostId: 'local' },
+  { id: 'w-gl', kind: 'folder', name: 'gl', path: '/code/gl', branch: 'main', hostId: null },
+  { id: 'w-out', kind: 'worktree', name: 'out', path: '/code/out', branch: 'main', hostId: null }
 ]
 export const repos: Record<string, GhRepoAnswer> = {
   '/code/app': { ok: true, nameWithOwner: 'octo/app', url: 'https://github.com/octo/app' },
@@ -33,16 +33,17 @@ export function repoWorker(gh: string[] = []) {
           gh.push(path)
           return repos[path]
         },
-        terminalPath: async () => null,
         exists: () => true
       })
   }
 }
 
-export function hostFocused(context: { branch: string; displayName: string } | null) {
+/** A host whose focus is the workspace with this id in `workspaces`, or none. */
+export function hostFocused(workspaceId: string | null) {
+  const w = workspaces.find((w) => w.id === workspaceId)
   return mockHost({
     results: {
-      'workspace.readContext': context && { ...context, terminals: [] },
+      'workspace.readContext': w ? { workspaceId: w.id, branch: w.branch, displayName: w.name, terminals: [] } : null,
       'workspace.list': { workspaces, truncated: false }
     }
   })

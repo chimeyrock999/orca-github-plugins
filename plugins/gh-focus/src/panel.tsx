@@ -21,7 +21,7 @@ import {
 import { issue, issues } from './panel/issues/issue-store'
 import { findAgent, mayRefindAgent } from './panel/linked/link-store'
 import { pull, pulls } from './panel/pulls/pull-store'
-import { budget, budgetAnswered, budgetChanged, githubUrl, itemKey, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './panel/store'
+import { budget, budgetAnswered, budgetChanged, githubUrl, itemKey, lists, loadChoices, refresh, repo, requestFailed, selectTab, setRepo, tab, type Kind } from './panel/store'
 import { Problem } from './panel/parts'
 import { DISPATCH, loadForm, loadRun, progress, tabShown } from './panel/runs/run-store'
 import { KindView } from './panel/views'
@@ -49,9 +49,9 @@ export function setup(ctx: PanelContext): void {
   ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void thenStart(setRepo(answer))))
   ctx.subscriptions.push(plugin.on('run.progress', ({ run }) => progress(run)))
   ctx.subscriptions.push(plugin.on('budget.changed', (answer) => budgetChanged(answer.budget)))
-  // An agent started or stopped (in any workspace; `agent:read` is enough): the empty state's offer
-  // follows it, with one agent.find and no GitHub call.
-  ctx.subscriptions.push(on('agent.status.changed', () => void (mayRefindAgent() && agentIfNone(true))))
+  // An agent of the panel's workspace started or stopped (`agent:read` is enough): the empty state's
+  // offer follows it, with one agent.find and no GitHub call.
+  ctx.subscriptions.push(on('agent.status.changed', (e) => void (mayRefindAgent(e.workspaceListId) && agentIfNone(true))))
   void plugin.request('budget.get').then(
     (answer) => answer.ok && budgetAnswered(answer.budget),
     () => undefined
@@ -107,7 +107,7 @@ export default function Panel() {
     return (
       <Stack gap="md">
         <Heading level={3}>gh Focus</Heading>
-        <Problem error={r.error} onRetry={refreshAll} onPick={(path) => thenStart(pickRepo(path))} />
+        <Problem error={r.error} onRetry={refreshAll} />
       </Stack>
     )
   }
@@ -123,9 +123,6 @@ export default function Panel() {
           </Text>
         </Stack>
         <Toolbar label="Repository" gap="xs">
-          {r.resolvedBy === 'picked' && (
-            <IconButton icon="folder" label="Change workspace" variant="ghost" onPress={() => thenStart(unpickRepo())} />
-          )}
           <IconButton icon="refresh" label="Refresh" variant="ghost" onPress={refreshAll} />
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" onPress={openOnGitHub} />
         </Toolbar>

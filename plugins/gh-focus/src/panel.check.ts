@@ -131,22 +131,6 @@ export default defineCheck({
   'not-a-github-repo': {
     requests: { 'repo.get': failed('not_a_repo', 'none of the git remotes configured for this repository point to a known GitHub host') }
   },
-  'ambiguous-workspace': {
-    requests: {
-      'repo.get': {
-        ok: false,
-        error: {
-          code: 'ambiguous_workspace',
-          message: '3 workspaces are on main and named main.',
-          candidates: [
-            { id: 'w-app', name: 'main', path: '/code/app', project: 'app', branch: 'main' },
-            { id: 'w-lib', name: 'main', path: '/code/lib', project: 'lib', branch: 'main' },
-            { id: 'w-docs', name: 'main', path: '/code/docs', project: null, branch: 'main' }
-          ]
-        }
-      }
-    }
-  },
   'gh-logged-out': { requests: { 'repo.get': failed('gh_logged_out', 'To get started with GitHub CLI, please run:  gh auth login') } },
   'rate-limited': { requests: { ...lists, 'runs.list': failed('rate_limited', 'API rate limit exceeded for user ID 1.') }, persisted: { plugin: { tab: 'runs' } } }
 })

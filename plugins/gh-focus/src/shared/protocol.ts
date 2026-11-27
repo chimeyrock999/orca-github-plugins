@@ -4,7 +4,6 @@
 export type ErrorCode =
   | 'no_workspace'
   | 'workspace_not_found'
-  | 'ambiguous_workspace'
   | 'remote_workspace'
   /** An Orca call failed without a code: a host call (workspace.readContext, workspace.list) or a
    *  panel request. One with a code reads as the codes below (src/shared/host-error.ts). */
@@ -45,10 +44,6 @@ export type PanelError = {
   message: string
   /** The workspace folder, once one was found. */
   path?: string
-  /** The workspaces that fit the focused context equally well (`ambiguous_workspace`), with the
-   *  repo's name in Orca (null when Orca does not say) and the branch, both for the label;
-   *  choices that share both add their folder name. */
-  candidates?: { id: string; name: string; path: string; project: string | null; branch: string }[]
   /** How long Orca asks the panel to wait (`host_rate_limited`). */
   retryAfterMs?: number
 }
@@ -57,13 +52,8 @@ export type PanelError = {
  *  as `action_failed`, so every request answers `{ ok: false, error }` instead. */
 export type Answer<T> = ({ ok: true } & T) | { ok: false; error: PanelError }
 
-/** How the focused workspace was found: the id Orca names it by (host API 1.7), or on an older Orca
- *  its branch and name alone, the person's pick among workspaces that share them, or one of its
- *  terminals. */
-export type ResolvedBy = 'id' | 'context' | 'picked' | 'terminal'
-
 /** `workspaceId`: the id workspace.list gives the workspace found. */
-export type RepoAnswer = Answer<{ nameWithOwner: string; url: string; path: string; workspaceId: string; resolvedBy: ResolvedBy }>
+export type RepoAnswer = Answer<{ nameWithOwner: string; url: string; path: string; workspaceId: string }>
 
 /** A page of a list. `next` is the cursor of the page after it, null on the last page. `limit` is
  *  how many rows GitHub lets anyone page through (its filtered runs list stops at 1,000 however many
@@ -391,12 +381,6 @@ declare module 'orca' {
     'cache.drop': { output: Done }
     /** The GitHub budget while it is low, else null. */
     'budget.get': { output: Answer<{ budget: GitHubBudget | null }> }
-    /** Picks the folder for the focused branch and name when several workspaces share them
-     *  (`ambiguous_workspace`); kept in storage for this branch, name and set of matching projects,
-     *  and used while that set stays the same and the folder is one of them. */
-    'repo.pick': { input: { path: string }; output: RepoAnswer }
-    /** Forgets the pick for the focused branch, name and set of matching projects. */
-    'repo.unpick': { output: RepoAnswer }
     /** The issues and pull requests Orca links to the focused workspace, in Orca's order; none when
      *  Orca's CLI does not say. With `branch` and no linked pull request of the focused repo, the one
      *  gh finds for the workspace's branch comes first (a gh call, so only the Pull requests tab
