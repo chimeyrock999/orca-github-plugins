@@ -131,7 +131,8 @@ frame, white on graphite, with nothing of GitHub's or Orca's marks. The catalog 
 PNG or WEBP, static, at least 128×128 and at most 256 KB; `tests/manifest.test.ts` checks it.
 The panel's tab in Orca's activity bar draws the same glyph, without the graphite, as one SVG path
 (`contributes.panels[0].icon` in the manifest, stroke on a 24×24 viewBox; Orca 1.4.277 and later):
-change the two together. `tests/manifest.test.ts` checks the path the way Orca reads it.
+change the two together. `tests/manifest.test.ts` checks only its shape; `orca plugin validate .` runs
+Orca's own check of the path and must print no `icon isn't used` warning (it still exits 0).
 
 The cover (`images/cover.png`) and the README's animated cover (`docs/images/cover.webp`) are drawn
 from `docs/cover/cover.html`, which places crops of the two screenshots (`docs/cover/issue.jpg`,

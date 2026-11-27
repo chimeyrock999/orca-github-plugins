@@ -63,40 +63,16 @@ test('engines.orca is the release the features were tested on', () => {
   assert.ok(atLeast(manifest.engines.orca, '1.4.277'), manifest.engines.orca)
 })
 
-// Numbers each SVG path command takes per segment; Orca refuses a path whose counts are off and
-// shows `puzzle` instead.
-const ARGS: Record<string, number> = { m: 2, l: 2, h: 1, v: 1, c: 6, s: 4, q: 4, t: 2, a: 7, z: 0 }
-
-function pathProblem(path: string): string | null {
-  const tokens = path.match(/[a-zA-Z]|[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/g) ?? []
-  if (tokens.join('').length !== path.replace(/[ \t\r\n\f,]/g, '').length) return 'stray characters'
-  if (!/^[Mm]$/.test(tokens[0] ?? '')) return 'does not start with M'
-  let i = 0
-  while (i < tokens.length) {
-    const command = tokens[i++]
-    const take = ARGS[command.toLowerCase()]
-    if (take === undefined) return `unknown command ${command}`
-    const start = i
-    while (i < tokens.length && !/^[a-zA-Z]$/.test(tokens[i])) i++
-    const count = i - start
-    if (take === 0 ? count !== 0 : count === 0 || count % take !== 0) return `${command} has ${count} numbers`
-    if (take === 7) {
-      for (let k = start; k < i; k += 7) {
-        if (!/^[01]$/.test(tokens[k + 3]) || !/^[01]$/.test(tokens[k + 4])) return `${command} flags`
-      }
-    }
-  }
-  return null
-}
-
-// The activity-bar tab draws one theme-coloured path (manifest format 2); Orca's rules for it.
-test('the panel tab icon is one valid SVG path', () => {
+// The activity-bar tab draws one theme-coloured path (manifest format 2). Only its shape is
+// checked here: the path grammar is Orca's, and `orca plugin validate` warns about a path Orca
+// will not draw.
+test('the panel tab icon is one SVG path', () => {
   const icon = manifest.contributes.panels[0].icon
   assert.equal(typeof icon, 'object', 'a built-in icon name')
   const { path, viewBox, mode, ...rest } = icon as PathIcon
   assert.deepEqual(Object.keys(rest), [], 'unknown keys')
   assert.ok(path.length >= 1 && path.length <= 4096, `path is ${path.length} characters`)
-  assert.equal(pathProblem(path), null)
+  assert.match(path, /^M/)
   assert.equal(viewBox, '0 0 24 24')
   assert.equal(mode, 'stroke')
 })
