@@ -16,6 +16,8 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 - Link one finds the workspace's agent from Orca itself instead of asking the Orca CLI where each
   agent's terminal runs.
+- The agent Link one offers is looked for again only when an agent of the workspace changes state,
+  not when one in another workspace does.
 
 **Elsewhere**
 

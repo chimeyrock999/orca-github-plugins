@@ -305,6 +305,22 @@ test('two looks for the agent in flight (events in quick succession): only the l
   await view.unmount()
 })
 
+test('only an agent of the panel\'s workspace, or one Orca ties to none, is looked for again', async () => {
+  const h = host({ 'repo.links': links(), 'agent.find': { ok: true, agent: null, busy: { name: 'Claude Code', state: 'working' } } })
+  const view = await openPull(h)
+  assert.equal(h.count('agent.find'), 1)
+  // Another workspace's agent: its change cannot change the offer, so nothing is asked.
+  await view.emit('agent.status.changed', { ...agentStatus, workspaceId: 'raw-other', workspaceListId: 'w-other' })
+  assert.equal(h.count('agent.find'), 1)
+  // The panel's own workspace: asked again.
+  await view.emit('agent.status.changed', { ...agentStatus, workspaceId: 'raw-app', workspaceListId: repoOk.workspaceId })
+  assert.equal(h.count('agent.find'), 2)
+  // No list id (a host below API 1.7, or a pane Orca ties to no workspace): asked again, as before.
+  await view.emit('agent.status.changed', agentStatus)
+  assert.equal(h.count('agent.find'), 3)
+  await view.unmount()
+})
+
 test('an agent change while a pull request is open asks for nothing', async () => {
   const h = host()
   const view = await openPull(h)
