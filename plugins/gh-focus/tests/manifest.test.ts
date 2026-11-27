@@ -47,9 +47,15 @@ test('the folder and the panel are named after the id', () => {
   )
 })
 
+// 1.4.261 is the first release with host API 1.10: the focused workspace's id in readContext (1.7)
+// and agents.list({ workspaceId }) (1.10), which the panel uses with no fallback.
 test('engines.orca is the release the features were tested on', () => {
   const [major, minor, patch] = version(manifest.engines.orca)
-  assert.ok(major > 1 || (major === 1 && (minor > 4 || (minor === 4 && patch >= 256))), manifest.engines.orca)
+  assert.ok(major > 1 || (major === 1 && (minor > 4 || (minor === 4 && patch >= 261))), manifest.engines.orca)
+})
+
+test('the plugin asks for no storage: it keeps nothing between runs', () => {
+  assert.ok(!manifest.capabilities.some((c) => c.kind.startsWith('storage:')), JSON.stringify(manifest.capabilities))
 })
 
 test('the plugin page has its author, repository and license', () => {

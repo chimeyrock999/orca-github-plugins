@@ -28,7 +28,7 @@
     }
   ],
   "engines": {
-    "orca": ">=1.4.256"
+    "orca": ">=1.4.261"
   },
   "execution": "trusted-worker",
   "pluginApi": 1,
@@ -50,9 +50,6 @@
     ]
   },
   "capabilities": [
-    {
-      "kind": "storage:own"
-    },
     {
       "kind": "workspace:read"
     },

@@ -35,17 +35,6 @@ export const run: Run = (cmd, args, options) =>
 
 // The app's own CLI first: a bare `orca` on PATH can be an unrelated program.
 const ORCA_CLIS = ['/Applications/Orca.app/Contents/Resources/bin/orca', 'orca']
-const TERMINAL_HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/
-
-/** `worktreePath` from `orca terminal show --json`; null for a stale handle or any other shape. */
-export function parseTerminalShow(stdout: string): string | null {
-  try {
-    const path = JSON.parse(stdout)?.result?.terminal?.worktreePath
-    return typeof path === 'string' && path.length > 0 ? path : null
-  } catch {
-    return null
-  }
-}
 
 /** What the Orca CLI printed for `args`, from the first CLI found; null when none ran. */
 async function orcaCli(args: string[], runner: Run): Promise<string | null> {
@@ -58,14 +47,6 @@ async function orcaCli(args: string[], runner: Run): Promise<string | null> {
     }
   }
   return null
-}
-
-/** The folder a terminal runs in. The Orca CLI's JSON is not part of the plugin contract, so any
- *  failure is null and the caller falls back. */
-export async function terminalPath(terminalId: string, runner: Run = run): Promise<string | null> {
-  if (!TERMINAL_HANDLE.test(terminalId)) return null
-  const stdout = await orcaCli(['terminal', 'show', `--terminal=${terminalId}`, '--json'], runner)
-  return stdout === null ? null : parseTerminalShow(stdout)
 }
 
 /** A GitHub issue or pull request Orca links to a workspace. `repo` is the `owner/name` its URL (or
@@ -117,7 +98,8 @@ export function parseWorktreeShow(stdout: string): WorkspaceLinks | null {
 }
 
 /** What Orca links to the workspace in `path` (made from an issue or pull request, or linked to one).
- *  Like terminalPath, any failure is null: the panel then shows none. */
+ *  The Orca CLI's JSON is not part of the plugin contract, so any failure is null: the panel then
+ *  shows none. */
 export async function workspaceLinks(path: string, runner: Run = run): Promise<WorkspaceLinks | null> {
   const stdout = await orcaCli(['worktree', 'show', `--worktree=path:${path}`, '--json'], runner)
   return stdout === null ? null : parseWorktreeShow(stdout)

@@ -60,72 +60,59 @@ test('live: gh resolves this repo, and a folder with no remote is not a repo', a
   assert.equal(!empty.ok && empty.error.code, 'not_a_repo')
 })
 
-// trackRepo through the real worker on a host API 1.7 Orca: readContext and workspace.changed name
-// the focused workspace by the id workspace.list gives, so the focus needs no Orca CLI.
+// trackRepo through the real worker: readContext and workspace.changed name the focused workspace by
+// the id workspace.list gives, so the focus needs no Orca CLI and nothing stored.
 
-function idWorker(asked: string[]) {
+function idWorker() {
   return {
-    default: (orca: OrcaWorkerApi) =>
-      main.activateWith(orca, {
-        gh: noGh,
-        ghRepo: async (path) => repos[path],
-        terminalPath: async (id) => (asked.push(id), '/code/app'),
-        exists: () => true
-      })
+    default: (orca: OrcaWorkerApi) => main.activateWith(orca, { gh: noGh, ghRepo: async (path) => repos[path], exists: () => true })
   }
 }
 
-test('host API 1.7: two repos on main resolve by id, with no terminal asked and no pick', async () => {
-  const asked: string[] = []
+test('two repos on main resolve by id', async () => {
   const context = { workspaceId: 'w-app', branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }
   const host = mockHost({ results: { 'workspace.readContext': context, 'workspace.list': { workspaces, truncated: false } } })
-  const worker = await mountWorker(idWorker(asked), { host })
+  const worker = await mountWorker(idWorker(), { host })
   assert.deepEqual(await worker.request('repo.get'), {
     ok: true,
     nameWithOwner: 'octo/app',
     url: 'https://github.com/octo/app',
     path: '/code/app',
-    workspaceId: 'w-app',
-    resolvedBy: 'id'
+    workspaceId: 'w-app'
   })
-  assert.deepEqual(asked, [])
-  assert.deepEqual(host.callsOf('storage.get'), [])
   await worker.deactivate()
 })
 
-test('host API 1.7: workspace.changed moves the focus by id', async () => {
-  const asked: string[] = []
+test('workspace.changed moves the focus by id', async () => {
   let context = { workspaceId: 'w-spike', branch: 'feature/spike', displayName: 'Spike', terminals: [] as { id: string }[] }
   const host = mockHost({ results: { 'workspace.readContext': () => context, 'workspace.list': { workspaces, truncated: false } } })
-  const worker = await mountWorker(idWorker(asked), { host })
+  const worker = await mountWorker(idWorker(), { host })
   assert.equal((await worker.request('repo.get')).ok, true)
   context = { workspaceId: 'w-gl', branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }
   await worker.emit('workspace.changed', { context })
   const answer = await worker.request('repo.get')
   assert.equal(!answer.ok && answer.error.code, 'not_a_repo')
   assert.equal(!answer.ok && answer.error.path, '/code/gl')
-  assert.deepEqual(asked, [])
   await worker.deactivate()
 })
 
-test('host API 1.7: an id missing from a cut workspace.list says the list was cut', async () => {
+test('an id missing from a cut workspace.list says the list was cut', async () => {
   const context = { workspaceId: 'w-later', branch: 'main', displayName: 'main', terminals: [] }
   const host = mockHost({ results: { 'workspace.readContext': context, 'workspace.list': { workspaces, truncated: true } } })
-  const worker = await mountWorker(idWorker([]), { host })
+  const worker = await mountWorker(idWorker(), { host })
   const answer = await worker.request('repo.get')
   assert.equal(!answer.ok && answer.error.code, 'workspace_not_found')
   assert.match(!answer.ok ? answer.error.message : '', /listed only part/)
   await worker.deactivate()
 })
 
-test('host API 1.5: with no id in the context the terminal still breaks the tie', async () => {
-  const asked: string[] = []
-  const context = { branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }
-  const host = mockHost({ results: { 'workspace.readContext': context, 'workspace.list': { workspaces, truncated: false } } })
-  const worker = await mountWorker(idWorker(asked), { host })
+test('a context with no id is not found, even with one workspace on its branch and name', async () => {
+  const context = { branch: 'feature/spike', displayName: 'Spike', terminals: [{ id: 't1' }] }
+  const host = mockHost({ results: { 'workspace.readContext': context, 'workspace.list': { workspaces, truncated: true } } })
+  const worker = await mountWorker(idWorker(), { host })
   const answer = await worker.request('repo.get')
-  assert.equal(answer.ok && answer.resolvedBy, 'terminal')
-  assert.equal(answer.ok && answer.workspaceId, 'w-app')
-  assert.deepEqual(asked, ['t1'])
+  assert.equal(!answer.ok && answer.error.code, 'workspace_not_found')
+  // A cut list is not the reason: Orca named no workspace.
+  assert.ok(!answer.ok && !/listed only part/.test(answer.error.message))
   await worker.deactivate()
 })

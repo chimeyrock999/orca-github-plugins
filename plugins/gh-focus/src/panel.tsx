@@ -21,7 +21,7 @@ import {
 import { issue, issues } from './panel/issues/issue-store'
 import { findAgent, mayRefindAgent } from './panel/linked/link-store'
 import { pull, pulls } from './panel/pulls/pull-store'
-import { budget, budgetAnswered, budgetChanged, githubUrl, itemKey, lists, loadChoices, pickRepo, refresh, repo, requestFailed, selectTab, setRepo, tab, unpickRepo, type Kind } from './panel/store'
+import { budget, budgetAnswered, budgetChanged, githubUrl, itemKey, lists, loadChoices, refresh, repo, requestFailed, selectTab, setRepo, tab, type Kind } from './panel/store'
 import { Problem } from './panel/parts'
 import { DISPATCH, loadForm, loadRun, progress, tabShown } from './panel/runs/run-store'
 import { KindView } from './panel/views'
@@ -107,7 +107,7 @@ export default function Panel() {
     return (
       <Stack gap="md">
         <Heading level={3}>gh Focus</Heading>
-        <Problem error={r.error} onRetry={refreshAll} onPick={(path) => thenStart(pickRepo(path))} />
+        <Problem error={r.error} onRetry={refreshAll} />
       </Stack>
     )
   }
@@ -123,9 +123,6 @@ export default function Panel() {
           </Text>
         </Stack>
         <Toolbar label="Repository" gap="xs">
-          {r.resolvedBy === 'picked' && (
-            <IconButton icon="folder" label="Change workspace" variant="ghost" onPress={() => thenStart(unpickRepo())} />
-          )}
           <IconButton icon="refresh" label="Refresh" variant="ghost" onPress={refreshAll} />
           <IconButton icon="open-external" label="Open on GitHub" variant="ghost" onPress={openOnGitHub} />
         </Toolbar>
