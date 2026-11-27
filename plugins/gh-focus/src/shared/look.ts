@@ -15,6 +15,7 @@ import type {
   ReviewDecision,
   ReviewState,
   RunRow,
+  SinceItem,
   TimelineMention,
   TimelineState
 } from '../shared/protocol'
@@ -57,6 +58,40 @@ export function linkedLook(kind: LinkedKind, row: LinkedRow): Look {
   const [first, second]: Record<string, Look>[] = kind === 'pulls' ? [PULL, ISSUE] : [ISSUE, PULL]
   return (row.state && (first[row.state] ?? second[row.state])) || { glyph: '◌', tone: 'neutral', label: 'Unknown' }
 }
+
+/** A login as the panel names it: the viewer is "you". */
+const who = (login: string, viewer: string | null) => (login === viewer ? 'you' : login)
+
+const REVIEWED: [SinceItem['reviews'][number]['state'], string][] = [
+  ['approved', 'approved by'],
+  ['changes_requested', 'changes requested by'],
+  ['commented', 'reviewed by']
+]
+
+/** What changed on an item while the person was away: "2 comments (olu, you) · approved by olu ·
+ *  merged". */
+export function sinceWords(item: SinceItem, viewer: string | null): string {
+  const parts: string[] = []
+  if (item.comments) {
+    const names = item.commenters.map((c) => who(c, viewer))
+    const more = item.comments > names.length && names.length ? ', …' : ''
+    parts.push(`${count(item.comments)} ${item.comments === 1 ? 'comment' : 'comments'}${names.length ? ` (${names.join(', ')}${more})` : ''}`)
+  }
+  for (const [state, words] of REVIEWED) {
+    const by = item.reviews.filter((r) => r.state === state).map((r) => who(r.author, viewer))
+    if (by.length) parts.push(`${words} ${by.join(', ')}`)
+  }
+  parts.push(...item.events)
+  return parts.join(' · ')
+}
+
+/** An item's glyph by its kind and state now. */
+export const sinceLook = (item: SinceItem): Look => (item.kind === 'pulls' ? PULL[item.state as PullState] : ISSUE[item.state as IssueState]) ?? linkedLook(item.kind, { state: item.state } as LinkedRow)
+
+const ENDED: Partial<Record<RunRow['state'], string>> = { success: 'succeeded', failure: 'failed', cancelled: 'cancelled', skipped: 'skipped' }
+
+/** How a finished run ended, after its name: "failed". */
+export const endedWords = (row: Pick<RunRow, 'state'>): string => ENDED[row.state] ?? RUN[row.state].label.toLowerCase()
 
 /** What a closed or reopened event says after its actor: "closed this as not planned". A pull
  *  request's close has no reason. */
@@ -226,16 +261,11 @@ export type Problem = { title: string; hint: string; tone: Tone }
 const PROBLEMS: Record<ErrorCode, Problem> = {
   no_workspace: { title: 'No workspace focused', hint: 'Focus a workspace in Orca to see its GitHub issues, pull requests and runs.', tone: 'neutral' },
   workspace_not_found: { title: 'Workspace not found', hint: 'Orca did not list the focused workspace. Press Retry.', tone: 'warning' },
-  ambiguous_workspace: {
-    title: 'Several workspaces match',
-    hint: 'Open a terminal in it, or pick it here; a pick is remembered for this branch and name.',
-    tone: 'warning'
-  },
   remote_workspace: { title: 'Workspace is on another machine', hint: 'The panel runs gh on this machine only.', tone: 'warning' },
   host_failed: { title: 'Orca did not answer', hint: 'Press Retry.', tone: 'warning' },
   action_failed: {
-    title: 'Panel error',
-    hint: 'Something in gh Focus broke; the message below says what. Report it if Retry does not help.',
+    title: 'Could not finish',
+    hint: 'gh Focus or Orca could not finish this; the message below says what. Report it if Retry does not help.',
     tone: 'danger'
   },
   not_allowed: { title: 'Not allowed by Orca', hint: 'Orca has not allowed this for gh Focus; the message below says what.', tone: 'warning' },
@@ -254,7 +284,8 @@ const PROBLEMS: Record<ErrorCode, Problem> = {
   cancelled: { title: 'Request cancelled', hint: 'Press Retry.', tone: 'neutral' },
   bad_query: { title: 'Search runs with qualifiers', hint: 'For example branch:main status:failure. GitHub cannot search runs by words.', tone: 'warning' },
   gh_failed: { title: 'gh failed', hint: 'Press Retry. The message below is what gh said.', tone: 'danger' },
-  no_agent: { title: 'No agent free', hint: 'Every agent here is busy, or none runs. Use the command in a terminal instead.', tone: 'neutral' },
+  no_agent: { title: 'No agent free', hint: 'Every agent here waits on a question, or none runs. Ask again once one is free.', tone: 'neutral' },
+  not_failed: { title: 'Nothing to fix', hint: 'The run has not failed: it runs again, or it passed. Refresh to see it as it is now.', tone: 'neutral' },
   unsure: {
     title: 'It may have gone through',
     hint: 'GitHub did not answer in time. Check what is on screen (or the list) before you try again, so nothing is posted twice.',

@@ -38,19 +38,26 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
     - `pulls/pulls.ts`: one pull request (refs, merge state, review decision, checks, timeline with
       reviews and the merge), its writes (a comment as on an issue, `gh pr edit`, `review`) and the
       branch's pull request (`gh pr view`).
-    - `runs/` (`runs.ts`, `logs.ts`, `workflow-inputs.ts`): one run, its logs, rerun, cancel, the
-      `run.watch` lease, and the Run workflow form.
+    - `runs/` (`runs.ts`, `logs.ts`, `workflow-inputs.ts`, `ask.ts`): one run, its logs, rerun,
+      cancel, the `run.watch` lease, the Run workflow form, and the prompt asking the agent to fix a
+      failed run.
+    - `since/` (`away.ts`, `since.ts`): when the person left each workspace (in memory), and what
+      changed since on its linked items (one GraphQL query) and the branch's runs, for `since.get`.
   - `src/panel/`: panel side only; no DOM, no `node:`, only the `orca` catalog; state in atoms.
     - `views.tsx`, `store.ts`, `parts.tsx`: the tabs, their atoms, shared pieces; `refs.ts`: `#N`
       links.
     - `linked/` (`linked-view.tsx`, `link-store.ts`): the Issues and Pull requests tabs with nothing
       open: the linked list (nothing repo-wide), or how to link one (the command, Ask agent), and
       the hand-offs to Orca's Tasks page and Checks tab.
+    - `agent/` (`agent-store.ts`): the workspace's free agent the panel types into (Ask agent to
+      link one, Ask agent to fix a failed run, the agent button on an open issue's body and
+      comments), one state for the workspace on screen.
     - `thread/` (`thread-store.ts`, `thread-view.tsx`): an open issue or pull request (a thread), one
       per tab, and the pieces both draw (posts, reactions, timeline, pickers).
     - `issues/` (`issue-view.tsx`, `issue-store.ts`): the issue detail and state.
     - `pulls/` (`pull-view.tsx`, `pull-store.ts`): a pull request and its review.
     - `runs/` (`run-store.ts`, `run-view.tsx`): the panel side of runs.
+    - `since/` (`since-store.ts`, `since-view.tsx`): the Since you were here block above the tabs.
 - `tests/` mirrors `src/`: the test of `src/<path>/<name>.ts` is `tests/<path>/<name>.test.ts(x)`
   (`orca plugin test` finds it there). `tests/fixtures/` holds the canned answers (`fixtures.ts` for
   the panel and the check scenarios, `worker-fixtures.ts` for the worker). `tests/manifest.test.ts`

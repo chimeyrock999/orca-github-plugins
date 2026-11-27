@@ -3,6 +3,7 @@
 // goes on; leaving the run aborts that request, and the panel closing ends it on the worker's side.
 import { atom, plugin, read, set, update } from 'orca'
 import type { Answer, DispatchForm, PanelError, RunDetail, RunLogs, RunRow } from '../../shared/protocol'
+import { findAgent, forgetAsked, offerAgent } from '../agent/agent-store'
 import { back, choices, lists, load, loadChoices, requestFailed, setScope, tab, unsure } from '../store'
 
 /** The log on screen: the run's failed steps (`job` null) or one job's whole log. */
@@ -160,6 +161,28 @@ async function watch(): Promise<void> {
   }
 }
 
+/** The run on screen when it is done and failed, the one the workspace's agent can be asked to fix
+ *  (not while a write on it is on its way); else null. */
+export function failedRunShown(): number | null {
+  const s = read(runView)
+  const failed = read(tab) === 'runs' && isShown(s.id) && settled(s) && !s.busy && s.answer?.ok && s.answer.run.state === 'failure'
+  return failed ? s.id : null
+}
+
+/** A failed run shows (opened, read again, or ended while watched): the agent is looked for again,
+ *  as it may have started or stopped while another view showed. */
+function offerFix(): void {
+  const run = failedRunShown()
+  if (run !== null) void offerAgent({ run }, true)
+}
+
+/** Back from "typed into the agent" to the button; agent changes were not followed meanwhile, so it
+ *  is looked for again. */
+export function dismissAsked(): Promise<void> {
+  forgetAsked()
+  return findAgent(true)
+}
+
 /** What the worker posted for the watched run. */
 export function progress(run: RunDetail): void {
   if (!isShown(run.id)) {
@@ -171,7 +194,10 @@ export function progress(run: RunDetail): void {
   showRun(run)
   // A run that ended while watched: its failed steps are what to read now.
   const now = read(runView)
-  if (!was && settled(now) && run.state === 'failure' && !now.logs) void loadLogs(null)
+  if (!was && settled(now) && run.state === 'failure') {
+    if (!now.logs) void loadLogs(null)
+    offerFix()
+  }
 }
 
 export async function loadRun(): Promise<void> {
@@ -184,6 +210,7 @@ export async function loadRun(): Promise<void> {
   if (!answer.ok) return
   const now = read(runView)
   if (settled(now) && answer.run.state === 'failure' && !now.logs) void loadLogs(null)
+  offerFix()
   // The watch runs on its own: one lease after another, while the run goes on.
   void watch()
 }

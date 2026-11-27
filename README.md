@@ -2,7 +2,7 @@
 
 <img src="docs/images/cover.webp" width="900" alt="gh Focus: your workspace's issue and PR, beside the code. The panel's issue and pull request views, with an Actions run in progress">
 
-<p><a href="https://github.com/chimeyrock999/orca-github-plugins/tags"><img alt="Latest version" src="https://img.shields.io/github/v/tag/chimeyrock999/orca-github-plugins?sort=semver&style=flat-square&label=version&color=3b82f6"></a> <img alt="Requires Orca 1.4.256 or later" src="https://img.shields.io/badge/Orca-1.4.256%2B-3b82f6?style=flat-square"> <a href="https://cli.github.com"><img alt="Uses the gh CLI" src="https://img.shields.io/badge/uses-gh%20CLI-24292f?style=flat-square&logo=github"></a> <img alt="Stores no tokens" src="https://img.shields.io/badge/tokens%20stored-none-2ea043?style=flat-square"> <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-6e7781?style=flat-square"></a></p>
+<p><a href="https://github.com/chimeyrock999/orca-github-plugins/tags"><img alt="Latest version" src="https://img.shields.io/github/v/tag/chimeyrock999/orca-github-plugins?sort=semver&style=flat-square&label=version&color=3b82f6"></a> <img alt="Requires Orca 1.4.277 or later" src="https://img.shields.io/badge/Orca-1.4.277%2B-3b82f6?style=flat-square"> <a href="https://cli.github.com"><img alt="Uses the gh CLI" src="https://img.shields.io/badge/uses-gh%20CLI-24292f?style=flat-square&logo=github"></a> <img alt="Stores no tokens" src="https://img.shields.io/badge/tokens%20stored-none-2ea043?style=flat-square"> <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-6e7781?style=flat-square"></a></p>
 
 <p><a href="#install">Install</a> · <a href="#what-you-get">What you get</a> · <a href="#what-stays-in-orca">What stays in Orca</a> · <a href="#how-it-works">How it works</a> · <a href="#permissions">Permissions</a> · <a href="#develop">Develop</a> · <a href="https://orca.dev/plugins/chimeyrock999/orca-github-plugins">Plugin page</a></p>
 
@@ -27,7 +27,7 @@ Orca asks you to approve the [permissions](#permissions) first; an update that a
 
 **Needs**
 
-- Orca `1.4.256` or later.
+- Orca `1.4.277` or later.
 - `gh`, logged in (`gh auth login`) with access to the repo.
 - A workspace whose folder is a clone of a GitHub repo.
 - Orca's own CLI, which tells the plugin what Orca links to a workspace. On macOS it ships in the app; on Linux and Windows, put `orca` on PATH.
@@ -40,7 +40,7 @@ Three tabs, each about the workspace in focus. Switch workspace and the panel fo
 | :--- | :--- | :--- |
 | **Issues** | The issues Orca links to the workspace: one opens by itself, several make a short list. One of another repo opens here too. | Comment, edit or delete comments, react, close (completed, not planned, duplicate) or reopen, edit the title, body, labels and assignees. |
 | **Pull requests** | The workspace's pull request (linked in Orca, or the branch's), with its review decision, whether it can merge, and one line for its checks. | Comment, react, edit, review (Comment, Approve, Request changes), Ready for review or Convert to draft. |
-| **Actions** | The runs of the workspace's branch, or every branch, with search and filters, and live updates while a run goes. | Open jobs and steps with failed logs already open, rerun or cancel, approve a waiting deployment, see artifacts, Run workflow with its inputs. |
+| **Actions** | The runs of the workspace's branch, or every branch, with search and filters, and live updates while a run goes. | Open jobs and steps with failed logs already open, rerun or cancel, approve a waiting deployment, see artifacts, Run workflow with its inputs, ask the workspace's agent to fix a failed run. |
 
 <table>
   <tr>
@@ -53,7 +53,13 @@ Three tabs, each about the workspace in focus. Switch workspace and the panel fo
   </tr>
 </table>
 
-**Nothing linked yet?** The panel shows the `orca reference add` command that links an issue to the workspace, and **Ask agent** types that request into the workspace's free agent, without pressing Enter, so you read it and send it. While the agent works or waits on a question, the panel names it and offers Ask agent by itself once it stops.
+**Nothing linked yet?** The panel shows the `orca reference add` command that links an issue to the workspace, and **Ask agent** types that request into the workspace's agent, without pressing Enter, so you read it and send it. An agent at work takes it too: the text waits in its input. While the agent waits on a question, the panel names it and offers Ask agent by itself once it is answered.
+
+**Ask the agent about a comment.** On an open issue, the agent button on each comment types "Read this comment and tell me what you would do about it, before changing anything: <link>" into the same agent (on the body, "Read this issue …"), without pressing Enter.
+
+**A run failed?** **Ask agent to fix** types one line into the same agent: the run, its failed jobs, and the `gh run view --log-failed` command that reads their log. Again without Enter.
+
+**Since you were here.** Come back to a workspace after 10 minutes or more in another one and a short block above the tabs says what changed meanwhile: new comments and reviews, closes and merges on its linked issues and pull requests, and how the branch's runs ended. Each line opens what it names; Dismiss hides it until the next time.
 
 **Light on your GitHub budget.** The panel shares the budget with Orca, so answers are kept in memory for a short while, an unchanged REST answer costs nothing (ETag), and a write drops only what it changes. When the budget runs low the panel reads less often and says so.
 
@@ -79,7 +85,7 @@ flowchart LR
   panel -. "hand-offs" .-> tasks["Orca Tasks · Checks"]
 ```
 
-The panel asks, the plugin's own worker answers and runs `gh` in the workspace's folder. Nothing is written to disk but the workspace you picked when Orca cannot tell which one is focused.
+The panel asks, the plugin's own worker answers and runs `gh` in the workspace's folder. Nothing is written to disk.
 
 ## Permissions
 
@@ -87,17 +93,16 @@ gh Focus is a `trusted-worker`: its worker runs `gh` and Orca's CLI on your mach
 
 | Permission | Why |
 | :--- | :--- |
-| `storage:own` | Remembers which workspace you picked when Orca cannot tell which one is focused. |
-| `workspace:read` | The focused workspace's name, branch and terminals, to find its folder and repo. |
+| `workspace:read` | The focused workspace's id and Orca's list of workspaces, to find its folder and repo. |
 | `workspace:write` | Only to open Orca's Tasks page and Checks tab; it never opens, creates or renames a workspace. |
-| `agent:read` | Finds a free agent of the workspace for Ask agent, and notices when an agent starts or stops. |
-| `terminal:send` | Types the link request into that agent's terminal, without pressing Enter. |
+| `agent:read` | Finds a free agent of the workspace for Ask agent, Ask agent to fix and the agent button on an issue, and notices when an agent starts or stops. |
+| `terminal:send` | Types the link request, the request to fix a failed run, or the question about an issue or comment, into that agent's terminal, without pressing Enter. |
 
 Every feature, the panel in detail and the files behind it: [`plugins/gh-focus/README.md`](plugins/gh-focus/README.md).
 
 ## Develop
 
-Needs Orca `1.4.256`+ with its `orca` CLI on PATH, Node.js 18+, and `gh` logged in.
+Needs Orca `1.4.277`+ with its `orca` CLI on PATH, Node.js 18+, and `gh` logged in.
 
 ```sh
 cd plugins/gh-focus

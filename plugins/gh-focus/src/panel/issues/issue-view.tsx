@@ -18,7 +18,7 @@ import { backFrom } from '../linked/link-store'
 import { backLabel, HandOffProblem, ThreadTop } from '../linked/linked-view'
 import { Glyph, Problem } from '../parts'
 import type { CloseReason, IssueDetail } from '../../shared/protocol'
-import { Byline, LabelsAndAssignees, MetaLine, Post, Timeline, TitleRow } from '../thread/thread-view'
+import { AskButton, AskProblem, Byline, LabelsAndAssignees, MetaLine, Post, Timeline, TitleRow } from '../thread/thread-view'
 
 const REASONS: { value: CloseReason; label: string; description: string; button: string }[] = [
   { value: 'completed', label: 'Completed', description: 'Done, closed, fixed, resolved', button: 'Close as completed' },
@@ -107,7 +107,19 @@ function Detail({ d, s }: { d: IssueDetail; s: IssueState }) {
         </MetaLine>
       </Stack>
       {!s.editing && (
-        <Post t={issues} head={<Byline who={d.author} words="opened" at={d.createdAt} />} body={d.body} url={d.url} cut={d.truncated} subject={d.id} reactions={d.reactions} />
+        <Stack gap="xs">
+          <Post
+            t={issues}
+            head={<Byline who={d.author} words="opened" at={d.createdAt} />}
+            tools={<AskButton t={issues} comment={null} />}
+            body={d.body}
+            url={d.url}
+            cut={d.truncated}
+            subject={d.id}
+            reactions={d.reactions}
+          />
+          <AskProblem t={issues} comment={null} />
+        </Stack>
       )}
       <Separator />
       <Timeline t={issues} d={d} s={s} />

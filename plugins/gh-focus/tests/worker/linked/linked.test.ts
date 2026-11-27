@@ -2,7 +2,7 @@
 // reads their state, and the agent that is asked to link one.
 import { assert, test } from 'orca/testing'
 import { GhError, type Gh } from '../../../src/worker/gh'
-import { busyAgent, freeAgent, linkedQuery, linkedRefs, linkedRows, linkPrompt, type AgentRow } from '../../../src/worker/linked/linked'
+import { aboutPrompt, busyAgent, freeAgent, linkedQuery, linkedRefs, linkedRows, linkPrompt, type AgentRow } from '../../../src/worker/linked/linked'
 import { LINKED_LIMIT, type LinkedRef } from '../../../src/shared/protocol'
 
 const repo = { nameWithOwner: 'octo/app', path: '/code/app' }
@@ -139,24 +139,61 @@ test('linkedRows: names that do not look like a repo stay out of the query; a ca
   assert.equal((await linkedRows(capped, repo, 'issues', many)).rows.length, LINKED_LIMIT)
 })
 
-test('freeAgent: one waiting or done with a terminal, the one that stopped last; never one at work', () => {
+test('freeAgent: one with a terminal not waiting on a question, a stopped one before one at work, then the last to change', () => {
   const agent = (state: string, at: number, terminalId: string | null = `t${at}`): AgentRow => ({ terminalId, title: `Agent ${at}`, agent: 'claude', state, stateStartedAt: at })
   assert.equal(freeAgent([agent('working', 9), agent('done', 2), agent('waiting', 5), agent('blocked', 7)])?.terminalId, 't5')
-  assert.equal(freeAgent([agent('working', 1), agent('blocked', 2)]), null)
+  // At work, it takes the prompt too: the text waits in its input.
+  assert.equal(freeAgent([agent('working', 1), agent('blocked', 2)])?.terminalId, 't1')
+  assert.equal(freeAgent([agent('working', 1), agent('working', 4)])?.terminalId, 't4')
+  assert.equal(freeAgent([agent('blocked', 2)]), null)
   assert.equal(freeAgent([agent('done', 3, null)]), null)
   assert.equal(freeAgent([]), null)
 })
 
-test('busyAgent: one working or blocked with a terminal, the one that changed last', () => {
+test('busyAgent: one waiting on a question with a terminal, the one that changed last', () => {
   const agent = (state: string, at: number, terminalId: string | null = `t${at}`): AgentRow => ({ terminalId, title: `Agent ${at}`, agent: 'claude', state, stateStartedAt: at })
-  assert.equal(busyAgent([agent('working', 3), agent('blocked', 7), agent('done', 9)])?.terminalId, 't7')
-  assert.equal(busyAgent([agent('done', 3), agent('waiting', 2)]), null)
-  assert.equal(busyAgent([agent('working', 3, null)]), null)
+  assert.equal(busyAgent([agent('blocked', 3), agent('blocked', 7), agent('working', 9)])?.terminalId, 't7')
+  assert.equal(busyAgent([agent('done', 3), agent('waiting', 2), agent('working', 1)]), null)
+  assert.equal(busyAgent([agent('blocked', 3, null)]), null)
 })
 
-test('the prompt asks for the link with the command for this repo and kind', () => {
+test('the prompt about an issue or one of its comments names its link and the gh command that reads it', () => {
+  assert.equal(
+    aboutPrompt('https://github.com/octo/app', 'octo/app', { issue: 77, repo: null, comment: 3123 }),
+    'Read this comment and tell me what you would do about it, before changing anything: https://github.com/octo/app/issues/77#issuecomment-3123 (gh api repos/octo/app/issues/comments/3123)'
+  )
+  assert.equal(
+    aboutPrompt('https://github.com/octo/app', 'octo/app', { issue: 77, repo: 'octo/lib', comment: null }),
+    'Read this issue and tell me what you would do about it, before changing anything: https://github.com/octo/lib/issues/77 (gh issue view 77 -R octo/lib --comments)'
+  )
+  // On another host, gh is told which one.
+  assert.equal(
+    aboutPrompt('https://ghe.corp.example/octo/app', 'octo/app', { issue: 5, repo: null, comment: 9 }),
+    'Read this comment and tell me what you would do about it, before changing anything: https://ghe.corp.example/octo/app/issues/5#issuecomment-9 (gh api --hostname ghe.corp.example repos/octo/app/issues/comments/9)'
+  )
+  assert.equal(
+    aboutPrompt('https://ghe.corp.example/octo/app', 'octo/app', { issue: 5, repo: null, comment: null }),
+    'Read this issue and tell me what you would do about it, before changing anything: https://ghe.corp.example/octo/app/issues/5 (gh issue view 5 -R ghe.corp.example/octo/app --comments)'
+  )
+  // What is typed into a terminal holds only GitHub's own names and whole numbers.
+  for (const bad of [
+    { issue: 0, repo: null, comment: null },
+    { issue: 1.5, repo: null, comment: null },
+    { issue: 7, repo: 'octo/app\nrm -rf', comment: null },
+    { issue: 7, repo: null, comment: -1 },
+    { issue: 7, repo: null, comment: 0 }
+  ]) {
+    assert.equal(aboutPrompt('https://github.com/octo/app', 'octo/app', bad), null, JSON.stringify(bad))
+  }
+})
+
+test('the prompt asks for the link, tells the agent to ask instead of guessing, and ends with the command', () => {
   assert.equal(
     linkPrompt('https://github.com/octo/app', 'pulls'),
-    'Link the GitHub pull request this workspace is working on to it in Orca: orca reference add https://github.com/octo/app/pull/<number> --worktree current'
+    'Link the GitHub pull request this workspace is working on to it in Orca. If you are not sure which pull request, ask me instead of guessing. Run: orca reference add https://github.com/octo/app/pull/<number> --worktree current'
+  )
+  assert.equal(
+    linkPrompt('https://github.com/octo/app', 'issues'),
+    'Link the GitHub issue this workspace is working on to it in Orca. If you are not sure which issue, ask me instead of guessing. Run: orca reference add https://github.com/octo/app/issues/<number> --worktree current'
   )
 })

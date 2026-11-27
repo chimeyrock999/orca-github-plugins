@@ -4,7 +4,6 @@
 export type ErrorCode =
   | 'no_workspace'
   | 'workspace_not_found'
-  | 'ambiguous_workspace'
   | 'remote_workspace'
   /** An Orca call failed without a code: a host call (workspace.readContext, workspace.list) or a
    *  panel request. One with a code reads as the codes below (src/shared/host-error.ts). */
@@ -37,18 +36,16 @@ export type ErrorCode =
   | 'gh_failed'
   /** Panel only: a write got no answer in time, so it may or may not have landed. */
   | 'unsure'
-  /** No agent in the focused workspace is free to take a prompt (all working, or none). */
+  /** No agent in the focused workspace can take a prompt (each waits on a question, or none runs). */
   | 'no_agent'
+  /** The agent was asked to fix a run that has not failed (it runs again, or passed). */
+  | 'not_failed'
 
 export type PanelError = {
   code: ErrorCode
   message: string
   /** The workspace folder, once one was found. */
   path?: string
-  /** The workspaces that fit the focused context equally well (`ambiguous_workspace`), with the
-   *  repo's name in Orca (null when Orca does not say) and the branch, both for the label;
-   *  choices that share both add their folder name. */
-  candidates?: { id: string; name: string; path: string; project: string | null; branch: string }[]
   /** How long Orca asks the panel to wait (`host_rate_limited`). */
   retryAfterMs?: number
 }
@@ -57,11 +54,8 @@ export type PanelError = {
  *  as `action_failed`, so every request answers `{ ok: false, error }` instead. */
 export type Answer<T> = ({ ok: true } & T) | { ok: false; error: PanelError }
 
-/** How the focused workspace was found: its branch and name alone, the person's pick among
- *  workspaces that share them, or one of its terminals. */
-export type ResolvedBy = 'context' | 'picked' | 'terminal'
-
-export type RepoAnswer = Answer<{ nameWithOwner: string; url: string; path: string; resolvedBy: ResolvedBy }>
+/** `workspaceId`: the id workspace.list gives the workspace found. */
+export type RepoAnswer = Answer<{ nameWithOwner: string; url: string; path: string; workspaceId: string }>
 
 /** A page of a list. `next` is the cursor of the page after it, null on the last page. `limit` is
  *  how many rows GitHub lets anyone page through (its filtered runs list stops at 1,000 however many
@@ -100,9 +94,14 @@ export type LinkedRef = { number: number; repo: string | null; title: string | n
 /** An agent of the focused workspace that can take a prompt, by the name the panel shows. */
 export type FreeAgent = { name: string; terminalId: string }
 
-/** An agent of the focused workspace that cannot take a prompt now: at work, or waiting on a
- *  question. */
-export type BusyAgent = { name: string; state: 'working' | 'blocked' }
+/** An agent of the focused workspace that cannot take a prompt now: it waits on a question. (One at
+ *  work takes a prompt: the text waits in its input.) */
+export type BusyAgent = { name: string; state: 'blocked' }
+
+/** What the agent is asked about: to link the workspace's issue or pull request, to fix a finished
+ *  run that failed, or what it would do about an issue (`repo` null: of the focused repo) or one of
+ *  its comments (`comment`, its REST id). */
+export type AskAbout = { link: LinkedKind } | { run: number } | { issue: number; repo: string | null; comment: number | null }
 
 /** A linked issue or pull request as GitHub has it now. `state` and `updatedAt` are null when
  *  GitHub did not answer for it (gone, or this login cannot see it): then title and url are Orca's. */
@@ -143,6 +142,10 @@ export type RunFilters = { workflow?: string; status?: string; event?: string; b
  *  `filters` win over the same qualifier. The runs API has no order: newest first. `scope: 'branch'`
  *  lists the runs of the focused workspace's branch unless a branch is asked for already. */
 export type RunListInput = { query: string; after: string | null; filters?: RunFilters; scope?: 'branch' | 'all' }
+/** The Actions tab's first page: the workspace branch's runs, no search or filter. The panel's
+ *  first runs.list is exactly this (tests/panel/requests.test.tsx), so since.get reads the same
+ *  kept page. */
+export const BRANCH_RUNS: RunListInput = { query: '', after: null, filters: {}, scope: 'branch' }
 /** `branch`: the workspace branch the page was narrowed to by `scope`, else null. */
 export type RunPage = Page<RunRow> & { branch: string | null }
 
@@ -375,6 +378,28 @@ export type Done = Answer<Record<never, never>>
  *  for the thread again; null when GitHub's answer could not be read (the panel then asks). */
 export type Commented = Answer<{ comment: TimelineComment | null }>
 
+/** What changed on a linked issue or pull request since the person left the workspace: new comments
+ *  (how many, and who wrote the newest), each reviewer's latest review, and state changes, oldest
+ *  first. `at`: the newest of them, in milliseconds since the epoch. */
+export type SinceItem = {
+  kind: LinkedKind
+  number: number
+  repo: string | null
+  title: string
+  state: IssueState | PullState
+  comments: number
+  commenters: string[]
+  reviews: { author: string; state: Exclude<ReviewState, 'dismissed'> }[]
+  events: ('closed' | 'reopened' | 'merged')[]
+  at: number
+}
+
+/** What changed in the focused workspace while the person was away: `since` is when they left it
+ *  (null when they were not away, or dismissed it), with the linked items that changed (newest
+ *  first) and the branch's runs that finished since. `skipped`: the items were not asked for, as
+ *  the budget is low. `viewer`: the gh login, which the panel names "you". */
+export type Since = { since: number | null; items: SinceItem[]; runs: RunRow[]; skipped: boolean; viewer: string | null }
+
 /** The REST budget GitHub says is left (shared with Orca) while it is low: under a tenth of the
  *  limit until `resetAt` (milliseconds since the epoch). */
 export type GitHubBudget = { limit: number; remaining: number; resetAt: number }
@@ -389,12 +414,6 @@ declare module 'orca' {
     'cache.drop': { output: Done }
     /** The GitHub budget while it is low, else null. */
     'budget.get': { output: Answer<{ budget: GitHubBudget | null }> }
-    /** Picks the folder for the focused branch and name when several workspaces share them
-     *  (`ambiguous_workspace`); kept in storage for this branch, name and set of matching projects,
-     *  and used while that set stays the same and the folder is one of them. */
-    'repo.pick': { input: { path: string }; output: RepoAnswer }
-    /** Forgets the pick for the focused branch, name and set of matching projects. */
-    'repo.unpick': { output: RepoAnswer }
     /** The issues and pull requests Orca links to the focused workspace, in Orca's order; none when
      *  Orca's CLI does not say. With `branch` and no linked pull request of the focused repo, the one
      *  gh finds for the workspace's branch comes first (a gh call, so only the Pull requests tab
@@ -402,14 +421,24 @@ declare module 'orca' {
     'repo.links': { input: { branch?: boolean }; output: Answer<{ issues: LinkedRef[]; pulls: LinkedRef[] }> }
     /** The linked issues or pull requests as GitHub has them now (one call), newest activity first. */
     'items.get': { input: { kind: LinkedKind; items: LinkedRef[] }; output: Answer<{ rows: LinkedRow[] }> }
-    /** A free agent of the focused workspace (one not working or blocked): its name and terminal;
-     *  null when none, and then `busy` names the one working or blocked there, if any. */
+    /** An agent of the focused workspace that takes a prompt (one with a terminal, not waiting on a
+     *  question; at work or not): its name and terminal; null when none, and then `busy` names the
+     *  one waiting on a question there, if any. */
     'agent.find': { output: Answer<{ agent: FreeAgent | null; busy: BusyAgent | null }> }
-    /** Types a prompt into that agent's terminal asking it to link the workspace's issue or pull
-     *  request with `orca reference add`, when it is still free; Enter is left to the person. */
-    'agent.ask': { input: { kind: LinkedKind; terminalId: string }; output: Answer<{ agent: string }> }
+    /** Types a prompt into that agent's terminal, while it still takes one: to link the workspace's
+     *  issue or pull request with `orca reference add`, to fix a failed run, reading its failed
+     *  log with gh (the run read as `run.get` reads it), or to read an issue or comment and say what
+     *  it would do. Enter is left to the person. `working`: the
+     *  agent was at work when the prompt went in, so its next stop ends its earlier task. */
+    'agent.ask': { input: { about: AskAbout; terminalId: string }; output: Answer<{ agent: string; working: boolean }> }
     /** One page of the focused repo's workflow runs, newest first. */
     'runs.list': { input: RunListInput; output: Answer<RunPage> }
+    /** What changed in the focused workspace since the person left it, after an absence: one
+     *  GraphQL query over the linked items (and the branch's pull request) and the branch's runs
+     *  page as the Actions tab reads it. Nothing is asked when they were not away. */
+    'since.get': { input: { workspaceId: string }; output: Answer<Since> }
+    /** Forgets the absence, so since.get answers nothing until the next one. */
+    'since.dismiss': { input: { workspaceId: string }; output: Done }
     /** The focused repo's label names, for the label picker. */
     'labels.list': { input: { repo?: string }; output: Answer<{ names: string[] }> }
     /** One issue with its body and the start and end of its timeline. */

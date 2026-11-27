@@ -4,7 +4,7 @@ import { GhError, type Gh } from '../gh'
 import type { LinkedItem, WorkspaceLinks } from '../exec'
 import { issueState, pullState, type RepoRef } from '../lists'
 import { linkCommand } from '../../shared/look'
-import { isRepoName, LINKED_LIMIT, type LinkedKind, type LinkedRef, type LinkedRow } from '../../shared/protocol'
+import { isRepoName, LINKED_LIMIT, type AskAbout, type LinkedKind, type LinkedRef, type LinkedRow } from '../../shared/protocol'
 
 /** The links Orca keeps for a workspace, by kind, when the workspace is of the focused repo: an
  *  item of the focused repo has `repo` null, one of another repo its `owner/name`. An item on another
@@ -100,25 +100,55 @@ export async function linkedRows(gh: Gh, repo: RepoRef, kind: LinkedKind, items:
 
 export type AgentRow = { terminalId: string | null; title: string | null; agent: string | null; state: string; stateStartedAt: number }
 
-/** The agent to ask: one with a terminal that waits for input or is done (never one working, or
- *  blocked on a question), the one that stopped last. */
+/** Whether an agent can take a prompt: it has a terminal and does not wait on a question. One at
+ *  work takes it too: the text waits in its input, without Enter, until the person sends it. */
+export const takesPrompt = (a: AgentRow): a is AgentRow & { terminalId: string } => !!a.terminalId && a.state !== 'blocked'
+
+/** The agent to ask: one that takes a prompt, one that stopped (waiting or done) before one at work,
+ *  then the one that changed last. */
 export function freeAgent(agents: AgentRow[]): (AgentRow & { terminalId: string }) | null {
-  const free = agents.filter((a): a is AgentRow & { terminalId: string } => !!a.terminalId && (a.state === 'waiting' || a.state === 'done'))
-  return free.sort((a, b) => b.stateStartedAt - a.stateStartedAt)[0] ?? null
+  const stopped = (a: AgentRow) => (a.state === 'waiting' || a.state === 'done' ? 1 : 0)
+  return agents.filter(takesPrompt).sort((a, b) => stopped(b) - stopped(a) || b.stateStartedAt - a.stateStartedAt)[0] ?? null
 }
 
-/** The agent the panel names when none is free: one with a terminal that works or waits on a
+/** The agent the panel names when none takes a prompt: one with a terminal that waits on a
  *  question, the one that changed last. */
-export function busyAgent(agents: AgentRow[]): (AgentRow & { terminalId: string; state: 'working' | 'blocked' }) | null {
-  const busy = agents.filter((a): a is AgentRow & { terminalId: string; state: 'working' | 'blocked' } => !!a.terminalId && (a.state === 'working' || a.state === 'blocked'))
+export function busyAgent(agents: AgentRow[]): (AgentRow & { terminalId: string; state: 'blocked' }) | null {
+  const busy = agents.filter((a): a is AgentRow & { terminalId: string; state: 'blocked' } => !!a.terminalId && a.state === 'blocked')
   return busy.sort((a, b) => b.stateStartedAt - a.stateStartedAt)[0] ?? null
 }
 
 /** How the panel names an agent: its terminal title, else its kind. */
 export const agentName = (a: AgentRow): string => a.title?.trim() || a.agent || 'the agent'
 
-/** What the agent is asked: it knows which issue or pull request it works on. */
+/**
+ * What the agent is asked: to link the issue or pull request it works on, or to ask when it does
+ * not know which (a guess links the wrong item). One line, the command last so nothing sticks to it.
+ */
 export function linkPrompt(repoUrl: string, kind: LinkedKind): string {
   const noun = kind === 'issues' ? 'issue' : 'pull request'
-  return `Link the GitHub ${noun} this workspace is working on to it in Orca: ${linkCommand(repoUrl, kind)}`
+  return (
+    `Link the GitHub ${noun} this workspace is working on to it in Orca. ` +
+    `If you are not sure which ${noun}, ask me instead of guessing. Run: ${linkCommand(repoUrl, kind)}`
+  )
+}
+
+/** A number GitHub could name an issue, comment or run by: a whole number above zero. */
+export const isWhole = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) > 0
+
+/** What the agent is asked about an issue or one of its comments: its link, and the gh command that
+ *  reads it (a comment by its id, as `gh issue view --comments` names none; `--hostname` or
+ *  `host/owner/name` when not github.com). Null when the ask names no issue: the text goes into a
+ *  terminal, so it holds only GitHub's own names and whole numbers. */
+export function aboutPrompt(repoUrl: string, focused: string, ask: Extract<AskAbout, { issue: number }>): string | null {
+  const name = ask.repo ?? focused
+  if (typeof name !== 'string' || !isRepoName(name) || !isWhole(ask.issue) || (ask.comment !== null && !isWhole(ask.comment))) return null
+  const { origin, host } = new URL(repoUrl)
+  const other = host.toLowerCase() !== 'github.com'
+  const issue = `${origin}/${name}/issues/${ask.issue}`
+  if (ask.comment === null) {
+    return `Read this issue and tell me what you would do about it, before changing anything: ${issue} (gh issue view ${ask.issue} -R ${other ? `${host}/` : ''}${name} --comments)`
+  }
+  const api = `gh api ${other ? `--hostname ${host} ` : ''}repos/${name}/issues/comments/${ask.comment}`
+  return `Read this comment and tell me what you would do about it, before changing anything: ${issue}#issuecomment-${ask.comment} (${api})`
 }
