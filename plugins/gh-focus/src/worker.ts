@@ -18,9 +18,9 @@ import {
   reopenIssue,
   setReaction
 } from './worker/issues/issues'
-import { agentName, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, type AgentRow } from './worker/linked/linked'
+import { agentName, askableAgent, askPrompt, blockedAgent, linkedRefs, linkedRows, type AgentRow } from './worker/linked/linked'
 import { listLabels, listRuns, listWorkflows, type RepoRef } from './worker/lists'
-import { isRepoName, type Answer, type GitHubBudget, type LinkedKind, type LinkedRef, type OrcaView, type RunState } from './shared/protocol'
+import { isRepoName, type AgentAsk, type Answer, type GitHubBudget, type LinkedKind, type LinkedRef, type OrcaView, type RunState } from './shared/protocol'
 import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, readyPull, reviewPull } from './worker/pulls/pulls'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './worker/repo/repo'
 import { cancelRun, dispatchWorkflow, getRun, rerunRun, reviewDeployments, runLogs, watchRun, workflowForm, type WatchDeps } from './worker/runs/runs'
@@ -81,35 +81,37 @@ async function workspaceAgents(orca: OrcaWorkerApi, at: AgentPlace, terminalId?:
   }
 }
 
-/** The free agent to ask in the panel's workspace; with none free, the busy one there, for the
- *  panel to name. */
+/** The agent to ask in the panel's workspace; with none, the one waiting on a question there, for
+ *  the panel to name. */
 async function findAgent(
   orca: OrcaWorkerApi,
   at: AgentPlace
-): Promise<Answer<{ agent: (AgentRow & { terminalId: string }) | null; busy: ReturnType<typeof busyAgent> }>> {
+): Promise<Answer<{ agent: (AgentRow & { terminalId: string }) | null; blocked: ReturnType<typeof blockedAgent> }>> {
   const here = await workspaceAgents(orca, at)
   if (!here.ok) return here
-  const agent = freeAgent(here.agents)
-  return { ok: true, agent, busy: agent ? null : busyAgent(here.agents) }
+  const agent = askableAgent(here.agents)
+  return { ok: true, agent, blocked: agent ? null : blockedAgent(here.agents) }
 }
 
-/** Types the link prompt into the agent the panel offered, while it is still free and in the
- *  panel's workspace, without Enter: the person reads it and sends it. */
+/** Types the ask's prompt into the agent the panel offered, while it still can take one (not
+ *  waiting on a question) and is in the panel's workspace, without Enter: the person reads it and
+ *  sends it. */
 async function askAgent(
   orca: OrcaWorkerApi,
-  at: AgentPlace,
-  repoUrl: string,
-  kind: LinkedKind,
+  at: AgentPlace & { url: string; nameWithOwner: string },
+  ask: AgentAsk,
   terminalId: string
 ): Promise<Answer<{ agent: string }>> {
+  const text = askPrompt(at.url, at.nameWithOwner, ask)
+  if (!text) return { ok: false, error: { code: 'action_failed', message: 'The panel asked about something the worker cannot name.' } }
   const here = await workspaceAgents(orca, at, terminalId)
   if (!here.ok) return here
   const [agent] = here.agents
-  if (!agent || !freeAgent([agent])) {
-    return { ok: false, error: { code: 'no_agent', message: 'That agent is busy now, gone, or not in this workspace.' } }
+  if (!agent || !askableAgent([agent])) {
+    return { ok: false, error: { code: 'no_agent', message: 'That agent is waiting on a question now, gone, or not in this workspace.' } }
   }
   try {
-    const { accepted } = await orca.host.call('terminal.sendText', { terminalId, text: linkPrompt(repoUrl, kind), enter: false })
+    const { accepted } = await orca.host.call('terminal.sendText', { terminalId, text, enter: false })
     if (!accepted) return { ok: false, error: { code: 'no_agent', message: `${agentName(agent)} did not take the text.` } }
     return { ok: true, agent: agentName(agent) }
   } catch (error) {
@@ -227,12 +229,12 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
     if (!repo.ok) return repo
     const found = await findAgent(orca, repo)
     if (!found.ok) return found
-    const { agent, busy } = found
-    return { ok: true as const, agent: agent && { name: agentName(agent), terminalId: agent.terminalId }, busy: busy && { name: agentName(busy), state: busy.state } }
+    const { agent, blocked } = found
+    return { ok: true as const, agent: agent && { name: agentName(agent), terminalId: agent.terminalId }, blocked: blocked && { name: agentName(blocked) } }
   })
-  orca.panels.handle('agent.ask', async ({ kind, terminalId }) => {
+  orca.panels.handle('agent.ask', async ({ terminalId, ask }) => {
     const repo = await tracker.get()
-    return repo.ok ? askAgent(orca, repo, repo.url, kind, terminalId) : repo
+    return repo.ok ? askAgent(orca, repo, ask, terminalId) : repo
   })
   orca.panels.handle('orca.show', ({ view }) => showView(orca, view))
   orca.panels.handle('runs.list', (input, { signal }) =>

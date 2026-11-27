@@ -102,7 +102,7 @@ function LinkedList({ t, l }: { t: AnyThread; l: LinkedState }) {
   )
 }
 
-/** How to link one: the command, and the workspace's free agent to ask, if any. */
+/** How to link one: the command, and the workspace's agent to ask, if any. */
 function HowToLink({ kind }: { kind: LinkedKind }) {
   const r = read(repo)
   const a = agentNow()
@@ -138,17 +138,13 @@ function HowToLink({ kind }: { kind: LinkedKind }) {
             </Button>
           </Row>
         </>
-      ) : a.busy ? (
-        // Never typed into while it works or waits on a question; the button comes once it stops.
+      ) : a.blocked ? (
+        // Never typed into while it waits on a question; the button comes once it is answered.
         <>
-          <Text size="xs" muted>
-            {a.busy.state === 'blocked'
-              ? `${a.busy.name} is waiting on a question. Answer it, then ask, or run the command in a terminal.`
-              : `${a.busy.name} is working. Ask it once it stops, or run the command in a terminal.`}
-          </Text>
+          <Text size="xs" muted>{`${a.blocked.name} is waiting on a question. Answer it, then ask, or run the command in a terminal.`}</Text>
           <Row>
             <Button size="sm" variant="outline" icon="agent" disabled>
-              {`Ask ${a.busy.name} to link`}
+              {`Ask ${a.blocked.name} to link`}
             </Button>
           </Row>
         </>

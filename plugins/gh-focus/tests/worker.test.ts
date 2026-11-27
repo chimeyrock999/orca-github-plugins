@@ -371,9 +371,12 @@ test('repo.links: with no linked pull request of this repo, the branch pull requ
 test('the agents are those Orca lists for the panel\'s workspace id; agent.ask types the link prompt into the offered one without Enter', async () => {
   // A live terminal Orca restored but has not shown yet has no id (Orca up to v1.4.278): nothing to type into.
   const unshown = { terminalId: null, title: 'Restored Claude', agent: 'claude', state: 'waiting', stateStartedAt: 99 }
+  const codex = { terminalId: 't-busy', title: 'Codex', agent: 'codex', state: 'working', stateStartedAt: 9 }
+  const asking = { terminalId: 't-blocked', title: 'Gemini', agent: 'gemini', state: 'blocked', stateStartedAt: 11 }
   let agents: Array<{ terminalId: string | null; title: string; agent: string; state: string; stateStartedAt: number }> = [
-    { terminalId: 't-busy', title: 'Codex', agent: 'codex', state: 'working', stateStartedAt: 9 },
+    codex,
     unshown,
+    asking,
     { terminalId: 't-free', title: 'Claude Code', agent: 'claude', state: 'waiting', stateStartedAt: 5 }
   ]
   let refusal: Error | null = null
@@ -390,8 +393,9 @@ test('the agents are those Orca lists for the panel\'s workspace id; agent.ask t
   })
   let accepted = true
   const worker = await mountWorker(listWorker(noGh), { host })
-  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Claude Code', terminalId: 't-free' }, busy: null })
-  assert.deepEqual(await worker.request('agent.ask', { kind: 'pulls', terminalId: 't-free' }), { ok: true, agent: 'Claude Code' })
+  // One free to take a prompt comes before one at work.
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Claude Code', terminalId: 't-free' }, blocked: null })
+  assert.deepEqual(await worker.request('agent.ask', { terminalId: 't-free', ask: { link: 'pulls' } }), { ok: true, agent: 'Claude Code' })
   assert.deepEqual(host.callsOf('agents.list'), [{ workspaceId: 'w-spike' }, { workspaceId: 'w-spike' }])
   assert.deepEqual(host.callsOf('terminal.sendText'), [
     {
@@ -401,20 +405,36 @@ test('the agents are those Orca lists for the panel\'s workspace id; agent.ask t
     }
   ])
   accepted = false
-  const refused = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-free' })
+  const refused = await worker.request('agent.ask', { terminalId: 't-free', ask: { link: 'issues' } })
   assert.equal(!refused.ok && refused.error.code, 'no_agent')
   accepted = true
-  // Still only the agent the panel offered, while it is free.
-  const busy = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-busy' })
-  assert.equal(!busy.ok && busy.error.code, 'no_agent')
-  agents = agents.slice(0, 2)
-  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: { name: 'Codex', state: 'working' } })
+  // One at work takes the text too: it waits in its input until the person sends it.
+  assert.deepEqual(await worker.request('agent.ask', { terminalId: 't-busy', ask: { issue: 77, repo: null, comment: 3123 } }), { ok: true, agent: 'Codex' })
+  assert.deepEqual(host.callsOf('terminal.sendText')[2], {
+    terminalId: 't-busy',
+    text: 'Read this comment and tell me what you would do about it, before changing anything: https://github.com/octo/app/issues/77#issuecomment-3123 (gh api repos/octo/app/issues/comments/3123)',
+    enter: false
+  })
+  // Never one waiting on a question: the text could answer it.
+  const blocked = await worker.request('agent.ask', { terminalId: 't-blocked', ask: { issue: 77, repo: null, comment: null } })
+  assert.equal(!blocked.ok && blocked.error.code, 'no_agent')
+  // An issue the worker cannot name is never typed.
+  const odd = await worker.request('agent.ask', { terminalId: 't-free', ask: { issue: 77, repo: 'octo/app --comments\n', comment: null } })
+  assert.equal(!odd.ok && odd.error.code, 'action_failed')
+  // The old shape, from a panel of an earlier version: an answer, not a throw.
+  const old = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-free' } as never)
+  assert.equal(!old.ok && old.error.code, 'action_failed')
+  assert.equal(host.callsOf('terminal.sendText').length, 3)
+  agents = [codex, unshown, asking]
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Codex', terminalId: 't-busy' }, blocked: null })
+  agents = [unshown, asking]
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, blocked: { name: 'Gemini' } })
   agents = [unshown]
-  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: null })
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, blocked: null })
   // Orca no longer has the workspace: no agent, not an error.
   refusal = hostError('action_failed', 'no workspace has this id')
-  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: null })
-  const gone = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-busy' })
+  assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, blocked: null })
+  const gone = await worker.request('agent.ask', { terminalId: 't-busy', ask: { link: 'issues' } })
   assert.equal(!gone.ok && gone.error.code, 'no_agent')
   // Any other failure, of the same code, or a permission refusal, is still one.
   refusal = hostError('action_failed', 'Orca could not complete this action')
@@ -423,7 +443,7 @@ test('the agents are those Orca lists for the panel\'s workspace id; agent.ask t
   refusal = hostError('capability_denied', 'agent:read was not granted')
   const denied = await worker.request('agent.find')
   assert.equal(!denied.ok && denied.error.code, 'not_allowed')
-  assert.equal(host.callsOf('terminal.sendText').length, 2)
+  assert.equal(host.callsOf('terminal.sendText').length, 3)
   await worker.deactivate()
 })
 

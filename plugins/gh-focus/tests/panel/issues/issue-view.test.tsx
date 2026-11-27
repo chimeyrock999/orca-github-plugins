@@ -21,7 +21,7 @@ function host(overrides: Record<string, unknown> = {}, detail: () => IssueDetail
     // Three issues linked to the workspace: a short list, newest activity first.
     'repo.links': links([120, 119, 118]),
     'items.get': ({ items }: { items: LinkedRef[] }) => linkedRows(items),
-    'agent.find': { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null },
+    'agent.find': { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, blocked: null },
     'issue.get': () => ({ ok: true, issue: detail() }),
     'issue.comment': () => ok,
     'issue.close': () => ok,
@@ -685,11 +685,11 @@ test('a timed-out reaction is not flipped back; the issue is loaded again', asyn
 })
 
 
-test('Back into the empty state looks for a free agent there', async () => {
+test('Back into the empty state looks for an agent there', async () => {
   const h = host({ 'pull.get': () => ({ ok: true, pull: pullDetail() }) })
   const view = await openIssue120(h)
-  // Three issues are linked, so no agent was looked for.
-  assert.equal(h.asked.filter((a) => a.name === 'agent.find').length, 0)
+  // The list of three issues looks for no agent; the issue opened from it does, once.
+  assert.equal(h.asked.filter((a) => a.name === 'agent.find').length, 1)
   await view.press({ type: 'ListItem', text: /fix: stream CSV export past 10k rows/ })
   await view.press({ type: 'Button', text: '← Back' })
   assert.ok(view.summary().some((l) => /No pull request for this workspace/.test(l)))

@@ -10,6 +10,13 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+### Added
+
+**Issues and pull requests**
+
+- On an open issue, the body and each comment can be handed to the workspace's agent: the panel
+  types a prompt with the link, without Enter, for you to read and send.
+
 ### Changed
 
 **Issues and pull requests**
@@ -18,6 +25,8 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
   agent's terminal runs.
 - The agent Link one offers is looked for again only when an agent of the workspace changes state,
   not when one in another workspace does.
+- Ask agent also types into an agent at work (the text waits in its input until you send it); only
+  one waiting on a question is left alone.
 
 **Elsewhere**
 
