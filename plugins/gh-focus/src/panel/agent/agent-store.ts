@@ -7,17 +7,20 @@ import { repo, requestFailed } from '../store'
 import { focusKey } from '../thread/thread-store'
 
 /** The free agent of the workspace on screen (`where`); `agent` null when none is free, and then
- *  `busy` the one at work or waiting on a question, if any. `asked` is what it was asked about (with
- *  the name it answered as), `asking` while the prompt is on its way, `error` why the last ask about
+ *  `busy` the one at work or waiting on a question, if any. `asked` is what it was asked about last, `asking` while the prompt is on its way, `error` why the last ask about
  *  something did not go through. */
 export type AgentState = {
   where: string
   agent: FreeAgent | null
   busy: BusyAgent | null
   asking: boolean
-  asked: AskAbout | null
+  asked: AskedAgent | null
   error: { about: AskAbout; error: PanelError } | null
 }
+
+/** What the agent was asked about last, the terminal the prompt went into and the name it answered
+ *  as: kept while the agent is looked up again (it works on it by then), until Dismiss. */
+export type AskedAgent = { about: AskAbout; terminalId: string; name: string }
 export const agent = atom<AgentState | null>(null)
 
 /** The agent state for the workspace on screen, once found. */
@@ -30,7 +33,7 @@ const same = (a: AskAbout | null | undefined, b: AskAbout): boolean =>
   !!a && ('run' in b ? 'run' in a && a.run === b.run : 'link' in a && a.link === b.link)
 
 /** Whether the agent was asked about this, last. */
-export const wasAsked = (a: AgentState | null, about: AskAbout): boolean => same(a?.asked, about)
+export const wasAsked = (a: AgentState | null, about: AskAbout): boolean => same(a?.asked?.about, about)
 
 /** Why asking about this did not go through, if it did not: each offer shows only its own. */
 export const askFailed = (a: AgentState | null, about: AskAbout): PanelError | null => (a?.error && same(a.error.about, about) ? a.error.error : null)
@@ -45,7 +48,11 @@ export async function findAgent(again = false): Promise<void> {
   const mine = ++finding
   const answer = await plugin.request('agent.find').catch(requestFailed)
   if (mine !== finding || focusKey() !== where) return
-  set(agent, { where, agent: answer.ok ? answer.agent : null, busy: answer.ok ? answer.busy : null, asking: false, asked: null, error: null })
+  // What the agent was asked stays: a look-up from another offer must not drop it (the asked agent
+  // stopping still reopens the links, `askedStopped`). Another workspace starts afresh.
+  const was = read(agent)
+  const asked = was?.where === where ? was.asked : null
+  set(agent, { where, agent: answer.ok ? answer.agent : null, busy: answer.ok ? answer.busy : null, asking: false, asked, error: null })
 }
 
 /** Whether an agent changing state is looked for again: only when Orca names its workspace and that is
@@ -74,10 +81,9 @@ export function offerAgent(about: AskAbout, again = false): Promise<void> | void
  *  linked one by then; null for any other agent or state, while it works or asks a question, or
  *  when it was asked to fix a run. */
 export function askedStopped(e: { terminalId?: string; state: string }): LinkedKind | null {
-  const a = agentNow()
-  const asked = a?.asked
-  if (!asked || !('link' in asked) || !e.terminalId || e.terminalId !== a.agent?.terminalId) return null
-  return e.state === 'waiting' || e.state === 'done' ? asked.link : null
+  const asked = agentNow()?.asked
+  if (!asked || !('link' in asked.about) || !e.terminalId || e.terminalId !== asked.terminalId) return null
+  return e.state === 'waiting' || e.state === 'done' ? asked.about.link : null
 }
 
 /** Types the prompt about this into the free agent's terminal; the person presses Enter there. */
@@ -88,7 +94,10 @@ export async function askAgent(about: AskAbout): Promise<void> {
   set(agent, { ...a, asking: true, error: null })
   const answer = await plugin.request('agent.ask', { about, terminalId: offered.terminalId }).catch(requestFailed)
   if (focusKey() !== where) return
-  if (answer.ok) return set(agent, { ...a, agent: { ...offered, name: answer.agent }, asking: false, asked: about, error: null })
+  if (answer.ok) {
+    const asked = { about, terminalId: offered.terminalId, name: answer.agent }
+    return set(agent, { ...a, agent: { ...offered, name: answer.agent }, asking: false, asked, error: null })
+  }
   const error = { about, error: answer.error }
   if (answer.error.code !== 'no_agent') return set(agent, { ...a, asking: false, error })
   // No agent free any more: it says why, and asks again what the agent is doing now.

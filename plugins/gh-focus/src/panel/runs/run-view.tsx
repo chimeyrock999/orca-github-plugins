@@ -146,7 +146,7 @@ function Actions({ s, run }: { s: OpenRun; run: RunDetail }) {
         {s.busy && <Spinner label="Rerunning" labelHidden />}
       </Row>
       {fix && asked && (
-        <Callout tone="success" title={`Typed into ${fix.agent?.name ?? 'the agent'}`}>
+        <Callout tone="success" title={`Typed into ${fix.asked?.name ?? 'the agent'}`}>
           <Row>
             <Button size="sm" variant="ghost" onPress={dismissAsked}>
               Dismiss
