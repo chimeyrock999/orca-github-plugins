@@ -3,6 +3,7 @@
 // goes on; leaving the run aborts that request, and the panel closing ends it on the worker's side.
 import { atom, plugin, read, set, update } from 'orca'
 import type { Answer, DispatchForm, PanelError, RunDetail, RunLogs, RunRow } from '../../shared/protocol'
+import { agentNow, findAgent, forgetAsked, wasAsked } from '../agent/agent-store'
 import { back, choices, lists, load, loadChoices, requestFailed, setScope, tab, unsure } from '../store'
 
 /** The log on screen: the run's failed steps (`job` null) or one job's whole log. */
@@ -160,6 +161,27 @@ async function watch(): Promise<void> {
   }
 }
 
+/** The run on screen, done and failed: the one the workspace's agent can be asked to fix. */
+export function failedRunShown(): boolean {
+  const s = read(runView)
+  return read(tab) === 'runs' && isShown(s.id) && settled(s) && !!s.answer?.ok && s.answer.run.state === 'failure'
+}
+
+/** A failed run shows: the agent is looked for again (it may have started or stopped since another
+ *  view asked), unless it is being asked or was just asked about this run. */
+function offerAgent(): void {
+  const a = agentNow()
+  if (!failedRunShown() || a?.asking || wasAsked(a, { run: read(runView).id })) return
+  void findAgent(true)
+}
+
+/** Back from "typed into the agent" to the button; agent changes were not followed meanwhile, so it
+ *  is looked for again. */
+export function dismissAsked(): Promise<void> {
+  forgetAsked()
+  return findAgent(true)
+}
+
 /** What the worker posted for the watched run. */
 export function progress(run: RunDetail): void {
   if (!isShown(run.id)) {
@@ -171,12 +193,17 @@ export function progress(run: RunDetail): void {
   showRun(run)
   // A run that ended while watched: its failed steps are what to read now.
   const now = read(runView)
-  if (!was && settled(now) && run.state === 'failure' && !now.logs) void loadLogs(null)
+  if (!was && settled(now) && run.state === 'failure') {
+    if (!now.logs) void loadLogs(null)
+    offerAgent()
+  }
 }
 
 export async function loadRun(): Promise<void> {
   const view = views
   const id = read(runView).id
+  // The first answer for a run just opened (not a Refresh or a tab coming back) offers the agent.
+  const first = read(runView).answer === null
   const answer = await plugin.request('run.get', { id }).catch(requestFailed)
   if (view !== views) return
   if (answer.ok) showRun(answer.run)
@@ -184,6 +211,7 @@ export async function loadRun(): Promise<void> {
   if (!answer.ok) return
   const now = read(runView)
   if (settled(now) && answer.run.state === 'failure' && !now.logs) void loadLogs(null)
+  if (first) offerAgent()
   // The watch runs on its own: one lease after another, while the run goes on.
   void watch()
 }

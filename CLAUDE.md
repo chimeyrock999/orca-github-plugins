@@ -38,14 +38,17 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
     - `pulls/pulls.ts`: one pull request (refs, merge state, review decision, checks, timeline with
       reviews and the merge), its writes (a comment as on an issue, `gh pr edit`, `review`) and the
       branch's pull request (`gh pr view`).
-    - `runs/` (`runs.ts`, `logs.ts`, `workflow-inputs.ts`): one run, its logs, rerun, cancel, the
-      `run.watch` lease, and the Run workflow form.
+    - `runs/` (`runs.ts`, `logs.ts`, `workflow-inputs.ts`, `ask.ts`): one run, its logs, rerun,
+      cancel, the `run.watch` lease, the Run workflow form, and the prompt asking the agent to fix a
+      failed run.
   - `src/panel/`: panel side only; no DOM, no `node:`, only the `orca` catalog; state in atoms.
     - `views.tsx`, `store.ts`, `parts.tsx`: the tabs, their atoms, shared pieces; `refs.ts`: `#N`
       links.
     - `linked/` (`linked-view.tsx`, `link-store.ts`): the Issues and Pull requests tabs with nothing
       open: the linked list (nothing repo-wide), or how to link one (the command, Ask agent), and
       the hand-offs to Orca's Tasks page and Checks tab.
+    - `agent/` (`agent-store.ts`): the workspace's free agent the panel types into (Ask agent to
+      link one, Ask agent to fix a failed run), one state for the workspace on screen.
     - `thread/` (`thread-store.ts`, `thread-view.tsx`): an open issue or pull request (a thread), one
       per tab, and the pieces both draw (posts, reactions, timeline, pickers).
     - `issues/` (`issue-view.tsx`, `issue-store.ts`): the issue detail and state.

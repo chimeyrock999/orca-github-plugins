@@ -18,12 +18,12 @@ import {
   Toolbar,
   type PanelContext
 } from 'orca'
+import { findAgent, mayRefindAgent } from './panel/agent/agent-store'
 import { issue, issues } from './panel/issues/issue-store'
-import { findAgent, mayRefindAgent } from './panel/linked/link-store'
 import { pull, pulls } from './panel/pulls/pull-store'
 import { budget, budgetAnswered, budgetChanged, githubUrl, itemKey, lists, loadChoices, refresh, repo, requestFailed, selectTab, setRepo, tab, type Kind } from './panel/store'
 import { Problem } from './panel/parts'
-import { DISPATCH, loadForm, loadRun, progress, tabShown } from './panel/runs/run-store'
+import { DISPATCH, failedRunShown, loadForm, loadRun, progress, tabShown } from './panel/runs/run-store'
 import { KindView } from './panel/views'
 import { budgetWords } from './shared/look'
 
@@ -33,13 +33,18 @@ async function thenStart(step: Promise<void> | void, again = false): Promise<voi
   await step
   await issues.start(again)
   await pulls.start(again)
-  await agentIfNone(again)
+  await agentIfOffered(again)
 }
 
-/** The empty state offers a free agent to ask; it is looked for only when that state shows. */
-async function agentIfNone(again: boolean): Promise<void> {
+/** The empty state and a failed run offer a free agent to ask; it is looked for only when one of
+ *  them shows. */
+async function agentIfOffered(again: boolean): Promise<void> {
   const kind = read(tab)
-  if (kind === 'runs' || read(lists[kind]).open) return
+  if (kind === 'runs') {
+    if (failedRunShown()) await findAgent(again)
+    return
+  }
+  if (read(lists[kind]).open) return
   const t = kind === 'issues' ? issues : pulls
   if (t.linkedNow()?.refs?.length === 0) await findAgent(again)
 }
@@ -49,9 +54,9 @@ export function setup(ctx: PanelContext): void {
   ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void thenStart(setRepo(answer))))
   ctx.subscriptions.push(plugin.on('run.progress', ({ run }) => progress(run)))
   ctx.subscriptions.push(plugin.on('budget.changed', (answer) => budgetChanged(answer.budget)))
-  // An agent of the panel's workspace started or stopped (`agent:read` is enough): the empty state's
-  // offer follows it, with one agent.find and no GitHub call.
-  ctx.subscriptions.push(on('agent.status.changed', (e) => void (mayRefindAgent(e.workspaceListId) && agentIfNone(true))))
+  // An agent of the panel's workspace started or stopped (`agent:read` is enough): the offer on screen
+  // follows it, with one agent.find and no GitHub call.
+  ctx.subscriptions.push(on('agent.status.changed', (e) => void (mayRefindAgent(e.workspaceListId) && agentIfOffered(true))))
   void plugin.request('budget.get').then(
     (answer) => answer.ok && budgetAnswered(answer.budget),
     () => undefined

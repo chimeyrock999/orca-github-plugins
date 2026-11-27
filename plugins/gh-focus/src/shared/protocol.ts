@@ -96,6 +96,10 @@ export type FreeAgent = { name: string; terminalId: string }
  *  question. */
 export type BusyAgent = { name: string; state: 'working' | 'blocked' }
 
+/** What the agent is asked about: to link the workspace's issue or pull request, or to fix a
+ *  finished run that failed. */
+export type AskAbout = { link: LinkedKind } | { run: number }
+
 /** A linked issue or pull request as GitHub has it now. `state` and `updatedAt` are null when
  *  GitHub did not answer for it (gone, or this login cannot see it): then title and url are Orca's. */
 export type LinkedRow = {
@@ -391,9 +395,10 @@ declare module 'orca' {
     /** A free agent of the focused workspace (one not working or blocked): its name and terminal;
      *  null when none, and then `busy` names the one working or blocked there, if any. */
     'agent.find': { output: Answer<{ agent: FreeAgent | null; busy: BusyAgent | null }> }
-    /** Types a prompt into that agent's terminal asking it to link the workspace's issue or pull
-     *  request with `orca reference add`, when it is still free; Enter is left to the person. */
-    'agent.ask': { input: { kind: LinkedKind; terminalId: string }; output: Answer<{ agent: string }> }
+    /** Types a prompt into that agent's terminal, when it is still free: to link the workspace's
+     *  issue or pull request with `orca reference add`, or to fix a failed run, reading its failed
+     *  log with gh (the run read as `run.get` reads it). Enter is left to the person. */
+    'agent.ask': { input: { about: AskAbout; terminalId: string }; output: Answer<{ agent: string }> }
     /** One page of the focused repo's workflow runs, newest first. */
     'runs.list': { input: RunListInput; output: Answer<RunPage> }
     /** The focused repo's label names, for the label picker. */

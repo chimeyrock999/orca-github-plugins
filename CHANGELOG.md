@@ -10,6 +10,14 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+### Added
+
+**Actions**
+
+- A failed run offers "Ask <agent> to fix": it types one line into the workspace's free agent (the
+  run, its failed jobs, and the `gh run view --log-failed` command to read their log), without
+  Enter. While the agent works or waits on a question the button waits, disabled, and says why.
+
 ### Changed
 
 **Issues and pull requests**
@@ -18,6 +26,7 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
   agent's terminal runs.
 - The agent Link one offers is looked for again only when an agent of the workspace changes state,
   not when one in another workspace does.
+- "No agent free" no longer points to the link command: it says to ask again once an agent is free.
 
 **Elsewhere**
 

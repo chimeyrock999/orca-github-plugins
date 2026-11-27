@@ -4,7 +4,7 @@
 import { assert, hostError, mockHost, mount, test } from 'orca/testing'
 import * as panel from '../../../src/panel'
 import { before, failed, links, linkedRows, pullDetail, ref, repoOk, rowOf } from '../../fixtures/fixtures'
-import { findAgent } from '../../../src/panel/linked/link-store'
+import { findAgent } from '../../../src/panel/agent/agent-store'
 import { canReview, timing } from '../../../src/panel/pulls/pull-store'
 import type { PullDetail, TimelineItem } from '../../../src/shared/protocol'
 
@@ -223,7 +223,7 @@ test('Ask agent types the link prompt into the agent; the person presses Enter t
   const h = host({ 'repo.links': links() })
   const view = await openPull(h)
   await view.press({ type: 'Button', text: 'Ask Claude Code to link' })
-  assert.deepEqual(h.last('agent.ask'), { kind: 'pulls', terminalId: 't1' })
+  assert.deepEqual(h.last('agent.ask'), { about: { link: 'pulls' }, terminalId: 't1' })
   assert.ok(says(view, /Typed into Claude Code/))
   await view.press({ type: 'Button', text: 'Show the command again' })
   assert.ok(view.find({ type: 'Button', text: 'Ask Claude Code to link' }))

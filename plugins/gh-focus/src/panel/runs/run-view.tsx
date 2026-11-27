@@ -24,6 +24,7 @@ import {
   type KeyValueItem
 } from 'orca'
 import { bytes, count, duration, expiry, localTime, runCause, runLook } from '../../shared/look'
+import { agentNow, askAgent, forgetAsked, wasAsked } from '../agent/agent-store'
 import { Glyph, Problem } from '../parts'
 import type { DispatchInput, LogStep, RunArtifact, RunDetail, RunJob, RunLogs } from '../../shared/protocol'
 import {
@@ -32,6 +33,7 @@ import {
   askReview,
   backToRuns,
   cancelRun,
+  dismissAsked,
   dismissError,
   dispatch,
   forgetRequested,
@@ -125,18 +127,51 @@ function Actions({ s, run }: { s: OpenRun; run: RunDetail }) {
     )
   }
   const failed = run.jobs.some((j) => j.state === 'failure' || j.state === 'cancelled')
+  const fix = run.state === 'failure' ? agentNow() : null
+  const asked = wasAsked(fix, { run: run.id })
   return (
-    <Row gap="xs" align="center" wrap>
-      {failed && (
-        <Button size="sm" variant="outline" disabled={!!s.busy} onPress={() => rerun(true)}>
-          Rerun failed jobs
+    <Stack gap="xs">
+      <Row gap="xs" align="center" wrap>
+        {failed && (
+          <Button size="sm" variant="outline" disabled={!!s.busy} onPress={() => rerun(true)}>
+            Rerun failed jobs
+          </Button>
+        )}
+        <Button size="sm" variant="outline" disabled={!!s.busy} onPress={() => rerun(false)}>
+          Rerun all jobs
         </Button>
+        {fix && !asked && <AskToFix run={run} />}
+        {s.busy && <Spinner label="Rerunning" labelHidden />}
+      </Row>
+      {fix && asked && (
+        <Callout tone="success" title={`Typed into ${fix.agent?.name ?? 'the agent'}`}>
+          <Row>
+            <Button size="sm" variant="ghost" onPress={dismissAsked}>
+              Dismiss
+            </Button>
+          </Row>
+        </Callout>
       )}
-      <Button size="sm" variant="outline" disabled={!!s.busy} onPress={() => rerun(false)}>
-        Rerun all jobs
-      </Button>
-      {s.busy && <Spinner label="Rerunning" labelHidden />}
-    </Row>
+      {fix && !asked && !fix.agent && fix.busy && (
+        <Text size="xs" muted>
+          {fix.busy.state === 'blocked' ? `${fix.busy.name} is waiting on a question. Answer it, then ask.` : `${fix.busy.name} is working. Ask it once it stops.`}
+        </Text>
+      )}
+      {fix?.error && <Problem error={fix.error} onRetry={forgetAsked} retryLabel="Dismiss" />}
+    </Stack>
+  )
+}
+
+/** Asks the workspace's free agent to fix the failed run: never while it works or waits on a
+ *  question (the button shows disabled, with why below it), and not at all with no agent. */
+function AskToFix({ run }: { run: RunDetail }) {
+  const a = agentNow()
+  const name = a?.agent?.name ?? a?.busy?.name
+  if (!a || !name) return null
+  return (
+    <Button size="sm" variant="outline" icon="agent" disabled={!a.agent || a.asking} onPress={() => askAgent({ run: run.id })}>
+      {a.asking ? 'Asking…' : `Ask ${name} to fix`}
+    </Button>
   )
 }
 
