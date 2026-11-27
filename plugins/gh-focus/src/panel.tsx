@@ -19,7 +19,7 @@ import {
   type PanelContext
 } from 'orca'
 import { issue, issues } from './panel/issues/issue-store'
-import { findAgent, mayRefindAgent } from './panel/linked/link-store'
+import { askedStopped, findAgent, mayRefindAgent } from './panel/linked/link-store'
 import { pull, pulls } from './panel/pulls/pull-store'
 import { budget, budgetAnswered, budgetChanged, githubUrl, itemKey, lists, loadChoices, refresh, repo, requestFailed, selectTab, setRepo, tab, type Kind } from './panel/store'
 import { Problem } from './panel/parts'
@@ -47,6 +47,17 @@ async function agentIfNone(again: boolean): Promise<void> {
   if (t.linkedNow()?.refs?.length === 0) await findAgent(again)
 }
 
+/** An agent changed state. The one asked to link an item stopped while the tab it was asked from
+ *  still has nothing linked: that tab asks Orca again what it links (no GitHub call on Issues; on
+ *  Pull requests the branch's, kept a short while), and opens what the agent linked as Refresh
+ *  would; nothing yet leaves the callout. */
+async function agentChanged(e: { workspaceListId?: string; terminalId?: string; state: string }): Promise<void> {
+  const kind = askedStopped(e)
+  const t = kind && (kind === 'issues' ? issues : pulls)
+  if (t) return t.linkedNow()?.refs?.length === 0 ? t.start(true) : undefined
+  if (mayRefindAgent(e.workspaceListId)) await agentIfNone(true)
+}
+
 /** Runs once before the first render; what it pushes to `subscriptions` ends with the panel. */
 export function setup(ctx: PanelContext): void {
   // What changed while away is asked beside the tab's own requests, once the repo answer is set.
@@ -59,8 +70,9 @@ export function setup(ctx: PanelContext): void {
   ctx.subscriptions.push(plugin.on('run.progress', ({ run }) => progress(run)))
   ctx.subscriptions.push(plugin.on('budget.changed', (answer) => budgetChanged(answer.budget)))
   // An agent of the panel's workspace started or stopped (`agent:read` is enough): the empty state's
-  // offer follows it, with one agent.find and no GitHub call.
-  ctx.subscriptions.push(on('agent.status.changed', (e) => void (mayRefindAgent(e.workspaceListId) && agentIfNone(true))))
+  // offer follows it, with one agent.find and no GitHub call; the asked agent stopping re-reads the
+  // links instead (`agentChanged`).
+  ctx.subscriptions.push(on('agent.status.changed', (e) => void agentChanged(e)))
   void plugin.request('budget.get').then(
     (answer) => answer.ok && budgetAnswered(answer.budget),
     () => undefined
