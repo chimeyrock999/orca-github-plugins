@@ -2,7 +2,7 @@
 // ask it to link one, a failed run asks it to fix the run. One agent state for the workspace on
 // screen, shared by both.
 import { atom, plugin, read, set } from 'orca'
-import type { AskAbout, BusyAgent, FreeAgent, PanelError } from '../../shared/protocol'
+import type { AskAbout, BusyAgent, FreeAgent, LinkedKind, PanelError } from '../../shared/protocol'
 import { repo, requestFailed } from '../store'
 import { focusKey } from '../thread/thread-store'
 
@@ -40,14 +40,25 @@ export async function findAgent(again = false): Promise<void> {
 
 /** Whether an agent changing state is looked for again: only when Orca names its workspace and that is
  *  the panel's (`workspaceListId`; only the panel's agents are offered, and Orca names none for a pane
- *  tied to no workspace), and not while
- *  it is being asked or once it was asked (Enter on the prompt sets it working, and the callout
- *  stays until Refresh). */
+ *  tied to no workspace), and not while it is being asked or once it was asked (Enter on the prompt
+ *  sets it working, and the callout stays until the agent asked to link one stops, see
+ *  `askedStopped`, or until Dismiss or Refresh). */
 export function mayRefindAgent(workspaceListId?: string): boolean {
   const r = read(repo)
   if (!workspaceListId || (r?.ok && r.workspaceId !== workspaceListId)) return false
   const a = agentNow()
   return !a?.asking && !a?.asked
+}
+
+/** The kind to ask Orca about again when an agent changes state: the one the agent on screen was
+ *  asked to link, once that agent (its terminal) stops (`waiting` or `done`), since it may have
+ *  linked one by then; null for any other agent or state, while it works or asks a question, or
+ *  when it was asked to fix a run. */
+export function askedStopped(e: { terminalId?: string; state: string }): LinkedKind | null {
+  const a = agentNow()
+  const asked = a?.asked
+  if (!asked || !('link' in asked) || !e.terminalId || e.terminalId !== a.agent?.terminalId) return null
+  return e.state === 'waiting' || e.state === 'done' ? asked.link : null
 }
 
 /** Types the prompt about this into the free agent's terminal; the person presses Enter there. */
