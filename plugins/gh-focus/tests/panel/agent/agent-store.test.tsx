@@ -20,7 +20,7 @@ function host(agent: () => unknown, overrides: Record<string, unknown> = {}) {
     'run.logs': () => ({ ok: true, logs: failedLogs() }),
     'run.watch': () => ({ ok: true, done: true }),
     'agent.find': agent,
-    'agent.ask': () => ({ ok: true, agent: 'Claude Code' }),
+    'agent.ask': () => ({ ok: true, agent: 'Claude Code', working: false }),
     ...overrides
   }
   const logged = Object.fromEntries(

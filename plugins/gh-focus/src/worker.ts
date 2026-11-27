@@ -96,7 +96,7 @@ async function findAgent(
 
 /** Types a prompt into the agent the panel offered, while it still takes one and is in the panel's
  *  workspace, without Enter: the person reads it and sends it. */
-async function askAgent(orca: OrcaWorkerApi, at: AgentPlace, terminalId: string, text: string): Promise<Answer<{ agent: string }>> {
+async function askAgent(orca: OrcaWorkerApi, at: AgentPlace, terminalId: string, text: string): Promise<Answer<{ agent: string; working: boolean }>> {
   const here = await workspaceAgents(orca, at, terminalId)
   if (!here.ok) return here
   const [agent] = here.agents
@@ -106,7 +106,7 @@ async function askAgent(orca: OrcaWorkerApi, at: AgentPlace, terminalId: string,
   try {
     const { accepted } = await orca.host.call('terminal.sendText', { terminalId, text, enter: false })
     if (!accepted) return { ok: false, error: { code: 'no_agent', message: `${agentName(agent)} did not take the text.` } }
-    return { ok: true, agent: agentName(agent) }
+    return { ok: true, agent: agentName(agent), working: agent.state === 'working' }
   } catch (error) {
     return { ok: false, error: hostFailure(error) }
   }

@@ -9,14 +9,14 @@ import type { LinkedRef } from '../../../src/shared/protocol'
 type Links = ReturnType<typeof links>
 
 /** A host whose `repo.links` answers `linked()` at each call, so a test links an item midway. */
-function host(linked: () => Links) {
+function host(linked: () => Links, askedAtWork = false) {
   const asked: { name: string; input: unknown }[] = []
   const requests: Record<string, (input: never) => unknown> = {
     'repo.get': () => repoOk,
     'repo.links': () => linked(),
     'items.get': ({ items }: { items: LinkedRef[] }) => linkedRows(items),
     'agent.find': () => ({ ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null }),
-    'agent.ask': () => ({ ok: true, agent: 'Claude Code' }),
+    'agent.ask': () => ({ ok: true, agent: 'Claude Code', working: askedAtWork }),
     'issue.get': () => ({ ok: true, issue: issueDetail() }),
     'pull.get': ({ number }: { number: number }) => ({ ok: true, pull: { ...pullDetail(), number } })
   }
@@ -112,19 +112,35 @@ test('the callout says the item opens by itself once linked', async () => {
 
 test('asked while at work, the agent stopping from its earlier task reads nothing; it starts on the ask, then its stop does', async () => {
   let now = links()
-  const h = host(() => now)
+  const h = host(() => now, true)
   const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'pulls' } } })
   await view.press({ type: 'Button', text: 'Ask Claude Code to link' })
   const before = h.count('repo.links')
-  // The earlier task ends: the prompt still waits in its input.
+  // The earlier task goes on (Orca reports each step as working again), then ends: the prompt still
+  // waits in its input.
+  await view.emit('agent.status.changed', { ...stopped, state: 'working' })
+  await view.emit('agent.status.changed', { ...stopped, state: 'working' })
   await view.emit('agent.status.changed', stopped)
   assert.equal(h.count('repo.links'), before)
   assert.ok(says(view, /Typed into Claude Code/))
-  // Enter sends it: it works on the ask, links 124 and stops.
+  // Enter sends it: it works on the ask (several steps), links 124 and stops.
+  await view.emit('agent.status.changed', { ...stopped, state: 'working' })
   await view.emit('agent.status.changed', { ...stopped, state: 'working' })
   now = links([], [124])
   await view.emit('agent.status.changed', stopped)
   assert.equal(h.count('repo.links'), before + 1)
   assert.deepEqual(h.last('pull.get'), { number: 124 })
+  await view.unmount()
+})
+
+test('asked while it waited, Enter sets it working: that start counts, and its stop opens the item', async () => {
+  let now = links()
+  const h = host(() => now)
+  const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'issues' } } })
+  await view.press({ type: 'Button', text: 'Ask Claude Code to link' })
+  await view.emit('agent.status.changed', { ...stopped, state: 'working' })
+  now = links([8])
+  await view.emit('agent.status.changed', stopped)
+  assert.equal(h.count('issue.get'), 1)
   await view.unmount()
 })

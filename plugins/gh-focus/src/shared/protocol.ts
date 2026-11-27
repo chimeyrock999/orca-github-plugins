@@ -398,10 +398,11 @@ declare module 'orca' {
      *  question; at work or not): its name and terminal; null when none, and then `busy` names the
      *  one waiting on a question there, if any. */
     'agent.find': { output: Answer<{ agent: FreeAgent | null; busy: BusyAgent | null }> }
-    /** Types a prompt into that agent's terminal, when it is still free: to link the workspace's
+    /** Types a prompt into that agent's terminal, while it still takes one: to link the workspace's
      *  issue or pull request with `orca reference add`, or to fix a failed run, reading its failed
-     *  log with gh (the run read as `run.get` reads it). Enter is left to the person. */
-    'agent.ask': { input: { about: AskAbout; terminalId: string }; output: Answer<{ agent: string }> }
+     *  log with gh (the run read as `run.get` reads it). Enter is left to the person. `working`: the
+     *  agent was at work when the prompt went in, so its next stop ends its earlier task. */
+    'agent.ask': { input: { about: AskAbout; terminalId: string }; output: Answer<{ agent: string; working: boolean }> }
     /** One page of the focused repo's workflow runs, newest first. */
     'runs.list': { input: RunListInput; output: Answer<RunPage> }
     /** The focused repo's label names, for the label picker. */

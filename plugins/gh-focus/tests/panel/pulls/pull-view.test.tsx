@@ -22,7 +22,7 @@ function host(overrides: Record<string, unknown> = {}, detail: (number: number) 
     'repo.links': links([], [124]),
     'items.get': ({ items }: { items: Parameters<typeof linkedRows>[0] }) => linkedRows(items, 'pulls'),
     'agent.find': { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null },
-    'agent.ask': { ok: true, agent: 'Claude Code' },
+    'agent.ask': { ok: true, agent: 'Claude Code', working: false },
     // The pull request asked for, so each number opens its own.
     'pull.get': ({ number }: { number: number }) => ({ ok: true, pull: { ...detail(number), number, url: `https://github.com/octo/app/pull/${number}` } }),
     'pull.comment': () => ok,

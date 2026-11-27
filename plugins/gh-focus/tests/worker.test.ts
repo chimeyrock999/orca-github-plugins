@@ -391,7 +391,7 @@ test('the agents are those Orca lists for the panel\'s workspace id; agent.ask t
   let accepted = true
   const worker = await mountWorker(listWorker(noGh), { host })
   assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Claude Code', terminalId: 't-free' }, busy: null })
-  assert.deepEqual(await worker.request('agent.ask', { about: { link: 'pulls' }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code' })
+  assert.deepEqual(await worker.request('agent.ask', { about: { link: 'pulls' }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code', working: false })
   assert.deepEqual(host.callsOf('agents.list'), [{ workspaceId: 'w-spike' }, { workspaceId: 'w-spike' }])
   assert.deepEqual(host.callsOf('terminal.sendText'), [
     {
@@ -452,7 +452,7 @@ test('agent.ask about a failed run types the fix prompt, read as run.get reads t
   const worker = await mountWorker(runWorker(gh), { host })
   assert.equal((await worker.request('run.get', { id: 9 })).ok, true)
   const shown = reads.length
-  assert.deepEqual(await worker.request('agent.ask', { about: { run: 9 }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code' })
+  assert.deepEqual(await worker.request('agent.ask', { about: { run: 9 }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code', working: false })
   // The run on screen is kept: asking about it costs no gh call.
   assert.equal(reads.length, shown)
   assert.deepEqual(host.callsOf('terminal.sendText'), [
@@ -465,8 +465,8 @@ test('agent.ask about a failed run types the fix prompt, read as run.get reads t
   // At work, it still takes the prompt: the text waits in its input, without Enter.
   agents = [{ ...agents[0], state: 'working' }]
   assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: { name: 'Claude Code', terminalId: 't-free' }, busy: null })
-  assert.deepEqual(await worker.request('agent.ask', { about: { run: 9 }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code' })
-  assert.deepEqual(await worker.request('agent.ask', { about: { link: 'issues' }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code' })
+  assert.deepEqual(await worker.request('agent.ask', { about: { run: 9 }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code', working: true })
+  assert.deepEqual(await worker.request('agent.ask', { about: { link: 'issues' }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code', working: true })
   // Waiting on a question meanwhile: refused, nothing typed.
   agents = [{ ...agents[0], state: 'blocked' }]
   const busy = await worker.request('agent.ask', { about: { run: 9 }, terminalId: 't-free' })

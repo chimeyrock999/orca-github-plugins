@@ -580,7 +580,7 @@ const fails = (view: Awaited<ReturnType<typeof mount>>, text: RegExp) => view.su
 const agentStatus = { workspaceId: 'raw-app', workspaceListId: repoOk.workspaceId, paneKey: 'p1', terminalId: 't1', state: 'done' as const, receivedAt: 1 }
 
 test('a failed run asks the free agent to fix it: the prompt is typed, and the callout stays until Dismiss', async () => {
-  const h = host({ 'agent.find': () => free, 'agent.ask': { ok: true, agent: 'Claude Code' } })
+  const h = host({ 'agent.find': () => free, 'agent.ask': { ok: true, agent: 'Claude Code', working: false } })
   const view = await openRun(h)
   assert.equal(h.count('agent.find'), 1)
   await view.press({ type: 'Button', text: 'Ask Claude Code to fix' })
