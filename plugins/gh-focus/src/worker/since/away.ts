@@ -10,8 +10,9 @@ export const AWAY_LIMIT = 100
 export class Away {
   /** When focus last left each workspace not focused now. */
   private readonly left = new Map<string, number>()
-  /** The start of each absence not yet dismissed, by workspace. */
-  private readonly since = new Map<string, number>()
+  /** Each absence not yet dismissed, by workspace: when it began, and when the person last came
+   *  back from one (a later absence keeps `from` and moves `back`). */
+  private readonly since = new Map<string, { from: number; back: number }>()
   private here: string | null = null
 
   constructor(private readonly now: () => number = Date.now) {}
@@ -34,12 +35,19 @@ export class Away {
       }
     }
     this.here = id
-    if (id && left !== undefined && at - left >= AWAY_MS && !this.since.has(id)) this.since.set(id, left)
+    if (!id || left === undefined || at - left < AWAY_MS) return
+    this.since.set(id, { from: this.since.get(id)?.from ?? left, back: at })
   }
 
   /** When the absence the person came back from began, or null. */
   sinceOf(id: string): number | null {
-    return this.since.get(id) ?? null
+    return this.since.get(id)?.from ?? null
+  }
+
+  /** When the person last came back from an absence, or null: a short visit elsewhere since then
+   *  leaves it, so an answer for it holds through such visits. */
+  backOf(id: string): number | null {
+    return this.since.get(id)?.back ?? null
   }
 
   dismiss(id: string): void {

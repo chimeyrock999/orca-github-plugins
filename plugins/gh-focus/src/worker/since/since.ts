@@ -8,6 +8,9 @@ import { isRepoName, LINKED_LIMIT, type LinkedRef, type RunRow, type SinceItem }
 
 /** Commenters named per item, newest first. */
 export const COMMENTERS = 3
+/** Reviews read per pull request: each reply in a review thread is a review of its own, so an
+ *  approval needs room to stay in the window behind them. */
+export const REVIEWS = 100
 
 const COMMENT = `... on IssueComment { createdAt author { login } }`
 const STATE = `... on ClosedEvent { createdAt } ... on ReopenedEvent { createdAt }`
@@ -20,9 +23,8 @@ const ISSUE = `... on Issue {
 const PULL = `... on PullRequest {
     number title state isDraft merged
     pc: timelineItems(since: $since, itemTypes: [ISSUE_COMMENT], last: ${COMMENTERS}) { filteredCount nodes { ${COMMENT} } }
-    pe: timelineItems(since: $since, itemTypes: [CLOSED_EVENT, REOPENED_EVENT, MERGED_EVENT, PULL_REQUEST_REVIEW], last: 30) {
-      nodes { __typename ${STATE} ... on MergedEvent { createdAt } ... on PullRequestReview { state createdAt author { login } } }
-    }
+    pe: timelineItems(since: $since, itemTypes: [CLOSED_EVENT, REOPENED_EVENT, MERGED_EVENT], last: 10) { nodes { __typename ${STATE} ... on MergedEvent { createdAt } } }
+    pr: timelineItems(since: $since, itemTypes: [PULL_REQUEST_REVIEW], last: ${REVIEWS}) { nodes { __typename ... on PullRequestReview { state createdAt author { login } } } }
   }`
 
 type Event = { __typename: string; createdAt: string; state?: string; author?: { login: string } | null }
@@ -39,6 +41,7 @@ type Node = {
   ie?: Timeline
   pc?: Timeline
   pe?: Timeline
+  pr?: Timeline
 }
 
 /** The query: a `repository` per repo with an `issueOrPullRequest` per number and, with `branch`,
@@ -64,7 +67,7 @@ export function sinceItem(node: Node, repo: string | null): SinceItem | null {
   const pull = node.__typename === 'PullRequest'
   if (!pull && node.__typename !== 'Issue') return null
   const comments = (pull ? node.pc : node.ic) ?? { nodes: [] }
-  const others = ((pull ? node.pe : node.ie)?.nodes ?? []).filter((e): e is Event => !!e)
+  const others = [...((pull ? node.pe : node.ie)?.nodes ?? []), ...((pull ? node.pr?.nodes : null) ?? [])].filter((e): e is Event => !!e)
   const said = comments.nodes.filter((e): e is Event => !!e)
   const commenters = [...new Set(said.map((e) => e.author?.login ?? 'ghost').reverse())].slice(0, COMMENTERS)
   // Each reviewer's latest review, as GitHub's review decision counts them: a comment-only review

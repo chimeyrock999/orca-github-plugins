@@ -368,6 +368,25 @@ test('coming back after an absence costs one GraphQL query and one conditional r
   // Asked again (the panel reopened): kept. The Actions tab's first page is the same read.
   assert.deepEqual(await cost(() => worker.request('since.get', here)), [])
   assert.deepEqual(await cost(() => worker.request('runs.list', BRANCH_RUNS)), [])
+  // Short visits elsewhere and back, the block still up: the same answer, nothing asked again.
+  for (let i = 0; i < 3; i++) {
+    await focus('app')
+    wait(60_000)
+    await focus('spike')
+    assert.deepEqual(await cost(() => worker.request('since.get', here)), [])
+    const again = await worker.request('since.get', here)
+    assert.equal(again.ok && again.since, left)
+  }
+  // Refresh asks GitHub again.
+  await worker.request('cache.drop')
+  assert.equal((await cost(() => worker.request('since.get', here))).length, 2)
+  // Another absence, not dismissed: asked again, still since the first one began.
+  await focus('app')
+  wait(AWAY_MS)
+  await focus('spike')
+  assert.equal((await cost(() => worker.request('since.get', here))).length, 2)
+  const later = await worker.request('since.get', here)
+  assert.equal(later.ok && later.since, left)
   // Dismissed: nothing until the next absence.
   await worker.request('since.dismiss', here)
   assert.deepEqual(await cost(() => worker.request('since.get', here)), [])

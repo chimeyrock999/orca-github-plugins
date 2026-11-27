@@ -20,7 +20,7 @@ import {
 } from './worker/issues/issues'
 import { agentName, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, type AgentRow } from './worker/linked/linked'
 import { listLabels, listRuns, listWorkflows, type RepoRef } from './worker/lists'
-import { BRANCH_RUNS, isRepoName, type Answer, type GitHubBudget, type LinkedKind, type LinkedRef, type OrcaView, type RunListInput, type RunState } from './shared/protocol'
+import { BRANCH_RUNS, isRepoName, type Answer, type GitHubBudget, type LinkedKind, type LinkedRef, type OrcaView, type RunListInput, type RunState, type Since } from './shared/protocol'
 import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, readyPull, reviewPull } from './worker/pulls/pulls'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './worker/repo/repo'
 import { Away } from './worker/since/away'
@@ -222,10 +222,14 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   // When the person left each workspace; the panel asks what changed since on their return.
   const away = new Away(deps.now)
   orca.events.on('workspace.changed', ({ context }) => away.focus(context?.workspaceId ?? null))
+  // The answer for each workspace's latest return (`back`), held until Dismiss, Refresh or the next
+  // absence: short visits elsewhere and back show the same block without asking GitHub again.
+  const told = new Map<string, { back: number; answer: Since }>()
 
   orca.panels.handle('repo.get', () => tracker.get())
   orca.panels.handle('cache.drop', () => {
     reads.clear()
+    told.clear()
     return { ok: true as const }
   })
   orca.panels.handle('budget.get', () => ({ ok: true as const, budget: shownBudget(budget.shown()) }))
@@ -258,7 +262,10 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
     const repo = await tracker.get()
     if (!repo.ok) return repo
     const since = repo.workspaceId === workspaceId ? away.sinceOf(workspaceId) : null
-    if (since === null) return { ok: true as const, since: null, items: [], runs: [], skipped: false, viewer: null }
+    const back = away.backOf(workspaceId)
+    if (since === null || back === null) return { ok: true as const, since: null, items: [], runs: [], skipped: false, viewer: null }
+    const held = told.get(workspaceId)
+    if (held?.back === back) return { ok: true as const, ...held.answer }
     try {
       const branch = (await deps.branch?.(repo.path)) ?? null
       const skipped = budget.low()
@@ -271,13 +278,17 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
               return kept('items', SHORT_MS, repo, ['since', since, branch, linked], signal, (s) => sinceItems(gh, repo, linked, since, branch, s), { also: others })
             })
       ])
-      return { ok: true as const, since, ...found, runs, skipped }
+      const answer: Since = { since, ...found, runs, skipped }
+      // Only an answer for the return still current is held.
+      if (away.backOf(workspaceId) === back) told.set(workspaceId, { back, answer })
+      return { ok: true as const, ...answer }
     } catch (error) {
       return toFailure(error)
     }
   })
   orca.panels.handle('since.dismiss', ({ workspaceId }) => {
     away.dismiss(workspaceId)
+    told.delete(workspaceId)
     return { ok: true as const }
   })
   orca.panels.handle('labels.list', (input, { signal }) =>

@@ -41,6 +41,7 @@ const pull = (n: number, change: object = {}) => ({
   merged: false,
   pc: { filteredCount: 0, nodes: [] },
   pe: { nodes: [] },
+  pr: { nodes: [] },
   ...change
 })
 const comment = (login: string | null, min: number) => ({ createdAt: at(min), author: login ? { login } : null })
@@ -57,7 +58,9 @@ test('sinceQuery: timeline items since $since only, issues and pull requests und
   // The newest pull request of the branch, when its name was used before.
   assert.match(q, /associatedPullRequests\(first: 1, orderBy: \{ field: CREATED_AT, direction: DESC \}\)/)
   assert.ok(q.indexOf('branch: ref') < q.indexOf('r1:'))
-  for (const name of ['ic', 'ie', 'pc', 'pe']) assert.match(q, new RegExp(`${name}: timelineItems\\(since: \\$since`))
+  for (const name of ['ic', 'ie', 'pc', 'pe', 'pr']) assert.match(q, new RegExp(`${name}: timelineItems\\(since: \\$since`))
+  // Reviews in their own window, so thread replies cannot push an approval out of the state events'.
+  assert.match(q, /pr: timelineItems\(since: \$since, itemTypes: \[PULL_REQUEST_REVIEW\], last: 100\)/)
   const plain = sinceQuery(['octo/app'], [[8]], false)
   assert.match(plain, /^query\(\$since: DateTime!\) \{/)
   assert.ok(!plain.includes('$branch'))
@@ -69,17 +72,8 @@ test('sinceItem: comments (count, newest commenters first), each reviewer’s la
       state: 'MERGED',
       merged: true,
       pc: { filteredCount: 7, nodes: [comment('ana', 1), comment('olu', 2), comment(null, 3)] },
-      pe: {
-        nodes: [
-          review('olu', 'CHANGES_REQUESTED', 1),
-          review('ana', 'COMMENTED', 2),
-          review('olu', 'APPROVED', 4),
-          review('mai', 'PENDING', 5),
-          review('kim', 'DISMISSED', 5),
-          event('MergedEvent', 6),
-          event('ClosedEvent', 6)
-        ]
-      }
+      pr: { nodes: [review('olu', 'CHANGES_REQUESTED', 1), review('ana', 'COMMENTED', 2), review('olu', 'APPROVED', 4), review('mai', 'PENDING', 5), review('kim', 'DISMISSED', 5)] },
+      pe: { nodes: [event('MergedEvent', 6), event('ClosedEvent', 6)] }
     }),
     null
   )
@@ -101,11 +95,17 @@ test('sinceItem: comments (count, newest commenters first), each reviewer’s la
 })
 
 test('sinceItem: a comment-only review after an approval or a change request keeps it, as GitHub’s review decision does', () => {
-  const item = sinceItem(pull(23, { pe: { nodes: [review('olu', 'APPROVED', 1), review('olu', 'COMMENTED', 2), review('ana', 'CHANGES_REQUESTED', 3), review('ana', 'COMMENTED', 4)] } }), null)
+  const item = sinceItem(pull(23, { pr: { nodes: [review('olu', 'APPROVED', 1), review('olu', 'COMMENTED', 2), review('ana', 'CHANGES_REQUESTED', 3), review('ana', 'COMMENTED', 4)] } }), null)
   assert.deepEqual(item?.reviews, [
     { author: 'ana', state: 'changes_requested' },
     { author: 'olu', state: 'approved' }
   ])
+})
+
+test('sinceItem: an approval followed by many thread replies (each a commented review) still reads approved', () => {
+  const replies = Array.from({ length: 60 }, (_, i) => review('olu', 'COMMENTED', 2 + i / 100))
+  const item = sinceItem(pull(24, { pr: { nodes: [review('olu', 'APPROVED', 1), ...replies] } }), null)
+  assert.deepEqual(item?.reviews, [{ author: 'olu', state: 'approved' }])
 })
 
 test('sinceItem: an issue closed and reopened says both, in order; one with nothing new is null', () => {
@@ -119,7 +119,7 @@ test('sinceItem: an issue closed and reopened says both, in order; one with noth
   })
   assert.equal(sinceItem(issue(9), null), null)
   // A review still pending is the viewer's own draft, not news.
-  assert.equal(sinceItem(pull(22, { pe: { nodes: [review('ana', 'PENDING', 1)] } }), null), null)
+  assert.equal(sinceItem(pull(22, { pr: { nodes: [review('ana', 'PENDING', 1)] } }), null), null)
 })
 
 test('sinceItems: one query with since as a variable; changed items newest first, of other repos by name', async () => {
