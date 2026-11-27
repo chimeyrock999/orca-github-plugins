@@ -248,8 +248,8 @@ test('Ask agent types the link prompt into the agent; the person presses Enter t
   await none.unmount()
 })
 
-/** What Orca sends a panel when an agent starts or stops, here or in another workspace. */
-const agentStatus = { workspaceId: null, paneKey: 'p1', terminalId: 't1', state: 'done' as const, receivedAt: 1 }
+/** What Orca sends a panel when an agent of the panel's workspace starts or stops. */
+const agentStatus = { workspaceId: 'raw-app', workspaceListId: repoOk.workspaceId, paneKey: 'p1', terminalId: 't1', state: 'done' as const, receivedAt: 1 }
 
 test('a busy agent is named, and Ask comes by itself once it stops, without Refresh', async () => {
   let found: unknown = { ok: true, agent: null, busy: { name: 'Claude Code', state: 'working' } }
@@ -305,7 +305,7 @@ test('two looks for the agent in flight (events in quick succession): only the l
   await view.unmount()
 })
 
-test('only an agent of the panel\'s workspace, or one Orca ties to none, is looked for again', async () => {
+test('only an agent of the panel\'s workspace is looked for again', async () => {
   const h = host({ 'repo.links': links(), 'agent.find': { ok: true, agent: null, busy: { name: 'Claude Code', state: 'working' } } })
   const view = await openPull(h)
   assert.equal(h.count('agent.find'), 1)
@@ -313,11 +313,11 @@ test('only an agent of the panel\'s workspace, or one Orca ties to none, is look
   await view.emit('agent.status.changed', { ...agentStatus, workspaceId: 'raw-other', workspaceListId: 'w-other' })
   assert.equal(h.count('agent.find'), 1)
   // The panel's own workspace: asked again.
-  await view.emit('agent.status.changed', { ...agentStatus, workspaceId: 'raw-app', workspaceListId: repoOk.workspaceId })
-  assert.equal(h.count('agent.find'), 2)
-  // No list id (a host below API 1.7, or a pane Orca ties to no workspace): asked again, as before.
   await view.emit('agent.status.changed', agentStatus)
-  assert.equal(h.count('agent.find'), 3)
+  assert.equal(h.count('agent.find'), 2)
+  // No list id: a pane Orca ties to no workspace, which cannot be the panel's. Nothing is asked.
+  await view.emit('agent.status.changed', { workspaceId: null, paneKey: 'p2', terminalId: 't2', state: 'done', receivedAt: 2 })
+  assert.equal(h.count('agent.find'), 2)
   await view.unmount()
 })
 
