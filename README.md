@@ -40,7 +40,7 @@ Three tabs, each about the workspace in focus. Switch workspace and the panel fo
 | :--- | :--- | :--- |
 | **Issues** | The issues Orca links to the workspace: one opens by itself, several make a short list. One of another repo opens here too. | Comment, edit or delete comments, react, close (completed, not planned, duplicate) or reopen, edit the title, body, labels and assignees. |
 | **Pull requests** | The workspace's pull request (linked in Orca, or the branch's), with its review decision, whether it can merge, and one line for its checks. | Comment, react, edit, review (Comment, Approve, Request changes), Ready for review or Convert to draft. |
-| **Actions** | The runs of the workspace's branch, or every branch, with search and filters, and live updates while a run goes. | Open jobs and steps with failed logs already open, rerun or cancel, approve a waiting deployment, see artifacts, Run workflow with its inputs. |
+| **Actions** | The runs of the workspace's branch, or every branch, with search and filters, and live updates while a run goes. | Open jobs and steps with failed logs already open, rerun or cancel, approve a waiting deployment, see artifacts, Run workflow with its inputs, ask the workspace's agent to fix a failed run. |
 
 <table>
   <tr>
@@ -53,7 +53,9 @@ Three tabs, each about the workspace in focus. Switch workspace and the panel fo
   </tr>
 </table>
 
-**Nothing linked yet?** The panel shows the `orca reference add` command that links an issue to the workspace, and **Ask agent** types that request into the workspace's free agent, without pressing Enter, so you read it and send it. While the agent works or waits on a question, the panel names it and offers Ask agent by itself once it stops.
+**Nothing linked yet?** The panel shows the `orca reference add` command that links an issue to the workspace, and **Ask agent** types that request into the workspace's agent, without pressing Enter, so you read it and send it. An agent at work takes it too: the text waits in its input. While the agent waits on a question, the panel names it and offers Ask agent by itself once it is answered.
+
+**A run failed?** **Ask agent to fix** types one line into the same agent: the run, its failed jobs, and the `gh run view --log-failed` command that reads their log. Again without Enter.
 
 **Since you were here.** Come back to a workspace after 10 minutes or more in another one and a short block above the tabs says what changed meanwhile: new comments and reviews, closes and merges on its linked issues and pull requests, and how the branch's runs ended. Each line opens what it names; Dismiss hides it until the next time.
 
@@ -91,8 +93,8 @@ gh Focus is a `trusted-worker`: its worker runs `gh` and Orca's CLI on your mach
 | :--- | :--- |
 | `workspace:read` | The focused workspace's id and Orca's list of workspaces, to find its folder and repo. |
 | `workspace:write` | Only to open Orca's Tasks page and Checks tab; it never opens, creates or renames a workspace. |
-| `agent:read` | Finds a free agent of the workspace for Ask agent, and notices when an agent starts or stops. |
-| `terminal:send` | Types the link request into that agent's terminal, without pressing Enter. |
+| `agent:read` | Finds a free agent of the workspace for Ask agent and Ask agent to fix, and notices when an agent starts or stops. |
+| `terminal:send` | Types the link request, or the request to fix a failed run, into that agent's terminal, without pressing Enter. |
 
 Every feature, the panel in detail and the files behind it: [`plugins/gh-focus/README.md`](plugins/gh-focus/README.md).
 

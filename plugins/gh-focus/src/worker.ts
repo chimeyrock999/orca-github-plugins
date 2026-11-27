@@ -18,11 +18,12 @@ import {
   reopenIssue,
   setReaction
 } from './worker/issues/issues'
-import { agentName, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, type AgentRow } from './worker/linked/linked'
+import { agentName, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, takesPrompt, type AgentRow } from './worker/linked/linked'
 import { listLabels, listRuns, listWorkflows, type RepoRef } from './worker/lists'
-import { BRANCH_RUNS, isRepoName, type Answer, type GitHubBudget, type LinkedKind, type LinkedRef, type OrcaView, type RunListInput, type RunState, type Since } from './shared/protocol'
+import { BRANCH_RUNS, isRepoName, type Answer, type GitHubBudget, type LinkedRef, type OrcaView, type RunListInput, type RunState, type Since } from './shared/protocol'
 import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, readyPull, reviewPull } from './worker/pulls/pulls'
 import { ghRepo, trackRepo, type RepoDeps, type RepoTracker } from './worker/repo/repo'
+import { fixRunPrompt } from './worker/runs/ask'
 import { Away } from './worker/since/away'
 import { finishedSince, sinceItems } from './worker/since/since'
 import { cancelRun, dispatchWorkflow, getRun, rerunRun, reviewDeployments, runLogs, watchRun, workflowForm, type WatchDeps } from './worker/runs/runs'
@@ -83,8 +84,8 @@ async function workspaceAgents(orca: OrcaWorkerApi, at: AgentPlace, terminalId?:
   }
 }
 
-/** The free agent to ask in the panel's workspace; with none free, the busy one there, for the
- *  panel to name. */
+/** The agent to ask in the panel's workspace (`takesPrompt`); with none, the one waiting on a
+ *  question there, for the panel to name. */
 async function findAgent(
   orca: OrcaWorkerApi,
   at: AgentPlace
@@ -95,25 +96,19 @@ async function findAgent(
   return { ok: true, agent, busy: agent ? null : busyAgent(here.agents) }
 }
 
-/** Types the link prompt into the agent the panel offered, while it is still free and in the
- *  panel's workspace, without Enter: the person reads it and sends it. */
-async function askAgent(
-  orca: OrcaWorkerApi,
-  at: AgentPlace,
-  repoUrl: string,
-  kind: LinkedKind,
-  terminalId: string
-): Promise<Answer<{ agent: string }>> {
+/** Types a prompt into the agent the panel offered, while it still takes one and is in the panel's
+ *  workspace, without Enter: the person reads it and sends it. */
+async function askAgent(orca: OrcaWorkerApi, at: AgentPlace, terminalId: string, text: string): Promise<Answer<{ agent: string; working: boolean }>> {
   const here = await workspaceAgents(orca, at, terminalId)
   if (!here.ok) return here
   const [agent] = here.agents
-  if (!agent || !freeAgent([agent])) {
-    return { ok: false, error: { code: 'no_agent', message: 'That agent is busy now, gone, or not in this workspace.' } }
+  if (!agent || !takesPrompt(agent)) {
+    return { ok: false, error: { code: 'no_agent', message: 'That agent waits on a question now, is gone, or is not in this workspace.' } }
   }
   try {
-    const { accepted } = await orca.host.call('terminal.sendText', { terminalId, text: linkPrompt(repoUrl, kind), enter: false })
+    const { accepted } = await orca.host.call('terminal.sendText', { terminalId, text, enter: false })
     if (!accepted) return { ok: false, error: { code: 'no_agent', message: `${agentName(agent)} did not take the text.` } }
-    return { ok: true, agent: agentName(agent) }
+    return { ok: true, agent: agentName(agent), working: agent.state === 'working' }
   } catch (error) {
     return { ok: false, error: hostFailure(error) }
   }
@@ -192,6 +187,12 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
     return reads.read(JSON.stringify([area, repo.nameWithOwner.toLowerCase(), ...key]), { tags, ttlMs, signal, keep: keep as ReadOptions['keep'] }, fetch)
   }
 
+  /** One run, as the panel shows it and the agent is asked about it. A run still going is not kept:
+   *  the watch reads past the cache, and a reopen must not go back. */
+  function readRun(repo: RepoRef, id: number, signal?: AbortSignal) {
+    return kept('runs', SHORT_MS, repo, ['run', id], signal, (s) => getRun(gh, repo, id, s), { keep: (a) => a.run.done })
+  }
+
   /** Runs a write, dropping what it can change before (a reload after an unsure write asks GitHub)
    *  and after it, whatever it answered. */
   function written<T>(drop: () => void, write: () => Promise<T>): Promise<T> {
@@ -248,9 +249,16 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
     const { agent, busy } = found
     return { ok: true as const, agent: agent && { name: agentName(agent), terminalId: agent.terminalId }, busy: busy && { name: agentName(busy), state: busy.state } }
   })
-  orca.panels.handle('agent.ask', async ({ kind, terminalId }) => {
+  orca.panels.handle('agent.ask', async ({ about, terminalId }, { signal }) => {
     const repo = await tracker.get()
-    return repo.ok ? askAgent(orca, repo, repo.url, kind, terminalId) : repo
+    if (!repo.ok) return repo
+    let text: string
+    try {
+      text = 'run' in about ? fixRunPrompt(repo, (await readRun(repo, about.run, signal)).run) : linkPrompt(repo.url, about.link)
+    } catch (error) {
+      return toFailure(error)
+    }
+    return askAgent(orca, repo, terminalId, text)
   })
   orca.panels.handle('orca.show', ({ view }) => showView(orca, view))
   orca.panels.handle('runs.list', (input, { signal }) => inRepo(tracker, (repo) => runsPage(repo, input, signal)))
@@ -331,10 +339,7 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
     inRepo(tracker, (repo) => written(() => reads.dropPrefix('items:'), () => setReaction(gh, repo, input, signal)))
   )
 
-  // A run still going is not kept: the watch reads past the cache, and a reopen must not go back.
-  orca.panels.handle('run.get', ({ id }, { signal }) =>
-    inRepo(tracker, (repo) => kept('runs', SHORT_MS, repo, ['run', id], signal, (s) => getRun(gh, repo, id, s), { keep: (a) => a.run.done }))
-  )
+  orca.panels.handle('run.get', ({ id }, { signal }) => inRepo(tracker, (repo) => readRun(repo, id, signal)))
   orca.panels.handle('run.logs', (input, { signal }) => inRepo(tracker, (repo) => runLogs(gh, repo, input, signal)))
   orca.panels.handle('run.rerun', (input, { signal }) => inRepo(tracker, (repo) => inRuns(repo, () => rerunRun(gh, repo, input, signal))))
   orca.panels.handle('run.cancel', ({ id }, { signal }) => inRepo(tracker, (repo) => inRuns(repo, () => cancelRun(gh, repo, id, signal))))

@@ -139,19 +139,22 @@ test('linkedRows: names that do not look like a repo stay out of the query; a ca
   assert.equal((await linkedRows(capped, repo, 'issues', many)).rows.length, LINKED_LIMIT)
 })
 
-test('freeAgent: one waiting or done with a terminal, the one that stopped last; never one at work', () => {
+test('freeAgent: one with a terminal not waiting on a question, a stopped one before one at work, then the last to change', () => {
   const agent = (state: string, at: number, terminalId: string | null = `t${at}`): AgentRow => ({ terminalId, title: `Agent ${at}`, agent: 'claude', state, stateStartedAt: at })
   assert.equal(freeAgent([agent('working', 9), agent('done', 2), agent('waiting', 5), agent('blocked', 7)])?.terminalId, 't5')
-  assert.equal(freeAgent([agent('working', 1), agent('blocked', 2)]), null)
+  // At work, it takes the prompt too: the text waits in its input.
+  assert.equal(freeAgent([agent('working', 1), agent('blocked', 2)])?.terminalId, 't1')
+  assert.equal(freeAgent([agent('working', 1), agent('working', 4)])?.terminalId, 't4')
+  assert.equal(freeAgent([agent('blocked', 2)]), null)
   assert.equal(freeAgent([agent('done', 3, null)]), null)
   assert.equal(freeAgent([]), null)
 })
 
-test('busyAgent: one working or blocked with a terminal, the one that changed last', () => {
+test('busyAgent: one waiting on a question with a terminal, the one that changed last', () => {
   const agent = (state: string, at: number, terminalId: string | null = `t${at}`): AgentRow => ({ terminalId, title: `Agent ${at}`, agent: 'claude', state, stateStartedAt: at })
-  assert.equal(busyAgent([agent('working', 3), agent('blocked', 7), agent('done', 9)])?.terminalId, 't7')
-  assert.equal(busyAgent([agent('done', 3), agent('waiting', 2)]), null)
-  assert.equal(busyAgent([agent('working', 3, null)]), null)
+  assert.equal(busyAgent([agent('blocked', 3), agent('blocked', 7), agent('working', 9)])?.terminalId, 't7')
+  assert.equal(busyAgent([agent('done', 3), agent('waiting', 2), agent('working', 1)]), null)
+  assert.equal(busyAgent([agent('blocked', 3, null)]), null)
 })
 
 test('the prompt asks for the link, tells the agent to ask instead of guessing, and ends with the command', () => {

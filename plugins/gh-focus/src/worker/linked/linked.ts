@@ -100,17 +100,21 @@ export async function linkedRows(gh: Gh, repo: RepoRef, kind: LinkedKind, items:
 
 export type AgentRow = { terminalId: string | null; title: string | null; agent: string | null; state: string; stateStartedAt: number }
 
-/** The agent to ask: one with a terminal that waits for input or is done (never one working, or
- *  blocked on a question), the one that stopped last. */
+/** Whether an agent can take a prompt: it has a terminal and does not wait on a question. One at
+ *  work takes it too: the text waits in its input, without Enter, until the person sends it. */
+export const takesPrompt = (a: AgentRow): a is AgentRow & { terminalId: string } => !!a.terminalId && a.state !== 'blocked'
+
+/** The agent to ask: one that takes a prompt, one that stopped (waiting or done) before one at work,
+ *  then the one that changed last. */
 export function freeAgent(agents: AgentRow[]): (AgentRow & { terminalId: string }) | null {
-  const free = agents.filter((a): a is AgentRow & { terminalId: string } => !!a.terminalId && (a.state === 'waiting' || a.state === 'done'))
-  return free.sort((a, b) => b.stateStartedAt - a.stateStartedAt)[0] ?? null
+  const stopped = (a: AgentRow) => (a.state === 'waiting' || a.state === 'done' ? 1 : 0)
+  return agents.filter(takesPrompt).sort((a, b) => stopped(b) - stopped(a) || b.stateStartedAt - a.stateStartedAt)[0] ?? null
 }
 
-/** The agent the panel names when none is free: one with a terminal that works or waits on a
+/** The agent the panel names when none takes a prompt: one with a terminal that waits on a
  *  question, the one that changed last. */
-export function busyAgent(agents: AgentRow[]): (AgentRow & { terminalId: string; state: 'working' | 'blocked' }) | null {
-  const busy = agents.filter((a): a is AgentRow & { terminalId: string; state: 'working' | 'blocked' } => !!a.terminalId && (a.state === 'working' || a.state === 'blocked'))
+export function busyAgent(agents: AgentRow[]): (AgentRow & { terminalId: string; state: 'blocked' }) | null {
+  const busy = agents.filter((a): a is AgentRow & { terminalId: string; state: 'blocked' } => !!a.terminalId && a.state === 'blocked')
   return busy.sort((a, b) => b.stateStartedAt - a.stateStartedAt)[0] ?? null
 }
 
