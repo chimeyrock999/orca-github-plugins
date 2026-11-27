@@ -29,7 +29,8 @@ function host(linked: () => Links) {
   })
 }
 
-const stopped = { workspaceId: null, paneKey: 'p1', terminalId: 't1', state: 'done' as const, receivedAt: 1 }
+// The asked agent stopping, as Orca reports it for a pane of the panel's workspace.
+const stopped = { workspaceId: 'raw-app', workspaceListId: repoOk.workspaceId, paneKey: 'p1', terminalId: 't1', state: 'done' as const, receivedAt: 1 }
 const says = (view: Awaited<ReturnType<typeof mount>>, text: RegExp) => view.summary().some((l) => text.test(l))
 
 /** The panel on `tab` with nothing linked, the agent asked to link one. */
@@ -65,6 +66,16 @@ test('the asked agent links two issues and waits: the list shows, nothing opens 
   assert.equal(h.count('issue.get'), 0)
   assert.equal(h.count('items.get'), 1)
   assert.equal(says(view, /Typed into Claude Code/), false)
+  await view.unmount()
+})
+
+test('the asked agent stopping is matched by its terminal alone, with no workspace named', async () => {
+  let now = links()
+  const h = host(() => now)
+  const view = await asked('issues', h)
+  now = links([120])
+  await view.emit('agent.status.changed', { ...stopped, workspaceId: null, workspaceListId: undefined })
+  assert.deepEqual(h.last('issue.get'), { number: 120 })
   await view.unmount()
 })
 
