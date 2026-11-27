@@ -98,9 +98,10 @@ export type FreeAgent = { name: string; terminalId: string }
  *  work takes a prompt: the text waits in its input.) */
 export type BusyAgent = { name: string; state: 'blocked' }
 
-/** What the agent is asked about: to link the workspace's issue or pull request, or to fix a
- *  finished run that failed. */
-export type AskAbout = { link: LinkedKind } | { run: number }
+/** What the agent is asked about: to link the workspace's issue or pull request, to fix a finished
+ *  run that failed, or what it would do about an issue (`repo` null: of the focused repo) or one of
+ *  its comments (`comment`, its REST id). */
+export type AskAbout = { link: LinkedKind } | { run: number } | { issue: number; repo: string | null; comment: number | null }
 
 /** A linked issue or pull request as GitHub has it now. `state` and `updatedAt` are null when
  *  GitHub did not answer for it (gone, or this login cannot see it): then title and url are Orca's. */
@@ -425,8 +426,9 @@ declare module 'orca' {
      *  one waiting on a question there, if any. */
     'agent.find': { output: Answer<{ agent: FreeAgent | null; busy: BusyAgent | null }> }
     /** Types a prompt into that agent's terminal, while it still takes one: to link the workspace's
-     *  issue or pull request with `orca reference add`, or to fix a failed run, reading its failed
-     *  log with gh (the run read as `run.get` reads it). Enter is left to the person. `working`: the
+     *  issue or pull request with `orca reference add`, to fix a failed run, reading its failed
+     *  log with gh (the run read as `run.get` reads it), or to read an issue or comment and say what
+     *  it would do. Enter is left to the person. `working`: the
      *  agent was at work when the prompt went in, so its next stop ends its earlier task. */
     'agent.ask': { input: { about: AskAbout; terminalId: string }; output: Answer<{ agent: string; working: boolean }> }
     /** One page of the focused repo's workflow runs, newest first. */

@@ -481,6 +481,45 @@ test('agent.ask about a failed run types the fix prompt, read as run.get reads t
   await worker.deactivate()
 })
 
+test('agent.ask about an issue or one of its comments types the prompt the worker builds; an ask it cannot name types nothing', async () => {
+  let agents = [{ terminalId: 't-free', title: 'Claude Code', agent: 'claude', state: 'working', stateStartedAt: 5 }]
+  const host = mockHost({
+    results: {
+      'workspace.readContext': { workspaceId: 'w-spike', branch: 'feature/spike', displayName: 'Spike', terminals: [] },
+      'workspace.list': { workspaces, truncated: false },
+      'agents.list': () => ({ agents }),
+      'terminal.sendText': { accepted: true }
+    }
+  })
+  const worker = await mountWorker(listWorker(noGh), { host })
+  // At work: the text waits in its input, without Enter.
+  assert.deepEqual(await worker.request('agent.ask', { about: { issue: 77, repo: null, comment: 3123 }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code', working: true })
+  assert.deepEqual(await worker.request('agent.ask', { about: { issue: 45, repo: 'octo/sdk', comment: null }, terminalId: 't-free' }), { ok: true, agent: 'Claude Code', working: true })
+  assert.deepEqual(host.callsOf('terminal.sendText'), [
+    {
+      terminalId: 't-free',
+      text: 'Read this comment and tell me what you would do about it, before changing anything: https://github.com/octo/app/issues/77#issuecomment-3123 (gh api repos/octo/app/issues/comments/3123)',
+      enter: false
+    },
+    {
+      terminalId: 't-free',
+      text: 'Read this issue and tell me what you would do about it, before changing anything: https://github.com/octo/sdk/issues/45 (gh issue view 45 -R octo/sdk --comments)',
+      enter: false
+    }
+  ])
+  // Names and numbers only: anything else, or another version's shape, is answered and never typed.
+  for (const about of [{ issue: 77, repo: 'octo/app --comments\n', comment: null }, { issue: 0, repo: null, comment: null }, { issue: 77, repo: null, comment: 1.5 }, { link: 'runs' }, { run: 'x' }, { run: 0 }, undefined, 'issues']) {
+    const odd = await worker.request('agent.ask', { about, terminalId: 't-free' } as never)
+    assert.equal(!odd.ok && odd.error.code, 'action_failed', JSON.stringify(about))
+  }
+  // Waiting on a question meanwhile: refused, nothing typed.
+  agents = [{ ...agents[0], state: 'blocked' }]
+  const blocked = await worker.request('agent.ask', { about: { issue: 77, repo: null, comment: null }, terminalId: 't-free' })
+  assert.equal(!blocked.ok && blocked.error.code, 'no_agent')
+  assert.equal(host.callsOf('terminal.sendText').length, 2)
+  await worker.deactivate()
+})
+
 test('orca.show runs the Tasks page or the Checks tab of Orca, and a refusal is an answer', async () => {
   const host = mockHost({
     results: {

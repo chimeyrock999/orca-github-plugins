@@ -2,7 +2,7 @@
 // reads their state, and the agent that is asked to link one.
 import { assert, test } from 'orca/testing'
 import { GhError, type Gh } from '../../../src/worker/gh'
-import { busyAgent, freeAgent, linkedQuery, linkedRefs, linkedRows, linkPrompt, type AgentRow } from '../../../src/worker/linked/linked'
+import { aboutPrompt, busyAgent, freeAgent, linkedQuery, linkedRefs, linkedRows, linkPrompt, type AgentRow } from '../../../src/worker/linked/linked'
 import { LINKED_LIMIT, type LinkedRef } from '../../../src/shared/protocol'
 
 const repo = { nameWithOwner: 'octo/app', path: '/code/app' }
@@ -155,6 +155,36 @@ test('busyAgent: one waiting on a question with a terminal, the one that changed
   assert.equal(busyAgent([agent('blocked', 3), agent('blocked', 7), agent('working', 9)])?.terminalId, 't7')
   assert.equal(busyAgent([agent('done', 3), agent('waiting', 2), agent('working', 1)]), null)
   assert.equal(busyAgent([agent('blocked', 3, null)]), null)
+})
+
+test('the prompt about an issue or one of its comments names its link and the gh command that reads it', () => {
+  assert.equal(
+    aboutPrompt('https://github.com/octo/app', 'octo/app', { issue: 77, repo: null, comment: 3123 }),
+    'Read this comment and tell me what you would do about it, before changing anything: https://github.com/octo/app/issues/77#issuecomment-3123 (gh api repos/octo/app/issues/comments/3123)'
+  )
+  assert.equal(
+    aboutPrompt('https://github.com/octo/app', 'octo/app', { issue: 77, repo: 'octo/lib', comment: null }),
+    'Read this issue and tell me what you would do about it, before changing anything: https://github.com/octo/lib/issues/77 (gh issue view 77 -R octo/lib --comments)'
+  )
+  // On another host, gh is told which one.
+  assert.equal(
+    aboutPrompt('https://ghe.corp.example/octo/app', 'octo/app', { issue: 5, repo: null, comment: 9 }),
+    'Read this comment and tell me what you would do about it, before changing anything: https://ghe.corp.example/octo/app/issues/5#issuecomment-9 (gh api --hostname ghe.corp.example repos/octo/app/issues/comments/9)'
+  )
+  assert.equal(
+    aboutPrompt('https://ghe.corp.example/octo/app', 'octo/app', { issue: 5, repo: null, comment: null }),
+    'Read this issue and tell me what you would do about it, before changing anything: https://ghe.corp.example/octo/app/issues/5 (gh issue view 5 -R ghe.corp.example/octo/app --comments)'
+  )
+  // What is typed into a terminal holds only GitHub's own names and whole numbers.
+  for (const bad of [
+    { issue: 0, repo: null, comment: null },
+    { issue: 1.5, repo: null, comment: null },
+    { issue: 7, repo: 'octo/app\nrm -rf', comment: null },
+    { issue: 7, repo: null, comment: -1 },
+    { issue: 7, repo: null, comment: 0 }
+  ]) {
+    assert.equal(aboutPrompt('https://github.com/octo/app', 'octo/app', bad), null, JSON.stringify(bad))
+  }
 })
 
 test('the prompt asks for the link, tells the agent to ask instead of guessing, and ends with the command', () => {

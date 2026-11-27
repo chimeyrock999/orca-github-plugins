@@ -18,7 +18,7 @@ import {
   reopenIssue,
   setReaction
 } from './worker/issues/issues'
-import { agentName, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, takesPrompt, type AgentRow } from './worker/linked/linked'
+import { aboutPrompt, agentName, isWhole, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, takesPrompt, type AgentRow } from './worker/linked/linked'
 import { listLabels, listRuns, listWorkflows, type RepoRef } from './worker/lists'
 import { BRANCH_RUNS, isRepoName, type Answer, type GitHubBudget, type LinkedRef, type OrcaView, type RunListInput, type RunState, type Since } from './shared/protocol'
 import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, readyPull, reviewPull } from './worker/pulls/pulls'
@@ -252,13 +252,18 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   orca.panels.handle('agent.ask', async ({ about, terminalId }, { signal }) => {
     const repo = await tracker.get()
     if (!repo.ok) return repo
-    let text: string
+    // An ask the worker cannot name (another version's shape, a bad number) types nothing.
+    const unnamed = { ok: false as const, error: { code: 'action_failed' as const, message: 'The panel asked about something the worker cannot name.' } }
+    if (typeof about !== 'object' || about === null) return unnamed
+    let text: string | null
     try {
-      text = 'run' in about ? fixRunPrompt(repo, (await readRun(repo, about.run, signal)).run) : linkPrompt(repo.url, about.link)
+      if ('run' in about) text = isWhole(about.run) ? fixRunPrompt(repo, (await readRun(repo, about.run, signal)).run) : null
+      else if ('link' in about) text = about.link === 'issues' || about.link === 'pulls' ? linkPrompt(repo.url, about.link) : null
+      else text = aboutPrompt(repo.url, repo.nameWithOwner, about)
     } catch (error) {
       return toFailure(error)
     }
-    return askAgent(orca, repo, terminalId, text)
+    return text ? askAgent(orca, repo, terminalId, text) : unnamed
   })
   orca.panels.handle('orca.show', ({ view }) => showView(orca, view))
   orca.panels.handle('runs.list', (input, { signal }) => inRepo(tracker, (repo) => runsPage(repo, input, signal)))

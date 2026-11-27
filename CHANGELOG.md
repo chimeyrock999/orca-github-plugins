@@ -12,6 +12,11 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ### Added
 
+**Issues and pull requests**
+
+- On an open issue, the body and each comment can be handed to the workspace's agent: the panel
+  types a prompt with the link, without Enter, for you to read and send.
+
 **Actions**
 
 - A failed run offers "Ask <agent> to fix": it types one line into the workspace's agent (the

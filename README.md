@@ -55,6 +55,8 @@ Three tabs, each about the workspace in focus. Switch workspace and the panel fo
 
 **Nothing linked yet?** The panel shows the `orca reference add` command that links an issue to the workspace, and **Ask agent** types that request into the workspace's agent, without pressing Enter, so you read it and send it. An agent at work takes it too: the text waits in its input. While the agent waits on a question, the panel names it and offers Ask agent by itself once it is answered.
 
+**Ask the agent about a comment.** On an open issue, the agent button on each comment types "Read this comment and tell me what you would do about it, before changing anything: <link>" into the same agent (on the body, "Read this issue …"), without pressing Enter.
+
 **A run failed?** **Ask agent to fix** types one line into the same agent: the run, its failed jobs, and the `gh run view --log-failed` command that reads their log. Again without Enter.
 
 **Since you were here.** Come back to a workspace after 10 minutes or more in another one and a short block above the tabs says what changed meanwhile: new comments and reviews, closes and merges on its linked issues and pull requests, and how the branch's runs ended. Each line opens what it names; Dismiss hides it until the next time.
@@ -93,8 +95,8 @@ gh Focus is a `trusted-worker`: its worker runs `gh` and Orca's CLI on your mach
 | :--- | :--- |
 | `workspace:read` | The focused workspace's id and Orca's list of workspaces, to find its folder and repo. |
 | `workspace:write` | Only to open Orca's Tasks page and Checks tab; it never opens, creates or renames a workspace. |
-| `agent:read` | Finds a free agent of the workspace for Ask agent and Ask agent to fix, and notices when an agent starts or stops. |
-| `terminal:send` | Types the link request, or the request to fix a failed run, into that agent's terminal, without pressing Enter. |
+| `agent:read` | Finds a free agent of the workspace for Ask agent, Ask agent to fix and the agent button on an issue, and notices when an agent starts or stops. |
+| `terminal:send` | Types the link request, the request to fix a failed run, or the question about an issue or comment, into that agent's terminal, without pressing Enter. |
 
 Every feature, the panel in detail and the files behind it: [`plugins/gh-focus/README.md`](plugins/gh-focus/README.md).
 

@@ -25,10 +25,11 @@ import {
 } from 'orca'
 import { issues } from '../issues/issue-store'
 import { count, EMOJI, pullLook, reactionTip, reviewLook, sourceLook, stateWords, type Look } from '../../shared/look'
-import { Glyph, GLYPH_WIDTH } from '../parts'
+import { Glyph, GLYPH_WIDTH, Problem } from '../parts'
+import { agentNow, askAgent, askFailed, forgetError } from '../agent/agent-store'
 import { handOff } from '../linked/link-store'
 import { pulls, workspacePull } from '../pulls/pull-store'
-import { REACTIONS, type ReactionGroup, type ThreadDetail, type TimelineComment, type TimelineItem, type TimelineMention, type TimelineReview } from '../../shared/protocol'
+import { REACTIONS, type AskAbout, type ReactionGroup, type ThreadDetail, type TimelineComment, type TimelineItem, type TimelineMention, type TimelineReview } from '../../shared/protocol'
 import { hasImage, linkRefs } from '../refs'
 import { choicesOf, repo, selectTab } from '../store'
 import { hiddenCount, type AnyThread, type Picking, type PickerOps, type ThreadState } from './thread-store'
@@ -135,6 +136,40 @@ export function Post({ t, head, tools, body, url, cut, subject, reactions, empty
   )
 }
 
+/** Whether the thread's posts are offered to the workspace's agent: an issue's, while an agent can
+ *  take a prompt. Pull requests are left out: their review threads are answered in Orca (#17). */
+export const canAskAbout = (t: AnyThread): boolean => t.kind === 'issues' && !!agentNow()?.agent
+
+/** What the agent is asked about the open issue (`comment` null) or one of its comments (its REST
+ *  id). */
+function aboutPost(t: AnyThread, comment: number | null): AskAbout {
+  const { number, repo: of } = read(t.state)
+  return { issue: number, repo: of, comment }
+}
+
+/** Asks the workspace's agent about the issue or one of its comments; the prompt waits in the
+ *  agent's terminal for the person's Enter, so nothing else shows. */
+export function AskButton({ t, comment }: { t: AnyThread; comment: number | null }) {
+  const a = agentNow()
+  if (!canAskAbout(t) || !a?.agent) return null
+  return (
+    <IconButton
+      icon="agent"
+      label={`Ask ${a.agent.name} about this ${comment === null ? 'issue' : 'comment'}`}
+      size="sm"
+      variant="ghost"
+      disabled={a.asking}
+      onPress={() => askAgent(aboutPost(t, comment))}
+    />
+  )
+}
+
+/** Why the agent was not asked about this post, under it. */
+export function AskProblem({ t, comment }: { t: AnyThread; comment: number | null }) {
+  const error = t.kind === 'issues' ? askFailed(agentNow(), aboutPost(t, comment)) : null
+  return error ? <Problem error={error} onRetry={forgetError} retryLabel="Dismiss" /> : null
+}
+
 /** Who and what, as a post's head says it: "kenji commented 2 days ago · edited". */
 export function Byline({ who, words, at, after = '' }: { who: string | null; words: string; at: number; after?: string }) {
   return (
@@ -168,8 +203,11 @@ function CommentItem({ t, c, s }: { t: AnyThread; c: TimelineComment; s: ThreadS
       </Box>
     )
   }
-  const tools = (c.canEdit || c.canDelete) && (
+  // A comment GitHub gave no REST id cannot be named to the agent.
+  const ask = canAskAbout(t) && c.databaseId > 0
+  const tools = (ask || c.canEdit || c.canDelete) && (
     <Toolbar label="Comment actions" gap="none">
+      {ask && <AskButton t={t} comment={c.databaseId} />}
       {/* A cut comment would lose its end if saved, so it is edited on GitHub. */}
       {c.canEdit && !c.truncated && <IconButton icon="edit" label="Edit comment" size="sm" variant="ghost" onPress={() => t.startEditComment(c)} />}
       {c.canDelete && <IconButton icon="delete" label="Delete comment" size="sm" variant="ghost" onPress={() => t.askDelete(c.databaseId)} />}
@@ -179,6 +217,7 @@ function CommentItem({ t, c, s }: { t: AnyThread; c: TimelineComment; s: ThreadS
   return (
     <Stack gap="xs">
       <Post t={t} head={head} tools={tools} body={c.body} url={c.url} cut={c.truncated} subject={c.id} reactions={c.reactions} />
+      <AskProblem t={t} comment={c.databaseId} />
       {s.deleting === c.databaseId && (
         <Callout tone="danger" title="Delete this comment?">
           <Stack gap="sm">

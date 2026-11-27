@@ -1,6 +1,6 @@
 // The workspace's free agent, which the panel types a prompt into: the Issues and Pull requests tabs
-// ask it to link one, a failed run asks it to fix the run. One agent state for the workspace on
-// screen, shared by both.
+// ask it to link one, a failed run asks it to fix the run, an open issue asks it about the issue or
+// one of its comments. One agent state for the workspace on screen, shared by all.
 import { atom, plugin, read, set } from 'orca'
 import type { AskAbout, BusyAgent, FreeAgent, LinkedKind, PanelError } from '../../shared/protocol'
 import { repo, requestFailed } from '../store'
@@ -33,8 +33,12 @@ export function agentNow(): AgentState | null {
   return a && a.where === focusKey() ? a : null
 }
 
-const same = (a: AskAbout | null | undefined, b: AskAbout): boolean =>
-  !!a && ('run' in b ? 'run' in a && a.run === b.run : 'link' in a && a.link === b.link)
+function same(a: AskAbout | null | undefined, b: AskAbout): boolean {
+  if (!a) return false
+  if ('run' in b) return 'run' in a && a.run === b.run
+  if ('link' in b) return 'link' in a && a.link === b.link
+  return 'issue' in a && a.issue === b.issue && a.repo === b.repo && a.comment === b.comment
+}
 
 /** Whether the agent was asked about this, last. */
 export const wasAsked = (a: AgentState | null, about: AskAbout): boolean => same(a?.asked?.about, about)
@@ -43,9 +47,11 @@ export const wasAsked = (a: AgentState | null, about: AskAbout): boolean => same
 export const askFailed = (a: AgentState | null, about: AskAbout): PanelError | null => (a?.error && same(a.error.about, about) ? a.error.error : null)
 
 /** Looks for a free agent when an offer shows for a workspace (or on Refresh, or when an agent
- *  there changes state): a failure, such as Orca not allowing it, is no agent. */
+ *  there changes state): a failure, such as Orca not allowing it, is no agent. `keep` (an agent's
+ *  change while an issue's posts are offered) keeps why the last ask failed, under the post it was
+ *  made from. An answer that changes nothing draws nothing. */
 let finding = 0
-export async function findAgent(again = false): Promise<void> {
+export async function findAgent(again = false, keep = false): Promise<void> {
   const where = focusKey()
   if (!again && read(agent)?.where === where) return
   // Agent events come quickly: only the latest look answers.
@@ -55,8 +61,13 @@ export async function findAgent(again = false): Promise<void> {
   // What the agent was asked stays: a look-up from another offer must not drop it (the asked agent
   // stopping still reopens the links, `askedStopped`). Another workspace starts afresh.
   const was = read(agent)
-  const asked = was?.where === where ? was.asked : null
-  set(agent, { where, agent: answer.ok ? answer.agent : null, busy: answer.ok ? answer.busy : null, asking: false, asked, error: null })
+  const here = was?.where === where ? was : null
+  const found = answer.ok ? answer.agent : null
+  const busy = answer.ok ? answer.busy : null
+  const error = keep ? (here?.error ?? null) : null
+  const sameAs = (x: unknown, y: unknown) => JSON.stringify(x ?? null) === JSON.stringify(y ?? null)
+  if (here && !here.asking && here.error === error && sameAs(here.agent, found) && sameAs(here.busy, busy)) return
+  set(agent, { where, agent: found, busy, asking: false, asked: here?.asked ?? null, error })
 }
 
 /** Whether an agent changing state is looked for again: only when Orca names its workspace and that is
@@ -114,6 +125,21 @@ export async function askAgent(about: AskAbout): Promise<void> {
   await findAgent(true)
   const now = agentNow()
   if (now) set(agent, { ...now, error })
+}
+
+/** An open issue's posts are offered (the issue landed, or on Refresh or an agent's change, `again`):
+ *  the agent is looked for, except while a prompt is on its way; asked about something since, it is
+ *  looked for again. `keep`: see `findAgent`. */
+export function offerPosts(again = false, keep = false): Promise<void> | void {
+  const a = agentNow()
+  if (a?.asking) return
+  return findAgent(again || !!a?.asked, keep)
+}
+
+/** Dismiss under a post: drops why the ask failed, and keeps what the agent was asked before. */
+export function forgetError(): void {
+  const a = agentNow()
+  if (a?.error) set(agent, { ...a, error: null })
 }
 
 /** Back from "typed into the agent" (or from why it was not) to the offer. */

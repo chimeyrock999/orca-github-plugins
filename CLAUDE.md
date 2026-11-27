@@ -50,7 +50,8 @@ Plan: tracking issue #1, one sub-issue per step (#2 → #8).
       open: the linked list (nothing repo-wide), or how to link one (the command, Ask agent), and
       the hand-offs to Orca's Tasks page and Checks tab.
     - `agent/` (`agent-store.ts`): the workspace's free agent the panel types into (Ask agent to
-      link one, Ask agent to fix a failed run), one state for the workspace on screen.
+      link one, Ask agent to fix a failed run, the agent button on an open issue's body and
+      comments), one state for the workspace on screen.
     - `thread/` (`thread-store.ts`, `thread-view.tsx`): an open issue or pull request (a thread), one
       per tab, and the pieces both draw (posts, reactions, timeline, pickers).
     - `issues/` (`issue-view.tsx`, `issue-store.ts`): the issue detail and state.

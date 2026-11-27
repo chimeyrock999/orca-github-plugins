@@ -4,7 +4,7 @@ import { GhError, type Gh } from '../gh'
 import type { LinkedItem, WorkspaceLinks } from '../exec'
 import { issueState, pullState, type RepoRef } from '../lists'
 import { linkCommand } from '../../shared/look'
-import { isRepoName, LINKED_LIMIT, type LinkedKind, type LinkedRef, type LinkedRow } from '../../shared/protocol'
+import { isRepoName, LINKED_LIMIT, type AskAbout, type LinkedKind, type LinkedRef, type LinkedRow } from '../../shared/protocol'
 
 /** The links Orca keeps for a workspace, by kind, when the workspace is of the focused repo: an
  *  item of the focused repo has `repo` null, one of another repo its `owner/name`. An item on another
@@ -131,4 +131,24 @@ export function linkPrompt(repoUrl: string, kind: LinkedKind): string {
     `Link the GitHub ${noun} this workspace is working on to it in Orca. ` +
     `If you are not sure which ${noun}, ask me instead of guessing. Run: ${linkCommand(repoUrl, kind)}`
   )
+}
+
+/** A number GitHub could name an issue, comment or run by: a whole number above zero. */
+export const isWhole = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) > 0
+
+/** What the agent is asked about an issue or one of its comments: its link, and the gh command that
+ *  reads it (a comment by its id, as `gh issue view --comments` names none; `--hostname` or
+ *  `host/owner/name` when not github.com). Null when the ask names no issue: the text goes into a
+ *  terminal, so it holds only GitHub's own names and whole numbers. */
+export function aboutPrompt(repoUrl: string, focused: string, ask: Extract<AskAbout, { issue: number }>): string | null {
+  const name = ask.repo ?? focused
+  if (typeof name !== 'string' || !isRepoName(name) || !isWhole(ask.issue) || (ask.comment !== null && !isWhole(ask.comment))) return null
+  const { origin, host } = new URL(repoUrl)
+  const other = host.toLowerCase() !== 'github.com'
+  const issue = `${origin}/${name}/issues/${ask.issue}`
+  if (ask.comment === null) {
+    return `Read this issue and tell me what you would do about it, before changing anything: ${issue} (gh issue view ${ask.issue} -R ${other ? `${host}/` : ''}${name} --comments)`
+  }
+  const api = `gh api ${other ? `--hostname ${host} ` : ''}repos/${name}/issues/comments/${ask.comment}`
+  return `Read this comment and tell me what you would do about it, before changing anything: ${issue}#issuecomment-${ask.comment} (${api})`
 }
