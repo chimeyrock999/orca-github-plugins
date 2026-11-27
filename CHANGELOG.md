@@ -21,7 +21,9 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 **Elsewhere**
 
-- Needs Orca 1.4.261 or later; Orca keeps offering older Orca the last release that supports it.
+- Needs Orca 1.4.277 or later, for host API 1.10 (the focused workspace's id and its agents, with
+  no fallback) and the panel tab's own icon, a branch in a focus frame like the catalog icon, instead
+  of Orca's `activity`. Orca keeps offering older Orca the last release that supports it.
 - The panel follows the workspace Orca focuses by its id: clones on the same branch with the same
   name no longer ask which one, and no Orca CLI call is made to tell them apart.
 - An error Orca could not finish now reads "Could not finish" instead of "Panel error".
