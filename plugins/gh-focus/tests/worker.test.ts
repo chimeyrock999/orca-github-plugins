@@ -471,7 +471,7 @@ test('agent.ask about a failed run types the fix prompt, read as run.get reads t
   conclusion = 'success'
   await worker.request('cache.drop')
   const passed = await worker.request('agent.ask', { about: { run: 9 }, terminalId: 't-free' })
-  assert.equal(!passed.ok && passed.error.code, 'gh_failed')
+  assert.equal(!passed.ok && passed.error.code, 'not_failed')
   assert.equal(host.callsOf('terminal.sendText').length, 1)
   await worker.deactivate()
 })

@@ -8,8 +8,16 @@ import { focusKey } from '../thread/thread-store'
 
 /** The free agent of the workspace on screen (`where`); `agent` null when none is free, and then
  *  `busy` the one at work or waiting on a question, if any. `asked` is what it was asked about (with
- *  the name it answered as), `asking` while the prompt is on its way. */
-export type AgentState = { where: string; agent: FreeAgent | null; busy: BusyAgent | null; asking: boolean; asked: AskAbout | null; error: PanelError | null }
+ *  the name it answered as), `asking` while the prompt is on its way, `error` why the last ask about
+ *  something did not go through. */
+export type AgentState = {
+  where: string
+  agent: FreeAgent | null
+  busy: BusyAgent | null
+  asking: boolean
+  asked: AskAbout | null
+  error: { about: AskAbout; error: PanelError } | null
+}
 export const agent = atom<AgentState | null>(null)
 
 /** The agent state for the workspace on screen, once found. */
@@ -18,12 +26,14 @@ export function agentNow(): AgentState | null {
   return a && a.where === focusKey() ? a : null
 }
 
+const same = (a: AskAbout | null | undefined, b: AskAbout): boolean =>
+  !!a && ('run' in b ? 'run' in a && a.run === b.run : 'link' in a && a.link === b.link)
+
 /** Whether the agent was asked about this, last. */
-export function wasAsked(a: AgentState | null, about: AskAbout): boolean {
-  const asked = a?.asked
-  if (!asked) return false
-  return 'run' in about ? 'run' in asked && asked.run === about.run : 'link' in asked && asked.link === about.link
-}
+export const wasAsked = (a: AgentState | null, about: AskAbout): boolean => same(a?.asked, about)
+
+/** Why asking about this did not go through, if it did not: each offer shows only its own. */
+export const askFailed = (a: AgentState | null, about: AskAbout): PanelError | null => (a?.error && same(a.error.about, about) ? a.error.error : null)
 
 /** Looks for a free agent when an offer shows for a workspace (or on Refresh, or when an agent
  *  there changes state): a failure, such as Orca not allowing it, is no agent. */
@@ -40,14 +50,23 @@ export async function findAgent(again = false): Promise<void> {
 
 /** Whether an agent changing state is looked for again: only when Orca names its workspace and that is
  *  the panel's (`workspaceListId`; only the panel's agents are offered, and Orca names none for a pane
- *  tied to no workspace), and not while it is being asked or once it was asked (Enter on the prompt
- *  sets it working, and the callout stays until the agent asked to link one stops, see
- *  `askedStopped`, or until Dismiss or Refresh). */
+ *  tied to no workspace), and not while it is being asked. The offer on screen decides the rest
+ *  (`offerAgent`). */
 export function mayRefindAgent(workspaceListId?: string): boolean {
   const r = read(repo)
   if (!workspaceListId || (r?.ok && r.workspaceId !== workspaceListId)) return false
+  return !agentNow()?.asking
+}
+
+/** An offer to ask the agent about this shows (or its agent changed state, `again`): the agent is
+ *  looked for, except while it is being asked, or once it was asked about this (Enter on the prompt
+ *  sets it working, and the callout stays until the agent asked to link one stops, see
+ *  `askedStopped`, or until Dismiss). Asked about something else, it is looked for again: it may have
+ *  started work since, unseen. */
+export function offerAgent(about: AskAbout, again = false): Promise<void> | void {
   const a = agentNow()
-  return !a?.asking && !a?.asked
+  if (a?.asking || wasAsked(a, about)) return
+  return findAgent(again || !!a?.asked)
 }
 
 /** The kind to ask Orca about again when an agent changes state: the one the agent on screen was
@@ -70,11 +89,12 @@ export async function askAgent(about: AskAbout): Promise<void> {
   const answer = await plugin.request('agent.ask', { about, terminalId: offered.terminalId }).catch(requestFailed)
   if (focusKey() !== where) return
   if (answer.ok) return set(agent, { ...a, agent: { ...offered, name: answer.agent }, asking: false, asked: about, error: null })
-  if (answer.error.code !== 'no_agent') return set(agent, { ...a, asking: false, error: answer.error })
+  const error = { about, error: answer.error }
+  if (answer.error.code !== 'no_agent') return set(agent, { ...a, asking: false, error })
   // No agent free any more: it says why, and asks again what the agent is doing now.
   await findAgent(true)
   const now = agentNow()
-  if (now) set(agent, { ...now, error: answer.error })
+  if (now) set(agent, { ...now, error })
 }
 
 /** Back from "typed into the agent" (or from why it was not) to the offer. */

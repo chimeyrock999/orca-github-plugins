@@ -18,7 +18,7 @@ import {
   Toolbar,
   type PanelContext
 } from 'orca'
-import { askedStopped, findAgent, mayRefindAgent } from './panel/agent/agent-store'
+import { askedStopped, mayRefindAgent, offerAgent } from './panel/agent/agent-store'
 import { issue, issues } from './panel/issues/issue-store'
 import { pull, pulls } from './panel/pulls/pull-store'
 import { budget, budgetAnswered, budgetChanged, githubUrl, itemKey, lists, loadChoices, refresh, repo, requestFailed, selectTab, setRepo, tab, type Kind } from './panel/store'
@@ -36,17 +36,13 @@ async function thenStart(step: Promise<void> | void, again = false): Promise<voi
   await agentIfOffered(again)
 }
 
-/** The empty state and a failed run offer a free agent to ask; it is looked for only when one of
- *  them shows. */
+/** The empty state offers a free agent to ask; it is looked for only when that state shows. (A
+ *  failed run offers one too, looked for as the run shows, `run-store.ts`.) */
 async function agentIfOffered(again: boolean): Promise<void> {
   const kind = read(tab)
-  if (kind === 'runs') {
-    if (failedRunShown()) await findAgent(again)
-    return
-  }
-  if (read(lists[kind]).open) return
+  if (kind === 'runs' || read(lists[kind]).open) return
   const t = kind === 'issues' ? issues : pulls
-  if (t.linkedNow()?.refs?.length === 0) await findAgent(again)
+  if (t.linkedNow()?.refs?.length === 0) await offerAgent({ link: kind }, again)
 }
 
 /** An agent changed state. The one asked to link an item stopped while the tab it was asked from
@@ -57,7 +53,9 @@ async function agentChanged(e: { workspaceListId?: string; terminalId?: string; 
   const kind = askedStopped(e)
   const t = kind && (kind === 'issues' ? issues : pulls)
   if (t) return t.linkedNow()?.refs?.length === 0 ? t.start(true) : undefined
-  if (mayRefindAgent(e.workspaceListId)) await agentIfOffered(true)
+  if (!mayRefindAgent(e.workspaceListId)) return
+  const run = failedRunShown()
+  await (run === null ? agentIfOffered(true) : offerAgent({ run }, true))
 }
 
 /** Runs once before the first render; what it pushes to `subscriptions` ends with the panel. */

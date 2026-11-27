@@ -29,10 +29,13 @@ test('names from GitHub cannot break the line: control characters become spaces'
   const text = fixRunPrompt(repo, runDetail({ workflow: 'CI\r\nnext', jobs: [failed(601, 'build\n\u001b[31mlinux\t')] }))
   assert.ok(!/[\u0000-\u001f]/.test(text))
   assert.match(text, /\(CI next #296; failed jobs: build \[31mlinux\)/)
+  const unicode = fixRunPrompt(repo, runDetail({ workflow: 'CI\u2028next', jobs: [failed(602, 'build\u009b31m\u2029linux')] }))
+  assert.ok(!/[\u0080-\u009f\u2028\u2029]/.test(unicode))
+  assert.match(unicode, /\(CI next #296; failed jobs: build 31m linux\)/)
 })
 
 test('a run that is still going, passed or was cancelled is refused', () => {
   for (const run of [runDetail({ done: false, state: 'running' }), runDetail({ state: 'success' }), runDetail({ state: 'cancelled' })]) {
-    assert.throws(() => fixRunPrompt(repo, run), (e: unknown) => e instanceof GhError && e.code === 'gh_failed')
+    assert.throws(() => fixRunPrompt(repo, run), (e: unknown) => e instanceof GhError && e.code === 'not_failed')
   }
 })

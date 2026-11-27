@@ -24,7 +24,7 @@ import {
   type KeyValueItem
 } from 'orca'
 import { bytes, count, duration, expiry, localTime, runCause, runLook } from '../../shared/look'
-import { agentNow, askAgent, forgetAsked, wasAsked } from '../agent/agent-store'
+import { agentNow, askAgent, askFailed, forgetAsked, wasAsked } from '../agent/agent-store'
 import { Glyph, Problem } from '../parts'
 import type { DispatchInput, LogStep, RunArtifact, RunDetail, RunJob, RunLogs } from '../../shared/protocol'
 import {
@@ -127,8 +127,10 @@ function Actions({ s, run }: { s: OpenRun; run: RunDetail }) {
     )
   }
   const failed = run.jobs.some((j) => j.state === 'failure' || j.state === 'cancelled')
-  const fix = run.state === 'failure' ? agentNow() : null
+  // Not while a rerun is on its way: GitHub still reads the attempt before it as failed a moment.
+  const fix = settled(s) && !s.busy && run.state === 'failure' ? agentNow() : null
   const asked = wasAsked(fix, { run: run.id })
+  const failedAsk = askFailed(fix, { run: run.id })
   return (
     <Stack gap="xs">
       <Row gap="xs" align="center" wrap>
@@ -157,7 +159,7 @@ function Actions({ s, run }: { s: OpenRun; run: RunDetail }) {
           {fix.busy.state === 'blocked' ? `${fix.busy.name} is waiting on a question. Answer it, then ask.` : `${fix.busy.name} is working. Ask it once it stops.`}
         </Text>
       )}
-      {fix?.error && <Problem error={fix.error} onRetry={forgetAsked} retryLabel="Dismiss" />}
+      {failedAsk && <Problem error={failedAsk} onRetry={forgetAsked} retryLabel="Dismiss" />}
     </Stack>
   )
 }

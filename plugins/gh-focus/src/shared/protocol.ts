@@ -38,6 +38,8 @@ export type ErrorCode =
   | 'unsure'
   /** No agent in the focused workspace is free to take a prompt (all working, or none). */
   | 'no_agent'
+  /** The agent was asked to fix a run that has not failed (it runs again, or passed). */
+  | 'not_failed'
 
 export type PanelError = {
   code: ErrorCode

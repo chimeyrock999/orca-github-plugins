@@ -7,13 +7,14 @@ import type { RunDetail } from '../../shared/protocol'
 /** The failed jobs the prompt names; the rest are counted. */
 export const PROMPT_JOBS = 3
 
-/** A name from GitHub on one line: control characters (newlines among them) become spaces. */
-const oneLine = (text: string): string => text.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
+/** A name from GitHub on one line: control characters (C0, DEL, C1) and the Unicode line and
+ *  paragraph separators become spaces. */
+const oneLine = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim()
 
 /** The prompt asking the agent to fix a finished run that failed; any other run is refused. */
 export function fixRunPrompt(repo: RepoRef, run: RunDetail): string {
   if (!run.done || run.state !== 'failure') {
-    throw new GhError('gh_failed', `${oneLine(run.workflow)} #${run.runNumber} has not failed, so there is nothing to fix.`)
+    throw new GhError('not_failed', `${oneLine(run.workflow)} #${run.runNumber} has not failed, so there is nothing to fix.`)
   }
   const failed = run.jobs.filter((j) => j.state === 'failure').map((j) => oneLine(j.name))
   const more = failed.length - PROMPT_JOBS

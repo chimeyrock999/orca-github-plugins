@@ -1,7 +1,7 @@
 // The Issues and Pull requests tabs with no thread open: the items Orca links to the workspace, or,
 // with none, how to link one (the command, or asking the workspace's agent), and the hand-offs.
 import { Badge, Box, Button, Callout, Code, EmptyState, List, ListItem, read, RelativeTime, Row, shell, Skeleton, Stack, Text } from 'orca'
-import { askAgent, agentNow, forgetAsked, wasAsked } from '../agent/agent-store'
+import { askAgent, askFailed, agentNow, forgetAsked, wasAsked } from '../agent/agent-store'
 import { dismissHandOff, handOff, handOffError } from './link-store'
 import { linkCommand, linkedLook } from '../../shared/look'
 import { Glyph, Problem } from '../parts'
@@ -107,6 +107,7 @@ function LinkedList({ t, l }: { t: AnyThread; l: LinkedState }) {
 function HowToLink({ kind }: { kind: LinkedKind }) {
   const r = read(repo)
   const a = agentNow()
+  const failedAsk = askFailed(a, { link: kind })
   const noun = NOUN[kind].one
   if (a && wasAsked(a, { link: kind })) {
     return (
@@ -158,7 +159,7 @@ function HowToLink({ kind }: { kind: LinkedKind }) {
           No agent here to ask. Run the command in a terminal of the workspace.
         </Text>
       )}
-      {a?.error && <Problem error={a.error} onRetry={forgetAsked} retryLabel="Dismiss" />}
+      {failedAsk && <Problem error={failedAsk} onRetry={forgetAsked} retryLabel="Dismiss" />}
     </Box>
   )
 }
