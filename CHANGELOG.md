@@ -10,6 +10,8 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 ## Unreleased
 
+## 0.2.0 - 2026-11-28
+
 ### Added
 
 **Issues and pull requests**
