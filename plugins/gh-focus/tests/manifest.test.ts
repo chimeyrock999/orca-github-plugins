@@ -14,12 +14,14 @@ type Manifest = {
   author?: { name: string; url?: string }
   repository?: string
   license?: string
-  contributes: { panels: { id: string; title: string }[] }
+  contributes: { panels: { id: string; title: string; icon: string | PathIcon }[] }
   icon?: string
   capabilities: { kind: string }[]
   cover?: { path: string; alt: string }
   screenshots?: { path: string; alt: string; caption?: string; theme?: 'light' | 'dark' }[]
 }
+
+type PathIcon = { path: string; viewBox?: string; mode?: 'stroke' | 'fill' }
 
 const manifest = JSON.parse(readFileSync(join(root, 'orca-plugin.json'), 'utf8')) as Manifest
 
@@ -47,9 +49,38 @@ test('the folder and the panel are named after the id', () => {
   )
 })
 
+function atLeast(range: string, floor: string): boolean {
+  const have = version(range)
+  const want = version(floor)
+  for (let i = 0; i < want.length; i++) {
+    if (have[i] !== want[i]) return have[i] > want[i]
+  }
+  return true
+}
+
+// 1.4.277 is the first release that draws a panel's SVG path icon (stablyai/orca#42558). It also
+// has host API 1.10 (from 1.4.261): the focused workspace's id in readContext (1.7) and
+// agents.list({ workspaceId }) (1.10), which the panel uses with no fallback.
 test('engines.orca is the release the features were tested on', () => {
-  const [major, minor, patch] = version(manifest.engines.orca)
-  assert.ok(major > 1 || (major === 1 && (minor > 4 || (minor === 4 && patch >= 256))), manifest.engines.orca)
+  assert.ok(atLeast(manifest.engines.orca, '1.4.277'), manifest.engines.orca)
+})
+
+test('the plugin asks for no storage: it keeps nothing between runs', () => {
+  assert.ok(!manifest.capabilities.some((c) => c.kind.startsWith('storage:')), JSON.stringify(manifest.capabilities))
+})
+
+// The activity-bar tab draws one theme-coloured path (manifest format 2). Only its shape is
+// checked here: the path grammar is Orca's, and `orca plugin validate` warns about a path Orca
+// will not draw.
+test('the panel tab icon is one SVG path', () => {
+  const icon = manifest.contributes.panels[0].icon
+  assert.equal(typeof icon, 'object', 'a built-in icon name')
+  const { path, viewBox, mode, ...rest } = icon as PathIcon
+  assert.deepEqual(Object.keys(rest), [], 'unknown keys')
+  assert.ok(path.length >= 1 && path.length <= 4096, `path is ${path.length} characters`)
+  assert.match(path, /^M/)
+  assert.equal(viewBox, '0 0 24 24')
+  assert.equal(mode, 'stroke')
 })
 
 test('the plugin page has its author, repository and license', () => {

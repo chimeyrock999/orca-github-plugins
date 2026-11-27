@@ -2,7 +2,7 @@
 
 <img src="docs/images/cover.webp" width="900" alt="gh Focus: your workspace's issue and PR, beside the code. The panel's issue and pull request views, with an Actions run in progress">
 
-<p><a href="https://github.com/chimeyrock999/orca-github-plugins/tags"><img alt="Latest version" src="https://img.shields.io/github/v/tag/chimeyrock999/orca-github-plugins?sort=semver&style=flat-square&label=version&color=3b82f6"></a> <img alt="Requires Orca 1.4.256 or later" src="https://img.shields.io/badge/Orca-1.4.256%2B-3b82f6?style=flat-square"> <a href="https://cli.github.com"><img alt="Uses the gh CLI" src="https://img.shields.io/badge/uses-gh%20CLI-24292f?style=flat-square&logo=github"></a> <img alt="Stores no tokens" src="https://img.shields.io/badge/tokens%20stored-none-2ea043?style=flat-square"> <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-6e7781?style=flat-square"></a></p>
+<p><a href="https://github.com/chimeyrock999/orca-github-plugins/tags"><img alt="Latest version" src="https://img.shields.io/github/v/tag/chimeyrock999/orca-github-plugins?sort=semver&style=flat-square&label=version&color=3b82f6"></a> <img alt="Requires Orca 1.4.277 or later" src="https://img.shields.io/badge/Orca-1.4.277%2B-3b82f6?style=flat-square"> <a href="https://cli.github.com"><img alt="Uses the gh CLI" src="https://img.shields.io/badge/uses-gh%20CLI-24292f?style=flat-square&logo=github"></a> <img alt="Stores no tokens" src="https://img.shields.io/badge/tokens%20stored-none-2ea043?style=flat-square"> <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-6e7781?style=flat-square"></a></p>
 
 <p><a href="#install">Install</a> · <a href="#what-you-get">What you get</a> · <a href="#what-stays-in-orca">What stays in Orca</a> · <a href="#how-it-works">How it works</a> · <a href="#permissions">Permissions</a> · <a href="#develop">Develop</a> · <a href="https://orca.dev/plugins/chimeyrock999/orca-github-plugins">Plugin page</a></p>
 
@@ -27,7 +27,7 @@ Orca asks you to approve the [permissions](#permissions) first; an update that a
 
 **Needs**
 
-- Orca `1.4.256` or later.
+- Orca `1.4.277` or later.
 - `gh`, logged in (`gh auth login`) with access to the repo.
 - A workspace whose folder is a clone of a GitHub repo.
 - Orca's own CLI, which tells the plugin what Orca links to a workspace. On macOS it ships in the app; on Linux and Windows, put `orca` on PATH.
@@ -79,7 +79,7 @@ flowchart LR
   panel -. "hand-offs" .-> tasks["Orca Tasks · Checks"]
 ```
 
-The panel asks, the plugin's own worker answers and runs `gh` in the workspace's folder. Nothing is written to disk but the workspace you picked when Orca cannot tell which one is focused.
+The panel asks, the plugin's own worker answers and runs `gh` in the workspace's folder. Nothing is written to disk.
 
 ## Permissions
 
@@ -87,8 +87,7 @@ gh Focus is a `trusted-worker`: its worker runs `gh` and Orca's CLI on your mach
 
 | Permission | Why |
 | :--- | :--- |
-| `storage:own` | Remembers which workspace you picked when Orca cannot tell which one is focused. |
-| `workspace:read` | The focused workspace's name, branch and terminals, to find its folder and repo. |
+| `workspace:read` | The focused workspace's id and Orca's list of workspaces, to find its folder and repo. |
 | `workspace:write` | Only to open Orca's Tasks page and Checks tab; it never opens, creates or renames a workspace. |
 | `agent:read` | Finds a free agent of the workspace for Ask agent, and notices when an agent starts or stops. |
 | `terminal:send` | Types the link request into that agent's terminal, without pressing Enter. |
@@ -97,7 +96,7 @@ Every feature, the panel in detail and the files behind it: [`plugins/gh-focus/R
 
 ## Develop
 
-Needs Orca `1.4.256`+ with its `orca` CLI on PATH, Node.js 18+, and `gh` logged in.
+Needs Orca `1.4.277`+ with its `orca` CLI on PATH, Node.js 18+, and `gh` logged in.
 
 ```sh
 cd plugins/gh-focus
