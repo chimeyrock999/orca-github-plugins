@@ -17,6 +17,12 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 - On Orca 1.4.260 or later, Link one finds the workspace's agent from Orca itself instead of asking
   the Orca CLI where each agent's terminal runs.
 
+**Elsewhere**
+
+- On Orca 1.4.259 or later the panel follows the workspace Orca focuses by its id: clones on the same
+  branch with the same name no longer ask which one, and no Orca CLI call is made to tell them apart.
+  An error Orca could not finish now reads "Could not finish" instead of "Panel error".
+
 ## 0.1.3 - 2026-11-13
 
 ### Fixed

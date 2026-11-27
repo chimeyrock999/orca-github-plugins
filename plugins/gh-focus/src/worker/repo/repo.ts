@@ -28,17 +28,10 @@ export async function ghRepo(path: string, gh: Gh): Promise<GhRepoAnswer> {
 
 export type RepoDeps = FocusDeps & { ghRepo: (path: string) => Promise<GhRepoAnswer> }
 
-/** The answer for a focus, with Orca's id of the workspace it found (`id`, null without one) and of
- *  the workspace Orca focuses (`focusedId`, host API 1.7). They differ when the person's pick named
- *  another clone than Orca's focus. */
-export type Placed = { answer: RepoAnswer; id: string | null; focusedId: string | null }
-
 export type RepoTracker = {
   /** The answer for the newest focus. An error is asked again, as it may be gone (a login, a
    *  remote added, a new workspace). */
   get(): Promise<RepoAnswer>
-  /** `get`, with the workspace ids it was found from. */
-  placed(): Promise<Placed>
   /** Stores `path` as the pick for the focused branch, name and matching projects, then answers
    *  for the focus. */
   pick(path: string): Promise<RepoAnswer>
@@ -59,7 +52,7 @@ function isOldKey(key: string): boolean {
 /** `changed` hears each new answer before the panels do, with the one they heard before. */
 export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps, changed?: (before: RepoAnswer | null, after: RepoAnswer) => void): RepoTracker {
   // One answer per focus: a newer workspace.changed supersedes a resolve still in flight.
-  let current: Promise<Placed> | null = null
+  let current: Promise<RepoAnswer> | null = null
   let generation = 0
   let posted: string | null = null
   let heard: RepoAnswer | null = null
@@ -112,36 +105,33 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps, changed?: (before
   function hostFailed(error: unknown): RepoAnswer {
     return { ok: false, error: hostFailure(error) }
   }
-  const unplaced = (answer: RepoAnswer): Placed => ({ answer, id: null, focusedId: null })
 
   /** `listed`: the workspace.list answer repick already read, so the pick it stored is read
    *  under the same key. */
-  async function resolve(context: FocusContext | null, listed?: WorkspaceList): Promise<Placed> {
-    const focusedId = context?.workspaceId ?? null
-    const placed = (answer: RepoAnswer, id: string | null = null): Placed => ({ answer, id, focusedId })
+  async function resolve(context: FocusContext | null, listed?: WorkspaceList): Promise<RepoAnswer> {
     try {
       const { workspaces, truncated } = listed ?? (await orca.host.call('workspace.list'))
       const focus = await resolveFocus(context, workspaces, focusDeps)
       if (!focus.ok) {
         if (truncated && focus.error.code === 'workspace_not_found') {
-          return placed({ ok: false, error: { ...focus.error, message: `${focus.error.message} Orca listed only part of the workspaces.` } })
+          return { ok: false, error: { ...focus.error, message: `${focus.error.message} Orca listed only part of the workspaces.` } }
         }
-        return placed(focus)
+        return focus
       }
-      const { id, path } = focus.workspace
+      const { path } = focus.workspace
       const repo = await repoOf(path)
-      if (!repo.ok) return placed({ ok: false, error: { ...repo.error, path } }, id)
-      return placed({ ok: true, nameWithOwner: repo.nameWithOwner, url: repo.url, path, resolvedBy: focus.resolvedBy }, id)
+      if (!repo.ok) return { ok: false, error: { ...repo.error, path } }
+      return { ok: true, nameWithOwner: repo.nameWithOwner, url: repo.url, path, workspaceId: focus.workspace.id, resolvedBy: focus.resolvedBy }
     } catch (error) {
-      return placed(hostFailed(error))
+      return hostFailed(error)
     }
   }
 
   // Resolves one focus; panels hear the answer when it differs from the last one they heard.
   async function settle(context: Promise<FocusContext | null>, listed?: WorkspaceList): Promise<void> {
     const mine = ++generation
-    current = context.then((c) => resolve(c, listed), (error) => unplaced(hostFailed(error)))
-    const { answer } = await current
+    current = context.then((c) => resolve(c, listed), hostFailed)
+    const answer = await current
     if (mine !== generation) return
     const key = JSON.stringify(answer)
     if (key === posted) return
@@ -152,9 +142,9 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps, changed?: (before
   }
 
   /** The answer for the newest focus, waiting out focus changes that land meanwhile. */
-  async function latest(): Promise<Placed> {
-    let answer: Placed
-    let seen: Promise<Placed> | null
+  async function latest(): Promise<RepoAnswer> {
+    let answer: RepoAnswer
+    let seen: Promise<RepoAnswer> | null
     do {
       seen = current
       answer = await seen!
@@ -185,17 +175,14 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps, changed?: (before
       return hostFailed(error)
     }
     void settle(Promise.resolve(context), listed)
-    return (await latest()).answer
-  }
-
-  async function placed(): Promise<Placed> {
-    if (!current || !(await latest()).answer.ok) void settle(orca.host.call('workspace.readContext'))
     return latest()
   }
 
   return {
-    get: async () => (await placed()).answer,
-    placed,
+    async get() {
+      if (!current || !(await latest()).ok) void settle(orca.host.call('workspace.readContext'))
+      return latest()
+    },
     pick: (path) => repick(path),
     unpick: () => repick(null)
   }

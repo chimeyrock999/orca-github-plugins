@@ -8,7 +8,7 @@ import { hostFocused, noGh, repos, repoWorker, workspaces } from './fixtures/wor
 
 test('repo.get answers the focused workspace repo and its path', async () => {
   const worker = await mountWorker(repoWorker(), { host: hostFocused({ branch: 'feature/spike', displayName: 'Spike' }) })
-  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/app', url: 'https://github.com/octo/app', path: '/work/spike', resolvedBy: 'context' })
+  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/app', url: 'https://github.com/octo/app', path: '/work/spike', workspaceId: 'w-spike', resolvedBy: 'context' })
   assert.deepEqual(worker.refusals, [])
   await worker.deactivate()
 })
@@ -103,6 +103,9 @@ test('a failed host call is an answer that keeps what Orca said', async () => {
     [hostError('capability_denied', 'workspace:read'), { code: 'not_allowed', message: 'workspace:read' }],
     [hostError('rate_limited', 'slow down', 5_000), { code: 'host_rate_limited', message: 'slow down', retryAfterMs: 5_000 }],
     [hostError('invalid_params', 'bad'), { code: 'action_failed', message: 'bad' }],
+    // Host API 1.7's fixed messages for runtime refusals.
+    [hostError('action_failed', 'Orca could not complete this action'), { code: 'action_failed', message: 'Orca could not complete this action' }],
+    [hostError('conflict', "the terminal's tab is pinned; unpin it in Orca first"), { code: 'action_failed', message: "the terminal's tab is pinned; unpin it in Orca first" }],
     [new Error('socket closed'), { code: 'host_failed', message: 'socket closed' }]
   ]
   for (const [error, expected] of cases) {
@@ -227,7 +230,7 @@ test('repo.get asks again after an error, with no focus change', async () => {
   const first = await worker.request('repo.get')
   assert.equal(!first.ok && first.error.code, 'gh_logged_out')
   loggedIn = true
-  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/out', url: 'https://github.com/octo/out', path: '/code/out', resolvedBy: 'context' })
+  assert.deepEqual(await worker.request('repo.get'), { ok: true, nameWithOwner: 'octo/out', url: 'https://github.com/octo/out', path: '/code/out', workspaceId: 'w-out', resolvedBy: 'context' })
   // Other open panels hear the new answer too.
   const last = worker.posts.filter((p) => p.event === 'repo.changed').at(-1)
   assert.equal((last?.payload as { ok: boolean }).ok, true)
@@ -572,26 +575,28 @@ test('on host API 1.10, the agents are those Orca lists for the panel\'s workspa
   await worker.deactivate()
 })
 
-test('on host API 1.10, a panel workspace that is not Orca\'s focus has no agent to ask, as Orca types only into its focus', async () => {
-  // Two clones on main named main; a terminal of the focus says /code/app, while Orca focuses w-lib.
+test('on host API 1.10, a picked clone that is not Orca\'s focus has no agent to ask, as Orca types only into its focus', async () => {
+  // Orca gives no id for its focus: two clones on main named main, the person picks /code/app while
+  // Orca focuses the one in /code/lib, where its only agent runs.
   const host = mockHost({
     results: {
-      'workspace.readContext': { workspaceId: 'w-lib', branch: 'main', displayName: 'main', terminals: [{ id: 't-app' }] },
+      'workspace.readContext': { branch: 'main', displayName: 'main', terminals: [] },
       'workspace.list': { workspaces, truncated: false },
-      'agents.list': { agents: [{ terminalId: 't-free', title: 'Claude Code', agent: 'claude', state: 'waiting', stateStartedAt: 5 }] },
+      'agents.list': { agents: [{ terminalId: 't-lib', title: 'Claude Code', agent: 'claude', state: 'waiting', stateStartedAt: 5 }] },
       'terminal.sendText': { accepted: true }
     }
   })
   const module = {
     default: (orca: OrcaWorkerApi) =>
-      main.activateWith(onApi(orca, 10), { gh: noGh, ghRepo: async (path) => repos[path], terminalPath: async (id) => (id === 't-app' ? '/code/app' : null), exists: () => true })
+      main.activateWith(onApi(orca, 10), { gh: noGh, ghRepo: async (path) => repos[path], terminalPath: async (id) => (id === 't-lib' ? '/code/lib' : null), exists: () => true })
   }
   const worker = await mountWorker(module, { host })
-  assert.equal((await worker.request('repo.get')).ok, true)
+  const picked = await worker.request('repo.pick', { path: '/code/app' })
+  assert.equal(picked.ok && picked.resolvedBy, 'picked')
   assert.deepEqual(await worker.request('agent.find'), { ok: true, agent: null, busy: null })
-  const ask = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-free' })
+  const ask = await worker.request('agent.ask', { kind: 'issues', terminalId: 't-lib' })
   assert.equal(!ask.ok && ask.error.code, 'no_agent')
-  assert.equal(host.callsOf('agents.list').length, 0)
+  assert.deepEqual(host.callsOf('agents.list'), [undefined, undefined])
   assert.equal(host.callsOf('terminal.sendText').length, 0)
   await worker.deactivate()
 })
