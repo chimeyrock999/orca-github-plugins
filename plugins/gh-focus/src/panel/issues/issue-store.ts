@@ -2,7 +2,7 @@
 // New issues are made on Orca's Tasks page.
 import { plugin, read, update } from 'orca'
 import type { CloseReason, IssueDetail } from '../../shared/protocol'
-import { findAgent } from '../agent/agent-store'
+import { offerPosts } from '../agent/agent-store'
 import { atRepo, makeThread, WRITE, type ThreadState } from '../thread/thread-store'
 
 export type IssueState = ThreadState<IssueDetail> & { closing: { reason: CloseReason; duplicateOf: string } | null }
@@ -17,7 +17,7 @@ export const issues = makeThread<IssueDetail, Pick<IssueState, 'closing'>>(
   },
   () => ({ closing: null }),
   // The issue's posts are offered to the workspace's agent, so one is looked for once it shows.
-  (_, current) => void (current() && findAgent())
+  (_, current) => void (current() && offerPosts())
 )
 
 export const issue = issues.state

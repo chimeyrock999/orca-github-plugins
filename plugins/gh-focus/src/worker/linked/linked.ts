@@ -133,7 +133,8 @@ export function linkPrompt(repoUrl: string, kind: LinkedKind): string {
   )
 }
 
-const whole = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) > 0
+/** A number GitHub could name an issue, comment or run by: a whole number above zero. */
+export const isWhole = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) > 0
 
 /** What the agent is asked about an issue or one of its comments: its link, and the gh command that
  *  reads it (a comment by its id, as `gh issue view --comments` names none; `--hostname` or
@@ -141,7 +142,7 @@ const whole = (n: unknown): n is number => Number.isSafeInteger(n) && (n as numb
  *  terminal, so it holds only GitHub's own names and whole numbers. */
 export function aboutPrompt(repoUrl: string, focused: string, ask: Extract<AskAbout, { issue: number }>): string | null {
   const name = ask.repo ?? focused
-  if (typeof name !== 'string' || !isRepoName(name) || !whole(ask.issue) || (ask.comment !== null && !whole(ask.comment))) return null
+  if (typeof name !== 'string' || !isRepoName(name) || !isWhole(ask.issue) || (ask.comment !== null && !isWhole(ask.comment))) return null
   const { origin, host } = new URL(repoUrl)
   const other = host.toLowerCase() !== 'github.com'
   const issue = `${origin}/${name}/issues/${ask.issue}`

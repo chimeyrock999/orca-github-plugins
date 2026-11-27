@@ -26,7 +26,7 @@ import {
 import { issues } from '../issues/issue-store'
 import { count, EMOJI, pullLook, reactionTip, reviewLook, sourceLook, stateWords, type Look } from '../../shared/look'
 import { Glyph, GLYPH_WIDTH, Problem } from '../parts'
-import { agentNow, askAgent, askFailed, forgetAsked } from '../agent/agent-store'
+import { agentNow, askAgent, askFailed, forgetError } from '../agent/agent-store'
 import { handOff } from '../linked/link-store'
 import { pulls, workspacePull } from '../pulls/pull-store'
 import { REACTIONS, type AskAbout, type ReactionGroup, type ThreadDetail, type TimelineComment, type TimelineItem, type TimelineMention, type TimelineReview } from '../../shared/protocol'
@@ -151,7 +151,7 @@ function aboutPost(t: AnyThread, comment: number | null): AskAbout {
  *  agent's terminal for the person's Enter, so nothing else shows. */
 export function AskButton({ t, comment }: { t: AnyThread; comment: number | null }) {
   const a = agentNow()
-  if (t.kind !== 'issues' || !a?.agent) return null
+  if (!canAskAbout(t) || !a?.agent) return null
   return (
     <IconButton
       icon="agent"
@@ -167,7 +167,7 @@ export function AskButton({ t, comment }: { t: AnyThread; comment: number | null
 /** Why the agent was not asked about this post, under it. */
 export function AskProblem({ t, comment }: { t: AnyThread; comment: number | null }) {
   const error = t.kind === 'issues' ? askFailed(agentNow(), aboutPost(t, comment)) : null
-  return error ? <Problem error={error} onRetry={forgetAsked} retryLabel="Dismiss" /> : null
+  return error ? <Problem error={error} onRetry={forgetError} retryLabel="Dismiss" /> : null
 }
 
 /** Who and what, as a post's head says it: "kenji commented 2 days ago · edited". */

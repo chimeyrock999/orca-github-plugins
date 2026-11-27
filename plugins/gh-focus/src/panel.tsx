@@ -18,7 +18,7 @@ import {
   Toolbar,
   type PanelContext
 } from 'orca'
-import { askedStopped, findAgent, mayRefindAgent, offerAgent } from './panel/agent/agent-store'
+import { askedStopped, mayRefindAgent, offerAgent, offerPosts } from './panel/agent/agent-store'
 import { issue, issues } from './panel/issues/issue-store'
 import { pull, pulls } from './panel/pulls/pull-store'
 import { budget, budgetAnswered, budgetChanged, githubUrl, itemKey, lists, loadChoices, refresh, repo, requestFailed, selectTab, setRepo, tab, type Kind } from './panel/store'
@@ -42,13 +42,15 @@ async function thenStart(step: Promise<void> | void, again = false): Promise<voi
 
 /** The empty state offers a free agent to ask to link one, an open issue its body and comments; it
  *  is looked for only when one of them shows. (A failed run offers one too, looked for as the run
- *  shows, `run-store.ts`.) `keep`: an agent changed state (`findAgent`). */
+ *  shows, `run-store.ts`.) `keep`: an agent changed state, so the error under a post stays
+ *  (`findAgent`). */
 async function agentIfOffered(again: boolean, keep = false): Promise<void> {
   const kind = read(tab)
   if (kind === 'runs') return
-  if (read(lists[kind]).open) return kind === 'issues' && read(issue).answer?.ok ? findAgent(again, keep) : undefined
+  // An issue landing offers its posts itself (`issue-store.ts`); here only Refresh and agent changes.
+  if (read(lists[kind]).open) return again && kind === 'issues' && read(issue).answer?.ok ? offerPosts(true, keep) : undefined
   const t = kind === 'issues' ? issues : pulls
-  if (t.linkedNow()?.refs?.length === 0) await offerAgent({ link: kind }, again, keep)
+  if (t.linkedNow()?.refs?.length === 0) await offerAgent({ link: kind }, again)
 }
 
 /** An agent changed state. The one asked to link an item stopped while the tab it was asked from
@@ -61,7 +63,7 @@ async function agentChanged(e: { workspaceListId?: string; terminalId?: string; 
   if (t) return t.linkedNow()?.refs?.length === 0 ? t.start(true) : undefined
   if (!mayRefindAgent(e.workspaceListId)) return
   const run = failedRunShown()
-  await (run === null ? agentIfOffered(true, true) : offerAgent({ run }, true, true))
+  await (run === null ? agentIfOffered(true, true) : offerAgent({ run }, true))
 }
 
 /** Runs once before the first render; what it pushes to `subscriptions` ends with the panel. */

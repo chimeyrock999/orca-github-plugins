@@ -48,35 +48,26 @@ export const askFailed = (a: AgentState | null, about: AskAbout): PanelError | n
 
 /** Looks for a free agent when an offer shows for a workspace (or on Refresh, or when an agent
  *  there changes state): a failure, such as Orca not allowing it, is no agent. `keep` (an agent's
- *  change) keeps why the last ask failed, under the offer it was made from, and draws nothing when
- *  the answer is the same. */
+ *  change while an issue's posts are offered) keeps why the last ask failed, under the post it was
+ *  made from. An answer that changes nothing draws nothing. */
 let finding = 0
-// The workspace a look is on its way for: two offers showing at once (the empty state, an issue
-// landing) ask once.
-const lookingFor = atom<string | null>(null)
 export async function findAgent(again = false, keep = false): Promise<void> {
   const where = focusKey()
-  if (!again && (read(agent)?.where === where || read(lookingFor) === where)) return
+  if (!again && read(agent)?.where === where) return
   // Agent events come quickly: only the latest look answers.
   const mine = ++finding
-  set(lookingFor, where)
   const answer = await plugin.request('agent.find').catch(requestFailed)
-  if (mine !== finding) return
-  set(lookingFor, null)
-  if (focusKey() !== where) return
+  if (mine !== finding || focusKey() !== where) return
   // What the agent was asked stays: a look-up from another offer must not drop it (the asked agent
   // stopping still reopens the links, `askedStopped`). Another workspace starts afresh.
   const was = read(agent)
   const here = was?.where === where ? was : null
-  const next: AgentState = {
-    where,
-    agent: answer.ok ? answer.agent : null,
-    busy: answer.ok ? answer.busy : null,
-    asking: false,
-    asked: here?.asked ?? null,
-    error: keep ? (here?.error ?? null) : null
-  }
-  if (JSON.stringify(next) !== JSON.stringify(was)) set(agent, next)
+  const found = answer.ok ? answer.agent : null
+  const busy = answer.ok ? answer.busy : null
+  const error = keep ? (here?.error ?? null) : null
+  const sameAs = (x: unknown, y: unknown) => JSON.stringify(x ?? null) === JSON.stringify(y ?? null)
+  if (here && !here.asking && here.error === error && sameAs(here.agent, found) && sameAs(here.busy, busy)) return
+  set(agent, { where, agent: found, busy, asking: false, asked: here?.asked ?? null, error })
 }
 
 /** Whether an agent changing state is looked for again: only when Orca names its workspace and that is
@@ -94,10 +85,10 @@ export function mayRefindAgent(workspaceListId?: string): boolean {
  *  sets it working, and the callout stays until the agent asked to link one stops, see
  *  `askedStopped`, or until Dismiss). Asked about something else, it is looked for again: it may have
  *  started work since, unseen. */
-export function offerAgent(about: AskAbout, again = false, keep = false): Promise<void> | void {
+export function offerAgent(about: AskAbout, again = false): Promise<void> | void {
   const a = agentNow()
   if (a?.asking || wasAsked(a, about)) return
-  return findAgent(again || !!a?.asked, keep)
+  return findAgent(again || !!a?.asked)
 }
 
 /** The kind to ask Orca about again when an agent changes state: the one the agent was asked to
@@ -134,6 +125,21 @@ export async function askAgent(about: AskAbout): Promise<void> {
   await findAgent(true)
   const now = agentNow()
   if (now) set(agent, { ...now, error })
+}
+
+/** An open issue's posts are offered (the issue landed, or on Refresh or an agent's change, `again`):
+ *  the agent is looked for, except while a prompt is on its way; asked about something since, it is
+ *  looked for again. `keep`: see `findAgent`. */
+export function offerPosts(again = false, keep = false): Promise<void> | void {
+  const a = agentNow()
+  if (a?.asking) return
+  return findAgent(again || !!a?.asked, keep)
+}
+
+/** Dismiss under a post: drops why the ask failed, and keeps what the agent was asked before. */
+export function forgetError(): void {
+  const a = agentNow()
+  if (a?.error) set(agent, { ...a, error: null })
 }
 
 /** Back from "typed into the agent" (or from why it was not) to the offer. */

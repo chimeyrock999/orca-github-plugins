@@ -3,7 +3,7 @@
 import { assert, mockHost, mount, test } from 'orca/testing'
 import * as panel from '../../../src/panel'
 import { failed, issueDetail, links, pullDetail, repoOk } from '../../fixtures/fixtures'
-import { agentNow, askAgent } from '../../../src/panel/agent/agent-store'
+import { agentNow, askAgent, offerPosts } from '../../../src/panel/agent/agent-store'
 import type { IssueDetail } from '../../../src/shared/protocol'
 
 const free = { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null }
@@ -103,6 +103,34 @@ test('while a prompt is on the way, another ask sends nothing', async () => {
   answer({ ok: true, agent: 'Claude Code', working: false })
   await first
   assert.equal(agentNow()?.asking, false)
+  await view.unmount()
+})
+
+test('Refresh while a prompt is on the way keeps the buttons off', async () => {
+  let answer: (a: unknown) => void = () => undefined
+  const h = host({ 'agent.ask': () => new Promise((resolve) => (answer = resolve)) })
+  const view = await mount(panel, { host: h })
+  const first = askAgent({ issue: 120, repo: null, comment: 1001 })
+  await until(() => h.count('agent.ask') === 1)
+  const found = h.count('agent.find')
+  await offerPosts(true)
+  assert.equal(h.count('agent.find'), found)
+  assert.equal(agentNow()?.asking, true)
+  answer({ ok: true, agent: 'Claude Code', working: false })
+  await first
+  await view.unmount()
+})
+
+test('Dismiss under a post keeps what the agent was asked before', async () => {
+  const h = host({ 'agent.ask': ({ about }: { about: object }) => ('link' in about ? { ok: true, agent: 'Claude Code', working: false } : failed('action_failed', 'The panel asked about something the worker cannot name.')) })
+  const view = await mount(panel, { host: h })
+  await askAgent({ link: 'issues' })
+  await askAgent({ issue: 120, repo: null, comment: 1001 })
+  await view.settled()
+  assert.ok(view.find({ type: 'Button', text: 'Dismiss' }))
+  await view.press({ type: 'Button', text: 'Dismiss' })
+  assert.deepEqual(agentNow()?.asked?.about, { link: 'issues' })
+  assert.equal(agentNow()?.error, null)
   await view.unmount()
 })
 

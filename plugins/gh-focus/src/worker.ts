@@ -18,7 +18,7 @@ import {
   reopenIssue,
   setReaction
 } from './worker/issues/issues'
-import { aboutPrompt, agentName, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, takesPrompt, type AgentRow } from './worker/linked/linked'
+import { aboutPrompt, agentName, isWhole, busyAgent, freeAgent, linkedRefs, linkedRows, linkPrompt, takesPrompt, type AgentRow } from './worker/linked/linked'
 import { listLabels, listRuns, listWorkflows, type RepoRef } from './worker/lists'
 import { BRANCH_RUNS, isRepoName, type Answer, type GitHubBudget, type LinkedRef, type OrcaView, type RunListInput, type RunState, type Since } from './shared/protocol'
 import { commentOnPull, findBranchPull, editPull, getPull, pullTimeline, readyPull, reviewPull } from './worker/pulls/pulls'
@@ -257,8 +257,8 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
     if (typeof about !== 'object' || about === null) return unnamed
     let text: string | null
     try {
-      if ('run' in about) text = fixRunPrompt(repo, (await readRun(repo, about.run, signal)).run)
-      else if ('link' in about) text = linkPrompt(repo.url, about.link)
+      if ('run' in about) text = isWhole(about.run) ? fixRunPrompt(repo, (await readRun(repo, about.run, signal)).run) : null
+      else if ('link' in about) text = about.link === 'issues' || about.link === 'pulls' ? linkPrompt(repo.url, about.link) : null
       else text = aboutPrompt(repo.url, repo.nameWithOwner, about)
     } catch (error) {
       return toFailure(error)

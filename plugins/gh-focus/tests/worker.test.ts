@@ -508,7 +508,7 @@ test('agent.ask about an issue or one of its comments types the prompt the worke
     }
   ])
   // Names and numbers only: anything else, or another version's shape, is answered and never typed.
-  for (const about of [{ issue: 77, repo: 'octo/app --comments\n', comment: null }, { issue: 0, repo: null, comment: null }, { issue: 77, repo: null, comment: 1.5 }, undefined, 'issues']) {
+  for (const about of [{ issue: 77, repo: 'octo/app --comments\n', comment: null }, { issue: 0, repo: null, comment: null }, { issue: 77, repo: null, comment: 1.5 }, { link: 'runs' }, { run: 'x' }, { run: 0 }, undefined, 'issues']) {
     const odd = await worker.request('agent.ask', { about, terminalId: 't-free' } as never)
     assert.equal(!odd.ok && odd.error.code, 'action_failed', JSON.stringify(about))
   }
