@@ -154,9 +154,13 @@ test('busyAgent: one working or blocked with a terminal, the one that changed la
   assert.equal(busyAgent([agent('working', 3, null)]), null)
 })
 
-test('the prompt asks for the link with the command for this repo and kind', () => {
+test('the prompt asks for the link, tells the agent to ask instead of guessing, and ends with the command', () => {
   assert.equal(
     linkPrompt('https://github.com/octo/app', 'pulls'),
-    'Link the GitHub pull request this workspace is working on to it in Orca: orca reference add https://github.com/octo/app/pull/<number> --worktree current'
+    'Link the GitHub pull request this workspace is working on to it in Orca. If you are not sure which pull request, ask me instead of guessing. Run: orca reference add https://github.com/octo/app/pull/<number> --worktree current'
+  )
+  assert.equal(
+    linkPrompt('https://github.com/octo/app', 'issues'),
+    'Link the GitHub issue this workspace is working on to it in Orca. If you are not sure which issue, ask me instead of guessing. Run: orca reference add https://github.com/octo/app/issues/<number> --worktree current'
   )
 })

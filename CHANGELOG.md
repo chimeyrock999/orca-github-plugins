@@ -18,6 +18,8 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
   the Orca CLI where each agent's terminal runs.
 - On Orca 1.4.259 or later, the agent Link one offers is looked for again only when an agent of the
   workspace changes state, not when one in another workspace does.
+- Ask agent tells the agent to ask which issue or pull request to link when it is not sure, instead
+  of guessing a number.
 
 **Elsewhere**
 

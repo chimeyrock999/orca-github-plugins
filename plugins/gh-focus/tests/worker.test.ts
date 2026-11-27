@@ -453,7 +453,7 @@ test('before host API 1.10, agent.find names a free agent of the panel\'s folder
   assert.deepEqual(host.callsOf('terminal.sendText'), [
     {
       terminalId: 't-free',
-      text: 'Link the GitHub pull request this workspace is working on to it in Orca: orca reference add https://github.com/octo/app/pull/<number> --worktree current',
+      text: 'Link the GitHub pull request this workspace is working on to it in Orca. If you are not sure which pull request, ask me instead of guessing. Run: orca reference add https://github.com/octo/app/pull/<number> --worktree current',
       enter: false
     }
   ])
