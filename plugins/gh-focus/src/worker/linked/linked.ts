@@ -1,11 +1,10 @@
 // What Orca links to the focused workspace: its issues and pull requests (src/worker/exec.ts reads them
-// from Orca's CLI), the state GitHub has for them now, and the agent that can be asked to link one or
-// about an issue or comment.
+// from Orca's CLI), the state GitHub has for them now, and the free agent that can be asked to link one.
 import { GhError, type Gh } from '../gh'
 import type { LinkedItem, WorkspaceLinks } from '../exec'
 import { issueState, pullState, type RepoRef } from '../lists'
 import { linkCommand } from '../../shared/look'
-import { isRepoName, LINKED_LIMIT, type AgentAsk, type LinkedKind, type LinkedRef, type LinkedRow } from '../../shared/protocol'
+import { isRepoName, LINKED_LIMIT, type AskAbout, type LinkedKind, type LinkedRef, type LinkedRow } from '../../shared/protocol'
 
 /** The links Orca keeps for a workspace, by kind, when the workspace is of the focused repo: an
  *  item of the focused repo has `repo` null, one of another repo its `owner/name`. An item on another
@@ -101,29 +100,37 @@ export async function linkedRows(gh: Gh, repo: RepoRef, kind: LinkedKind, items:
 
 export type AgentRow = { terminalId: string | null; title: string | null; agent: string | null; state: string; stateStartedAt: number }
 
-/** The agent to ask: one with a terminal that does not wait on a question (the text could answer
- *  it). One waiting for input or done comes first, the one that stopped last; else one at work, the
- *  one that started last: the text waits in its input until the person sends it. */
-export function askableAgent(agents: AgentRow[]): (AgentRow & { terminalId: string }) | null {
-  const ready = agents.filter((a): a is AgentRow & { terminalId: string } => !!a.terminalId && a.state !== 'blocked')
-  const free = (a: AgentRow) => (a.state === 'working' ? 0 : 1)
-  return ready.sort((a, b) => free(b) - free(a) || b.stateStartedAt - a.stateStartedAt)[0] ?? null
+/** Whether an agent can take a prompt: it has a terminal and does not wait on a question. One at
+ *  work takes it too: the text waits in its input, without Enter, until the person sends it. */
+export const takesPrompt = (a: AgentRow): a is AgentRow & { terminalId: string } => !!a.terminalId && a.state !== 'blocked'
+
+/** The agent to ask: one that takes a prompt, one that stopped (waiting or done) before one at work,
+ *  then the one that changed last. */
+export function freeAgent(agents: AgentRow[]): (AgentRow & { terminalId: string }) | null {
+  const stopped = (a: AgentRow) => (a.state === 'waiting' || a.state === 'done' ? 1 : 0)
+  return agents.filter(takesPrompt).sort((a, b) => stopped(b) - stopped(a) || b.stateStartedAt - a.stateStartedAt)[0] ?? null
 }
 
-/** The agent the panel names when none can be asked: one with a terminal that waits on a question,
- *  the one that changed last. */
-export function blockedAgent(agents: AgentRow[]): (AgentRow & { terminalId: string }) | null {
-  const blocked = agents.filter((a): a is AgentRow & { terminalId: string } => !!a.terminalId && a.state === 'blocked')
-  return blocked.sort((a, b) => b.stateStartedAt - a.stateStartedAt)[0] ?? null
+/** The agent the panel names when none takes a prompt: one with a terminal that waits on a
+ *  question, the one that changed last. */
+export function busyAgent(agents: AgentRow[]): (AgentRow & { terminalId: string; state: 'blocked' }) | null {
+  const busy = agents.filter((a): a is AgentRow & { terminalId: string; state: 'blocked' } => !!a.terminalId && a.state === 'blocked')
+  return busy.sort((a, b) => b.stateStartedAt - a.stateStartedAt)[0] ?? null
 }
 
 /** How the panel names an agent: its terminal title, else its kind. */
 export const agentName = (a: AgentRow): string => a.title?.trim() || a.agent || 'the agent'
 
-/** What the agent is asked: it knows which issue or pull request it works on. */
+/**
+ * What the agent is asked: to link the issue or pull request it works on, or to ask when it does
+ * not know which (a guess links the wrong item). One line, the command last so nothing sticks to it.
+ */
 export function linkPrompt(repoUrl: string, kind: LinkedKind): string {
   const noun = kind === 'issues' ? 'issue' : 'pull request'
-  return `Link the GitHub ${noun} this workspace is working on to it in Orca: ${linkCommand(repoUrl, kind)}`
+  return (
+    `Link the GitHub ${noun} this workspace is working on to it in Orca. ` +
+    `If you are not sure which ${noun}, ask me instead of guessing. Run: ${linkCommand(repoUrl, kind)}`
+  )
 }
 
 const whole = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) > 0
@@ -132,7 +139,7 @@ const whole = (n: unknown): n is number => Number.isSafeInteger(n) && (n as numb
  *  reads it (a comment by its id, as `gh issue view --comments` names none; `--hostname` or
  *  `host/owner/name` when not github.com). Null when the ask names no issue: the text goes into a
  *  terminal, so it holds only GitHub's own names and whole numbers. */
-export function aboutPrompt(repoUrl: string, focused: string, ask: Exclude<AgentAsk, { link: LinkedKind }>): string | null {
+export function aboutPrompt(repoUrl: string, focused: string, ask: Extract<AskAbout, { issue: number }>): string | null {
   const name = ask.repo ?? focused
   if (typeof name !== 'string' || !isRepoName(name) || !whole(ask.issue) || (ask.comment !== null && !whole(ask.comment))) return null
   const { origin, host } = new URL(repoUrl)
@@ -143,11 +150,4 @@ export function aboutPrompt(repoUrl: string, focused: string, ask: Exclude<Agent
   }
   const api = `gh api ${other ? `--hostname ${host} ` : ''}repos/${name}/issues/comments/${ask.comment}`
   return `Read this comment and tell me what you would do about it, before changing anything: ${issue}#issuecomment-${ask.comment} (${api})`
-}
-
-/** The text an ask types into the agent, or null when it names nothing the worker can type. */
-export function askPrompt(repoUrl: string, focused: string, ask: AgentAsk): string | null {
-  if (typeof ask !== 'object' || ask === null) return null
-  if ('link' in ask) return ask.link === 'issues' || ask.link === 'pulls' ? linkPrompt(repoUrl, ask.link) : null
-  return aboutPrompt(repoUrl, focused, ask)
 }

@@ -3,7 +3,8 @@
 import { assert, mockHost, mount, test } from 'orca/testing'
 import * as panel from '../../src/panel'
 import { failed, issueDetail, links, linkedRows, repoOk } from '../fixtures/fixtures'
-import type { GitHubBudget, LinkedRef } from '../../src/shared/protocol'
+import { BRANCH_RUNS, type GitHubBudget, type LinkedRef } from '../../src/shared/protocol'
+import { runPage, runRows } from '../fixtures/fixtures'
 
 const low: GitHubBudget = { limit: 5_000, remaining: 312, resetAt: Date.UTC(2026, 10, 13, 14, 5) }
 
@@ -14,7 +15,7 @@ function host(overrides: Record<string, unknown> = {}) {
     'repo.links': () => links([120, 119]),
     'items.get': ({ items }: { items: LinkedRef[] }) => linkedRows(items),
     'issue.get': () => ({ ok: true, issue: issueDetail() }),
-    'agent.find': { ok: true, agent: null, blocked: null },
+    'agent.find': { ok: true, agent: null, busy: null },
     'cache.drop': { ok: true },
     'budget.get': { ok: true, budget: null },
     ...overrides
@@ -93,5 +94,14 @@ test('an answer that fails leaves the list it found, as before', async () => {
   const h = host({ 'items.get': failed('gh_failed', 'no') })
   const view = await mount(panel, { host: h })
   assert.ok(view.find({ text: 'Retry' }))
+  await view.unmount()
+})
+
+test("the Actions tab's first page is asked exactly as since.get reads it, so the worker keeps one page for both", async () => {
+  const h = host({ 'runs.list': () => runPage(runRows) })
+  const view = await mount(panel, { host: h, persisted: { plugin: { tab: 'runs' } } })
+  const first = h.asked.find((a) => a.name === 'runs.list')
+  // The worker's cache key is the JSON of the input, key order included.
+  assert.equal(JSON.stringify(first?.input), JSON.stringify(BRANCH_RUNS))
   await view.unmount()
 })

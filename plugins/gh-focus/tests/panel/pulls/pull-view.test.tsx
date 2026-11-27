@@ -4,7 +4,7 @@
 import { assert, hostError, mockHost, mount, test } from 'orca/testing'
 import * as panel from '../../../src/panel'
 import { before, failed, links, linkedRows, pullDetail, ref, repoOk, rowOf } from '../../fixtures/fixtures'
-import { findAgent } from '../../../src/panel/linked/link-store'
+import { findAgent } from '../../../src/panel/agent/agent-store'
 import { canReview, timing } from '../../../src/panel/pulls/pull-store'
 import type { PullDetail, TimelineItem } from '../../../src/shared/protocol'
 
@@ -21,8 +21,8 @@ function host(overrides: Record<string, unknown> = {}, detail: (number: number) 
     // The workspace's branch has pull request 124.
     'repo.links': links([], [124]),
     'items.get': ({ items }: { items: Parameters<typeof linkedRows>[0] }) => linkedRows(items, 'pulls'),
-    'agent.find': { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, blocked: null },
-    'agent.ask': { ok: true, agent: 'Claude Code' },
+    'agent.find': { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null },
+    'agent.ask': { ok: true, agent: 'Claude Code', working: false },
     // The pull request asked for, so each number opens its own.
     'pull.get': ({ number }: { number: number }) => ({ ok: true, pull: { ...detail(number), number, url: `https://github.com/octo/app/pull/${number}` } }),
     'pull.comment': () => ok,
@@ -223,26 +223,26 @@ test('Ask agent types the link prompt into the agent; the person presses Enter t
   const h = host({ 'repo.links': links() })
   const view = await openPull(h)
   await view.press({ type: 'Button', text: 'Ask Claude Code to link' })
-  assert.deepEqual(h.last('agent.ask'), { terminalId: 't1', ask: { link: 'pulls' } })
+  assert.deepEqual(h.last('agent.ask'), { about: { link: 'pulls' }, terminalId: 't1' })
   assert.ok(says(view, /Typed into Claude Code/))
   await view.press({ type: 'Button', text: 'Show the command again' })
   assert.ok(view.find({ type: 'Button', text: 'Ask Claude Code to link' }))
   await view.unmount()
 
-  // The agent waits on a question by the time it is asked: it says why, and asks again what the agent is doing.
-  let found: unknown = { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, blocked: null }
+  // No agent free by the time it is asked: it says why, and asks again what the agent is doing.
+  let found: unknown = { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null }
   const busy = await openPull(host({ 'repo.links': links(), 'agent.find': () => found, 'agent.ask': () => {
-    found = { ok: true, agent: null, blocked: { name: 'Claude Code' } }
-    return failed('no_agent', 'That agent is waiting on a question now, gone, or not in this workspace.')
+    found = { ok: true, agent: null, busy: { name: 'Claude Code', state: 'blocked' } }
+    return failed('no_agent', 'That agent waits on a question now, is gone, or is not in this workspace.')
   } }))
   await busy.press({ type: 'Button', text: 'Ask Claude Code to link' })
-  assert.ok(says(busy, /No agent to ask/))
-  assert.ok(busy.find({ text: /Claude Code is waiting on a question/ }))
+  assert.ok(says(busy, /No agent free/))
+  assert.ok(busy.find({ text: /Claude Code is waiting on a question\. Answer it, then ask/ }))
   assert.equal(busy.find({ type: 'Button', text: 'Ask Claude Code to link' })?.props.disabled, true)
   await busy.unmount()
 
   // No agent in the workspace at all: no button.
-  const none = await openPull(host({ 'repo.links': links(), 'agent.find': { ok: true, agent: null, blocked: null } }))
+  const none = await openPull(host({ 'repo.links': links(), 'agent.find': { ok: true, agent: null, busy: null } }))
   assert.equal(none.find({ type: 'Button', text: /^Ask / }), null)
   assert.ok(none.find({ text: /No agent here to ask/ }))
   await none.unmount()
@@ -252,45 +252,39 @@ test('Ask agent types the link prompt into the agent; the person presses Enter t
 const agentStatus = { workspaceId: 'raw-app', workspaceListId: repoOk.workspaceId, paneKey: 'p1', terminalId: 't1', state: 'done' as const, receivedAt: 1 }
 
 test('an agent waiting on a question is named, and Ask comes by itself once it is answered, without Refresh', async () => {
-  let found: unknown = { ok: true, agent: null, blocked: { name: 'Claude Code' } }
+  let found: unknown = { ok: true, agent: null, busy: { name: 'Claude Code', state: 'blocked' } }
   const h = host({ 'repo.links': links(), 'agent.find': () => found })
   const view = await openPull(h)
   // Blocked on a question: named, and the button waits, disabled.
   assert.ok(view.find({ text: /Claude Code is waiting on a question/ }))
   assert.equal(view.find({ type: 'Button', text: 'Ask Claude Code to link' })?.props.disabled, true)
   assert.equal(view.find({ text: /No agent/ }), null)
-  // No agent at all for a moment.
-  found = { ok: true, agent: null, blocked: null }
-  await view.emit('agent.status.changed', agentStatus)
-  assert.ok(view.find({ text: /No agent here to ask/ }))
-  // Answered, at work again: the panel asks again, and Ask is offered (the text waits in its input).
-  found = { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, blocked: null }
-  await view.emit('agent.status.changed', agentStatus)
+  // Answered, it works on: it takes a prompt (the text waits in its input), and Ask is offered.
+  found = { ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null }
+  await view.emit('agent.status.changed', { ...agentStatus, state: 'working' })
   assert.equal(view.find({ type: 'Button', text: 'Ask Claude Code to link' })?.props.disabled, false)
-  assert.equal(h.count('agent.find'), 3)
+  assert.equal(h.count('agent.find'), 2)
   await view.unmount()
 })
 
-test('once asked, the agent starting work keeps the callout until Refresh', async () => {
+test('once asked, the agent starting work keeps the callout; nothing is looked for again', async () => {
   const h = host({ 'repo.links': links() })
   const view = await openPull(h)
   await view.press({ type: 'Button', text: 'Ask Claude Code to link' })
   assert.ok(says(view, /Typed into Claude Code/))
   await view.emit('agent.status.changed', agentStatus)
-  assert.equal(h.count('agent.find'), 2)
   assert.ok(says(view, /Typed into Claude Code/))
-  await view.press({ label: 'Refresh' })
-  assert.equal(says(view, /Typed into Claude Code/), false)
+  assert.equal(h.count('agent.find'), 1)
   await view.unmount()
 })
 
 test('two looks for the agent in flight (events in quick succession): only the latest answers', async () => {
   const answers: ((a: unknown) => void)[] = []
-  const blocked = { ok: true, agent: null, blocked: { name: 'Claude Code' } }
+  const busy = (state: string) => ({ ok: true, agent: null, busy: { name: 'Claude Code', state } })
   let first = true
   const h = host({
     'repo.links': links(),
-    'agent.find': () => (first ? ((first = false), blocked) : new Promise((resolve) => answers.push(resolve)))
+    'agent.find': () => (first ? ((first = false), busy('blocked')) : new Promise((resolve) => answers.push(resolve)))
   })
   const view = await openPull(h)
   // Two looks in flight, as two events in quick succession start them.
@@ -298,8 +292,8 @@ test('two looks for the agent in flight (events in quick succession): only the l
   await until(() => answers.length === 2)
   assert.equal(answers.length, 2)
   // The second answers first (it stopped); the first, older, answers after and is dropped.
-  answers[1]({ ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, blocked: null })
-  answers[0](blocked)
+  answers[1]({ ok: true, agent: { name: 'Claude Code', terminalId: 't1' }, busy: null })
+  answers[0](busy('blocked'))
   await Promise.all(looks)
   await view.settled()
   assert.equal(view.find({ text: /waiting on a question/ }), null)
@@ -308,7 +302,7 @@ test('two looks for the agent in flight (events in quick succession): only the l
 })
 
 test('only an agent of the panel\'s workspace is looked for again', async () => {
-  const h = host({ 'repo.links': links(), 'agent.find': { ok: true, agent: null, blocked: { name: 'Claude Code' } } })
+  const h = host({ 'repo.links': links(), 'agent.find': { ok: true, agent: null, busy: { name: 'Claude Code', state: 'blocked' } } })
   const view = await openPull(h)
   assert.equal(h.count('agent.find'), 1)
   // Another workspace's agent: its change cannot change the offer, so nothing is asked.

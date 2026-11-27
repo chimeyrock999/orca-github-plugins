@@ -2,7 +2,7 @@
 // New issues are made on Orca's Tasks page.
 import { plugin, read, update } from 'orca'
 import type { CloseReason, IssueDetail } from '../../shared/protocol'
-import { findAgent } from '../linked/link-store'
+import { findAgent } from '../agent/agent-store'
 import { atRepo, makeThread, WRITE, type ThreadState } from '../thread/thread-store'
 
 export type IssueState = ThreadState<IssueDetail> & { closing: { reason: CloseReason; duplicateOf: string } | null }

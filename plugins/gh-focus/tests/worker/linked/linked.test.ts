@@ -1,8 +1,8 @@
 // The linked items: which of Orca's links count for the focused repo, the one GraphQL call that
-// reads their state, and the agent that is asked to link one or about an issue.
+// reads their state, and the agent that is asked to link one.
 import { assert, test } from 'orca/testing'
 import { GhError, type Gh } from '../../../src/worker/gh'
-import { aboutPrompt, askableAgent, askPrompt, blockedAgent, linkedQuery, linkedRefs, linkedRows, linkPrompt, type AgentRow } from '../../../src/worker/linked/linked'
+import { aboutPrompt, busyAgent, freeAgent, linkedQuery, linkedRefs, linkedRows, linkPrompt, type AgentRow } from '../../../src/worker/linked/linked'
 import { LINKED_LIMIT, type LinkedRef } from '../../../src/shared/protocol'
 
 const repo = { nameWithOwner: 'octo/app', path: '/code/app' }
@@ -139,21 +139,22 @@ test('linkedRows: names that do not look like a repo stay out of the query; a ca
   assert.equal((await linkedRows(capped, repo, 'issues', many)).rows.length, LINKED_LIMIT)
 })
 
-test('askableAgent: one with a terminal not waiting on a question; one waiting or done first, the one that stopped last, else the one at work that started last', () => {
+test('freeAgent: one with a terminal not waiting on a question, a stopped one before one at work, then the last to change', () => {
   const agent = (state: string, at: number, terminalId: string | null = `t${at}`): AgentRow => ({ terminalId, title: `Agent ${at}`, agent: 'claude', state, stateStartedAt: at })
-  assert.equal(askableAgent([agent('working', 9), agent('done', 2), agent('waiting', 5), agent('blocked', 7)])?.terminalId, 't5')
-  // At work, the text waits in its input until the person sends it.
-  assert.equal(askableAgent([agent('working', 1), agent('blocked', 8), agent('working', 4)])?.terminalId, 't4')
-  assert.equal(askableAgent([agent('blocked', 2)]), null)
-  assert.equal(askableAgent([agent('done', 3, null), agent('working', 4, null)]), null)
-  assert.equal(askableAgent([]), null)
+  assert.equal(freeAgent([agent('working', 9), agent('done', 2), agent('waiting', 5), agent('blocked', 7)])?.terminalId, 't5')
+  // At work, it takes the prompt too: the text waits in its input.
+  assert.equal(freeAgent([agent('working', 1), agent('blocked', 2)])?.terminalId, 't1')
+  assert.equal(freeAgent([agent('working', 1), agent('working', 4)])?.terminalId, 't4')
+  assert.equal(freeAgent([agent('blocked', 2)]), null)
+  assert.equal(freeAgent([agent('done', 3, null)]), null)
+  assert.equal(freeAgent([]), null)
 })
 
-test('blockedAgent: one waiting on a question with a terminal, the one that changed last', () => {
+test('busyAgent: one waiting on a question with a terminal, the one that changed last', () => {
   const agent = (state: string, at: number, terminalId: string | null = `t${at}`): AgentRow => ({ terminalId, title: `Agent ${at}`, agent: 'claude', state, stateStartedAt: at })
-  assert.equal(blockedAgent([agent('blocked', 3), agent('blocked', 7), agent('working', 9)])?.terminalId, 't7')
-  assert.equal(blockedAgent([agent('working', 3), agent('done', 2)]), null)
-  assert.equal(blockedAgent([agent('blocked', 3, null)]), null)
+  assert.equal(busyAgent([agent('blocked', 3), agent('blocked', 7), agent('working', 9)])?.terminalId, 't7')
+  assert.equal(busyAgent([agent('done', 3), agent('waiting', 2), agent('working', 1)]), null)
+  assert.equal(busyAgent([agent('blocked', 3, null)]), null)
 })
 
 test('the prompt about an issue or one of its comments names its link and the gh command that reads it', () => {
@@ -186,15 +187,13 @@ test('the prompt about an issue or one of its comments names its link and the gh
   }
 })
 
-test('an ask that is not one the panel sends types nothing', () => {
-  for (const bad of [undefined, null, 'issues', { link: 'runs' }]) {
-    assert.equal(askPrompt('https://github.com/octo/app', 'octo/app', bad as never), null, JSON.stringify(bad))
-  }
-})
-
-test('the prompt asks for the link with the command for this repo and kind', () => {
+test('the prompt asks for the link, tells the agent to ask instead of guessing, and ends with the command', () => {
   assert.equal(
     linkPrompt('https://github.com/octo/app', 'pulls'),
-    'Link the GitHub pull request this workspace is working on to it in Orca: orca reference add https://github.com/octo/app/pull/<number> --worktree current'
+    'Link the GitHub pull request this workspace is working on to it in Orca. If you are not sure which pull request, ask me instead of guessing. Run: orca reference add https://github.com/octo/app/pull/<number> --worktree current'
+  )
+  assert.equal(
+    linkPrompt('https://github.com/octo/app', 'issues'),
+    'Link the GitHub issue this workspace is working on to it in Orca. If you are not sure which issue, ask me instead of guessing. Run: orca reference add https://github.com/octo/app/issues/<number> --worktree current'
   )
 })

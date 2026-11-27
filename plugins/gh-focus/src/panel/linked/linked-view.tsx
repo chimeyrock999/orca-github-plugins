@@ -1,7 +1,8 @@
 // The Issues and Pull requests tabs with no thread open: the items Orca links to the workspace, or,
 // with none, how to link one (the command, or asking the workspace's agent), and the hand-offs.
 import { Badge, Box, Button, Callout, Code, EmptyState, List, ListItem, read, RelativeTime, Row, shell, Skeleton, Stack, Text } from 'orca'
-import { askAgent, agentNow, dismissHandOff, handOff, handOffError, showCommand } from './link-store'
+import { askAgent, askFailed, agentNow, forgetAsked, wasAsked } from '../agent/agent-store'
+import { dismissHandOff, handOff, handOffError } from './link-store'
 import { linkCommand, linkedLook } from '../../shared/look'
 import { Glyph, Problem } from '../parts'
 import { LINKED_LIMIT, type LinkedKind, type LinkedRow } from '../../shared/protocol'
@@ -102,18 +103,19 @@ function LinkedList({ t, l }: { t: AnyThread; l: LinkedState }) {
   )
 }
 
-/** How to link one: the command, and the workspace's agent to ask, if any. */
+/** How to link one: the command, and the workspace's free agent to ask, if any. */
 function HowToLink({ kind }: { kind: LinkedKind }) {
   const r = read(repo)
   const a = agentNow()
+  const failedAsk = askFailed(a, { link: kind })
   const noun = NOUN[kind].one
-  if (a?.asked === kind) {
+  if (a && wasAsked(a, { link: kind })) {
     return (
-      <Callout tone="success" title={`Typed into ${a.agent?.name ?? 'the agent'}`}>
+      <Callout tone="success" title={`Typed into ${a.asked?.name ?? 'the agent'}`}>
         <Stack gap="xs">
-          <Text size="sm">{`Read it in the agent's terminal and press Enter there. Once the ${noun} is linked, Refresh opens it.`}</Text>
+          <Text size="sm">{`Read it in the agent's terminal and press Enter there. Once the ${noun} is linked, it opens here. Refresh if it does not.`}</Text>
           <Row>
-            <Button size="sm" variant="ghost" onPress={showCommand}>
+            <Button size="sm" variant="ghost" onPress={forgetAsked}>
               Show the command again
             </Button>
           </Row>
@@ -133,18 +135,18 @@ function HowToLink({ kind }: { kind: LinkedKind }) {
         <>
           <Text size="xs" muted>{`Or ask the workspace's agent: it knows which ${noun} it is working on.`}</Text>
           <Row>
-            <Button size="sm" variant="outline" icon="agent" disabled={a.asking} onPress={() => askAgent(kind)}>
+            <Button size="sm" variant="outline" icon="agent" disabled={a.asking} onPress={() => askAgent({ link: kind })}>
               {a.asking ? 'Asking…' : `Ask ${a.agent.name} to link`}
             </Button>
           </Row>
         </>
-      ) : a.blocked ? (
+      ) : a.busy ? (
         // Never typed into while it waits on a question; the button comes once it is answered.
         <>
-          <Text size="xs" muted>{`${a.blocked.name} is waiting on a question. Answer it, then ask, or run the command in a terminal.`}</Text>
+          <Text size="xs" muted>{`${a.busy.name} is waiting on a question. Answer it, then ask, or run the command in a terminal.`}</Text>
           <Row>
             <Button size="sm" variant="outline" icon="agent" disabled>
-              {`Ask ${a.blocked.name} to link`}
+              {`Ask ${a.busy.name} to link`}
             </Button>
           </Row>
         </>
@@ -153,7 +155,7 @@ function HowToLink({ kind }: { kind: LinkedKind }) {
           No agent here to ask. Run the command in a terminal of the workspace.
         </Text>
       )}
-      {a?.error && <Problem error={a.error} onRetry={showCommand} retryLabel="Dismiss" />}
+      {failedAsk && <Problem error={failedAsk} onRetry={forgetAsked} retryLabel="Dismiss" />}
     </Box>
   )
 }

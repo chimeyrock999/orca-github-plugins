@@ -18,18 +18,21 @@ import {
   Toolbar,
   type PanelContext
 } from 'orca'
+import { askedStopped, findAgent, mayRefindAgent, offerAgent } from './panel/agent/agent-store'
 import { issue, issues } from './panel/issues/issue-store'
-import { findAgent, mayRefindAgent } from './panel/linked/link-store'
 import { pull, pulls } from './panel/pulls/pull-store'
 import { budget, budgetAnswered, budgetChanged, githubUrl, itemKey, lists, loadChoices, refresh, repo, requestFailed, selectTab, setRepo, tab, type Kind } from './panel/store'
 import { Problem } from './panel/parts'
-import { DISPATCH, loadForm, loadRun, progress, tabShown } from './panel/runs/run-store'
+import { DISPATCH, failedRunShown, loadForm, loadRun, progress, tabShown } from './panel/runs/run-store'
+import { loadSince } from './panel/since/since-store'
+import { SinceBlock } from './panel/since/since-view'
 import { KindView } from './panel/views'
 import { budgetWords } from './shared/look'
+import type { RepoAnswer } from './shared/protocol'
 
 /** Runs `step`, then lets the tab on screen ask Orca what it links to the workspace if it has not
- *  yet (each tab starts only when it shows); with nothing linked, or an issue open, the agent to ask
- *  is looked for. */
+ *  yet (each tab starts only when it shows); with nothing linked, or an issue open, a free agent is
+ *  looked for. */
 async function thenStart(step: Promise<void> | void, again = false): Promise<void> {
   await step
   await issues.start(again)
@@ -37,30 +40,51 @@ async function thenStart(step: Promise<void> | void, again = false): Promise<voi
   await agentIfOffered(again)
 }
 
-/** The empty state offers the agent to ask to link one, an open issue its posts; the agent is looked
- *  for only while one of them shows. */
+/** The empty state offers a free agent to ask to link one, an open issue its body and comments; it
+ *  is looked for only when one of them shows. (A failed run offers one too, looked for as the run
+ *  shows, `run-store.ts`.) `keep`: an agent changed state (`findAgent`). */
 async function agentIfOffered(again: boolean, keep = false): Promise<void> {
   const kind = read(tab)
   if (kind === 'runs') return
   if (read(lists[kind]).open) return kind === 'issues' && read(issue).answer?.ok ? findAgent(again, keep) : undefined
   const t = kind === 'issues' ? issues : pulls
-  if (t.linkedNow()?.refs?.length === 0) await findAgent(again, keep)
+  if (t.linkedNow()?.refs?.length === 0) await offerAgent({ link: kind }, again, keep)
+}
+
+/** An agent changed state. The one asked to link an item stopped while the tab it was asked from
+ *  still has nothing linked: that tab asks Orca again what it links (no GitHub call on Issues; on
+ *  Pull requests the branch's, kept a short while), and opens what the agent linked as Refresh
+ *  would; nothing yet leaves the callout. */
+async function agentChanged(e: { workspaceListId?: string; terminalId?: string; state: string }): Promise<void> {
+  const kind = askedStopped(e)
+  const t = kind && (kind === 'issues' ? issues : pulls)
+  if (t) return t.linkedNow()?.refs?.length === 0 ? t.start(true) : undefined
+  if (!mayRefindAgent(e.workspaceListId)) return
+  const run = failedRunShown()
+  await (run === null ? agentIfOffered(true, true) : offerAgent({ run }, true, true))
 }
 
 /** Runs once before the first render; what it pushes to `subscriptions` ends with the panel. */
 export function setup(ctx: PanelContext): void {
-  ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void thenStart(setRepo(answer))))
+  // What changed while away is asked beside the tab's own requests, once the repo answer is set.
+  const heard = (answer: RepoAnswer) => {
+    const started = thenStart(setRepo(answer))
+    void loadSince()
+    return started
+  }
+  ctx.subscriptions.push(plugin.on('repo.changed', (answer) => void heard(answer)))
   ctx.subscriptions.push(plugin.on('run.progress', ({ run }) => progress(run)))
   ctx.subscriptions.push(plugin.on('budget.changed', (answer) => budgetChanged(answer.budget)))
-  // An agent of the panel's workspace started or stopped (`agent:read` is enough): the offer of the
-  // empty state or the open issue follows it, with one agent.find and no GitHub call.
-  ctx.subscriptions.push(on('agent.status.changed', (e) => void (mayRefindAgent(e.workspaceListId) && agentIfOffered(true, true))))
+  // An agent of the panel's workspace started or stopped (`agent:read` is enough): the offer on screen
+  // follows it, with one agent.find and no GitHub call; the agent asked to link one stopping re-reads
+  // the links instead (`agentChanged`).
+  ctx.subscriptions.push(on('agent.status.changed', (e) => void agentChanged(e)))
   void plugin.request('budget.get').then(
     (answer) => answer.ok && budgetAnswered(answer.budget),
     () => undefined
   )
   void plugin.request('repo.get').then(
-    (answer) => thenStart(setRepo(answer)),
+    (answer) => heard(answer),
     (error: unknown) => setRepo(requestFailed(error))
   )
 }
@@ -74,6 +98,7 @@ async function refreshAll(): Promise<void> {
   }
   const was = { issues: shown('issues'), pulls: shown('pulls') }
   await thenStart(refresh(), true)
+  void loadSince()
   // Refresh drops the label and assignee choices; an open picker asks for its own again.
   const picking = read(issue).picking ?? read(pull).picking
   if (picking) void loadChoices(picking.kind, picking.of)
@@ -131,6 +156,7 @@ export default function Panel() {
         </Toolbar>
       </Row>
       <BudgetLow />
+      <SinceBlock />
       <Tabs
         label="GitHub"
         value={read(tab)}

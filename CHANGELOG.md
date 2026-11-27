@@ -17,6 +17,20 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 - On an open issue, the body and each comment can be handed to the workspace's agent: the panel
   types a prompt with the link, without Enter, for you to read and send.
 
+**Actions**
+
+- A failed run offers "Ask <agent> to fix": it types one line into the workspace's agent (the
+  run, its failed jobs, and the `gh run view --log-failed` command to read their log), without
+  Enter. While the agent waits on a question the button waits, disabled, and says why.
+
+**Elsewhere**
+
+- Since you were here: coming back to a workspace after 10 minutes or more in another one, a short
+  block above the tabs says what changed meanwhile: new comments, reviews, and closes, reopens and
+  merges on its linked issues and pull requests (and the branch's pull request), and the branch's
+  runs that finished. Each line opens the item or run; Dismiss hides it until the next absence.
+  The panel remembers when you left each workspace in memory only, so a restart of Orca forgets it.
+
 ### Changed
 
 **Issues and pull requests**
@@ -25,8 +39,14 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
   agent's terminal runs.
 - The agent Link one offers is looked for again only when an agent of the workspace changes state,
   not when one in another workspace does.
-- Ask agent also types into an agent at work (the text waits in its input until you send it); only
-  one waiting on a question is left alone.
+- Once the asked agent links the issue or pull request and stops, the tab opens it (or lists them,
+  when it linked several) without Refresh.
+- Ask agent tells the agent to ask which issue or pull request to link when it is not sure, instead
+  of guessing a number.
+- Ask agent types into the workspace's agent while it works, too: the text waits in its input until
+  you send it. Only an agent waiting on a question is not asked ("<name> is waiting on a question").
+  The item opens once the agent stops after it started on the ask, not when it ends an earlier task.
+- "No agent free" no longer points to the link command: it says to ask again once an agent is free.
 
 **Elsewhere**
 
