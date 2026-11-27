@@ -16,7 +16,7 @@ A right-sidebar panel that follows the focused workspace, with three tabs:
 
 ## Requirements
 
-- Orca `1.4.256` or later.
+- Orca `1.4.277` or later.
 - The [`gh` CLI](https://cli.github.com), logged in (`gh auth login`) with access to the repo. Every GitHub call goes through it; the plugin stores no tokens.
 - A workspace whose folder is a clone of a GitHub repo.
 - Orca's own CLI, which tells the plugin what Orca links to a workspace. On macOS it ships in the app; on Linux and Windows, put `orca` on PATH. Without it the Issues tab finds no linked issue and the Pull requests tab uses the branch's pull request.

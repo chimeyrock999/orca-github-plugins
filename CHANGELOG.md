@@ -19,6 +19,8 @@ a subsection, a bold lead-in names the area (Issues and pull requests, Actions, 
 
 **Elsewhere**
 
+- Needs Orca 1.4.277 or later: the panel's tab in Orca's right sidebar draws its own icon, a branch
+  in a focus frame like the catalog icon, instead of Orca's `activity`.
 - On Orca 1.4.259 or later the panel follows the workspace Orca focuses by its id: clones on the same
   branch with the same name no longer ask which one, and no Orca CLI call is made to tell them apart.
   An error Orca could not finish now reads "Could not finish" instead of "Panel error".
