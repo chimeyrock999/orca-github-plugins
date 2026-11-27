@@ -155,7 +155,7 @@ test('a request that broke in the plugin says so; Retry stays, the only way to a
     }
   })
   const view = await mount(panel, { host: h })
-  assert.ok(view.summary().some((l) => /Panel error/.test(l)))
+  assert.ok(view.summary().some((l) => /Could not finish/.test(l)))
   assert.ok(!view.summary().some((l) => /Orca did not answer/.test(l)))
   await view.press({ text: 'Retry' })
   assert.ok(view.find({ text: 'octo/app' }))

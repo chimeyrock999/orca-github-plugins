@@ -121,7 +121,7 @@ export function trackRepo(orca: OrcaWorkerApi, deps: RepoDeps, changed?: (before
       const { path } = focus.workspace
       const repo = await repoOf(path)
       if (!repo.ok) return { ok: false, error: { ...repo.error, path } }
-      return { ok: true, nameWithOwner: repo.nameWithOwner, url: repo.url, path, resolvedBy: focus.resolvedBy }
+      return { ok: true, nameWithOwner: repo.nameWithOwner, url: repo.url, path, workspaceId: focus.workspace.id, resolvedBy: focus.resolvedBy }
     } catch (error) {
       return hostFailed(error)
     }

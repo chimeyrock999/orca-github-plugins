@@ -1,11 +1,15 @@
-// ghRepo over a fake gh, plus one run against the real gh and git.
+// ghRepo over a fake gh, plus one run against the real gh and git; then the tracker on a host that
+// names the focused workspace by id.
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { assert, test } from 'orca/testing'
+import { assert, mockHost, mountWorker, test } from 'orca/testing'
+import type { OrcaWorkerApi } from 'orca/worker'
+import * as main from '../../../src/worker'
 import { GhError, runGh, type Gh } from '../../../src/worker/gh'
 import { ghRepo } from '../../../src/worker/repo/repo'
+import { noGh, repos, workspaces } from '../../fixtures/worker-fixtures'
 
 function answering(answer: unknown): Gh & { calls: unknown[][] } {
   const calls: unknown[][] = []
@@ -54,4 +58,74 @@ test('live: gh resolves this repo, and a folder with no remote is not a repo', a
   execFileSync('git', ['init', '-q', bare])
   const empty = await ghRepo(bare, gh)
   assert.equal(!empty.ok && empty.error.code, 'not_a_repo')
+})
+
+// trackRepo through the real worker on a host API 1.7 Orca: readContext and workspace.changed name
+// the focused workspace by the id workspace.list gives, so the focus needs no Orca CLI.
+
+function idWorker(asked: string[]) {
+  return {
+    default: (orca: OrcaWorkerApi) =>
+      main.activateWith(orca, {
+        gh: noGh,
+        ghRepo: async (path) => repos[path],
+        terminalPath: async (id) => (asked.push(id), '/code/app'),
+        exists: () => true
+      })
+  }
+}
+
+test('host API 1.7: two repos on main resolve by id, with no terminal asked and no pick', async () => {
+  const asked: string[] = []
+  const context = { workspaceId: 'w-app', branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }
+  const host = mockHost({ results: { 'workspace.readContext': context, 'workspace.list': { workspaces, truncated: false } } })
+  const worker = await mountWorker(idWorker(asked), { host })
+  assert.deepEqual(await worker.request('repo.get'), {
+    ok: true,
+    nameWithOwner: 'octo/app',
+    url: 'https://github.com/octo/app',
+    path: '/code/app',
+    workspaceId: 'w-app',
+    resolvedBy: 'id'
+  })
+  assert.deepEqual(asked, [])
+  assert.deepEqual(host.callsOf('storage.get'), [])
+  await worker.deactivate()
+})
+
+test('host API 1.7: workspace.changed moves the focus by id', async () => {
+  const asked: string[] = []
+  let context = { workspaceId: 'w-spike', branch: 'feature/spike', displayName: 'Spike', terminals: [] as { id: string }[] }
+  const host = mockHost({ results: { 'workspace.readContext': () => context, 'workspace.list': { workspaces, truncated: false } } })
+  const worker = await mountWorker(idWorker(asked), { host })
+  assert.equal((await worker.request('repo.get')).ok, true)
+  context = { workspaceId: 'w-gl', branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }
+  await worker.emit('workspace.changed', { context })
+  const answer = await worker.request('repo.get')
+  assert.equal(!answer.ok && answer.error.code, 'not_a_repo')
+  assert.equal(!answer.ok && answer.error.path, '/code/gl')
+  assert.deepEqual(asked, [])
+  await worker.deactivate()
+})
+
+test('host API 1.7: an id missing from a cut workspace.list says the list was cut', async () => {
+  const context = { workspaceId: 'w-later', branch: 'main', displayName: 'main', terminals: [] }
+  const host = mockHost({ results: { 'workspace.readContext': context, 'workspace.list': { workspaces, truncated: true } } })
+  const worker = await mountWorker(idWorker([]), { host })
+  const answer = await worker.request('repo.get')
+  assert.equal(!answer.ok && answer.error.code, 'workspace_not_found')
+  assert.match(!answer.ok ? answer.error.message : '', /listed only part/)
+  await worker.deactivate()
+})
+
+test('host API 1.5: with no id in the context the terminal still breaks the tie', async () => {
+  const asked: string[] = []
+  const context = { branch: 'main', displayName: 'main', terminals: [{ id: 't1' }] }
+  const host = mockHost({ results: { 'workspace.readContext': context, 'workspace.list': { workspaces, truncated: false } } })
+  const worker = await mountWorker(idWorker(asked), { host })
+  const answer = await worker.request('repo.get')
+  assert.equal(answer.ok && answer.resolvedBy, 'terminal')
+  assert.equal(answer.ok && answer.workspaceId, 'w-app')
+  assert.deepEqual(asked, ['t1'])
+  await worker.deactivate()
 })
